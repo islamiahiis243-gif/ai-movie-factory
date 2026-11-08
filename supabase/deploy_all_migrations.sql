@@ -238,7 +238,7 @@ CREATE TRIGGER set_project_settings_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_updated_at();
 
--- AUTH TRIGGER: Robust Profile Creation on User Registration
+-- AUTH TRIGGER: Robust Profile + Free Tier + Workspace Provisioning on User Registration (Email & Google OAuth)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER 
 LANGUAGE plpgsql 
@@ -247,27 +247,81 @@ SET search_path = public, auth
 AS $$
 DECLARE
   v_display_name TEXT;
+  v_avatar_url TEXT;
+  v_workspace_id UUID;
 BEGIN
   v_display_name := COALESCE(
     NULLIF(NEW.raw_user_meta_data->>'display_name', ''),
+    NULLIF(NEW.raw_user_meta_data->>'full_name', ''),
+    NULLIF(NEW.raw_user_meta_data->>'name', ''),
     NULLIF(split_part(NEW.email, '@', 1), ''),
     'Creator_' || substr(NEW.id::text, 1, 8)
   );
 
-  INSERT INTO public.profiles (id, display_name, email, preferred_language)
+  v_avatar_url := COALESCE(
+    NULLIF(NEW.raw_user_meta_data->>'avatar_url', ''),
+    NULLIF(NEW.raw_user_meta_data->>'picture', '')
+  );
+
+  INSERT INTO public.profiles (id, display_name, avatar_url, email, preferred_language, role, is_active)
   VALUES (
     NEW.id,
     v_display_name,
+    v_avatar_url,
     NEW.email,
-    'id'
+    'id',
+    'creator',
+    true
   )
   ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
+    avatar_url = COALESCE(public.profiles.avatar_url, EXCLUDED.avatar_url),
     updated_at = now();
+
+  -- Provision Initial Free Creator Subscription (150 Credits) if none exists
+  IF NOT EXISTS (SELECT 1 FROM public.subscriptions WHERE user_id = NEW.id) THEN
+    INSERT INTO public.subscriptions (
+      user_id, tier, status, billing_cycle, price_paid, currency, credits_allotted,
+      current_period_start, current_period_end, cancel_at_period_end, payment_provider, payment_method
+    ) VALUES (
+      NEW.id, 'free', 'active', 'monthly', 0, 'IDR', 150,
+      now(), now() + INTERVAL '30 days', false, 'midtrans', 'qris'
+    );
+  END IF;
+
+  -- Provision Welcome Credit Ledger Entry (+150 Credits) if none exists
+  IF NOT EXISTS (SELECT 1 FROM public.credit_transactions WHERE user_id = NEW.id) THEN
+    INSERT INTO public.credit_transactions (
+      user_id, transaction_type, amount, balance_after, provider, model, operation,
+      estimated_cost_usd, actual_cost_usd, description, status, idempotency_key
+    ) VALUES (
+      NEW.id, 'monthly_allotment', 150, 150, 'system', 'free_welcome_quota', 'initial_account_allotment',
+      0, 0, 'Alokasi Kredit Awal Paket Free Creator (150 Kredit)', 'completed', 'welcome_' || NEW.id::text
+    );
+  END IF;
+
+  -- Provision Personal Studio Workspace + Owner Seat if none exists
+  SELECT id INTO v_workspace_id FROM public.workspaces WHERE owner_id = NEW.id LIMIT 1;
+  IF v_workspace_id IS NULL THEN
+    INSERT INTO public.workspaces (
+      name, owner_id, tier, max_seats, seat_limit, active_seats_count, settings
+    ) VALUES (
+      v_display_name || ' Studio Workspace', NEW.id, 'free', 1, 1, 1,
+      '{"allow_member_exports": true, "require_director_approval_for_override": true, "shared_credit_pool": true, "default_language": "id", "watermark_previews": false}'::jsonb
+    ) RETURNING id INTO v_workspace_id;
+
+    INSERT INTO public.workspace_members (
+      workspace_id, user_id, role, invited_email, display_name, status
+    ) VALUES (
+      v_workspace_id, NEW.id, 'owner', NEW.email, v_display_name, 'active'
+    ) ON CONFLICT (workspace_id, user_id) DO NOTHING;
+  END IF;
 
   RETURN NEW;
 END;
 $$;
+
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
