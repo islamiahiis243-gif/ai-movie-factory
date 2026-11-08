@@ -122,7 +122,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     },
     {
       q: 'Bagaimana alur pembayaran paket langganan di Indonesia?',
-      a: 'Sistem kami terhubung langsung dengan rekening resmi Bank Mandiri dan dompet digital (GoPay, OVO, DANA) a/n SUMARLIN, serta integrasi Virtual Account BCA & QRIS. Verifikasi diproses secara otomatis via webhook serverless tanpa perlu antrean manual.',
+      a: 'Sistem kami mendukung pembayaran perbankan resmi (Bank Mandiri, BCA Virtual Account, BRI, BNI) serta dompet digital (GoPay, OVO, DANA, QRIS). Verifikasi diproses secara otomatis via webhook serverless instan tanpa perlu antrean manual.',
     },
     {
       q: 'Apakah saya bisa mulai tanpa membayar (Gratis)?',
@@ -694,7 +694,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <span>Saluran Pembayaran Resmi Terverifikasi</span>
             </div>
             <div className="text-xs text-slate-400">
-              Rekening Resmi a/n <strong>SUMARLIN</strong> • Transaksi aman & otomatis dikreditkan seketika.
+              Gerbang Pembayaran Otomatis • Transaksi aman, instan, & kredit akun aktif seketika 24/7.
             </div>
           </div>
 
@@ -796,7 +796,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             </span>
           </div>
           <div className="text-xs text-slate-500">
-            © {new Date().getFullYear()} AI Movie Factory. Hak Cipta Dilindungi Undang-Undang. Rekening Resmi a/n SUMARLIN.
+            © {new Date().getFullYear()} AI Movie Factory. Seluruh Hak Cipta Dilindungi Undang-Undang. All Rights Reserved.
           </div>
           <div className="flex items-center gap-6 text-xs text-slate-400">
             <button onClick={user ? onEnterStudio : onOpenAuth} className="hover:text-white cursor-pointer">
