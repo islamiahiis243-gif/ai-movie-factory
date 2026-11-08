@@ -3,6 +3,50 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.14.0] - Phase 14: Hybrid RBAC+ABAC Security, Coretax Automated Billing & Master Flagship Landing Page - 2026-11-08
+
+### Added
+- **Hybrid RBAC + ABAC Access Control Architecture (`src/lib/accessControl.ts` & `supabase/upgrade_v3_3_hybrid_rbac_abac.sql`):**
+  - Implemented 3-tier hybrid authorization model ensuring strict separation of concerns across platform, team, and resource levels:
+    1. **Level 1 (Platform RBAC):** `role = 'admin'` (Super Admin / Owner Console, global financial audit, immutable credit ledger oversight, emergency order rollback) vs `role = 'creator'` (standard production studio access).
+    2. **Level 2 (Workspace RBAC):** Granular studio team roles (`owner`, `director`, `writer`, `reviewer`) with specialized permission matrix.
+    3. **Level 3 (Contextual ABAC):** Attribute-based dynamic evaluation for 4K/ProRes export (`subscription.tier IN ('pro_studio', 'production_house')` or `role = 'admin'`), AI model execution rights (`credit_balance >= job.cost`), project resource ownership (`project.user_id = uid OR is_member(project.workspace_id)`), and team invitation limits (`active_seats < seat_limit`).
+  - Added PostgreSQL Security Definer helper functions: `public.is_platform_admin(p_user_id UUID)` and `public.get_workspace_user_role(p_workspace_id UUID, p_user_id UUID)`.
+  - Updated PostgreSQL trigger `validate_payment_order_catalog()` allowing service-role order rollbacks (`cancelled`, `refunded`) while strictly prohibiting manual downgrade of settled orders to draft/pending.
+
+- **Flagship Cinematic Public Landing Page (`src/components/landing/LandingPageView.tsx`):**
+  - Created full-width, high-converting Hollywood cyberpunk marketing landing page:
+    - **Hero Stage:** Showcase card for official AMF master logo with radial neon cyan/purple/amber ambient glow, high-impact headline, live trust metrics, and dual CTAs (*Mulai Produksi Sekarang* & *Jelajahi Demo*).
+    - **Interactive Studio Director Simulator:** 4-genre live pipeline switcher (*Sci-Fi Cyberpunk*, *Historical Epic Nusantara*, *Anime Fantasi*, *Psychological Horror*) showcasing camera framing, focal length, spatial foley soundscapes, and active 14-agent orchestration.
+    - **10-Module Hollywood Ecosystem Showcase:** Story & Script, World Builder 3D, Character Studio (Face-Lock), Storyboard Pro, 14 AI Agent Manager, Multi-Modal Media Studio, Parallel Pipeline, QC Continuity Supervisor, Multitrack Editing Post-Pro, and Marketplace Template Blueprints.
+    - **Traditional vs AMF Value Comparison:** Side-by-side analysis illustrating 95% budget reduction and instant turnaround time.
+    - **Transparent Pricing & Indonesian Payment Showcase:** Real-time multi-currency support (IDR, USD, EUR, CNY, JPY) with official Indonesian payment badges (Bank Mandiri, BCA Virtual Account, GoPay, OVO, DANA, QRIS).
+    - **Commercial Rights FAQ & Grand Bottom CTA:** Transparent FAQ on 100% commercial ownership, deep face consistency, and instant starter credits.
+
+- **Dual-Mode Dynamic Topbar Navigation (`src/components/layout/Navbar.tsx`):**
+  - **Public Landing Topbar:** Renders marketing-first navigation links (*Fitur Studio*, *14 Agen AI*, *Alur Kerja*, *Harga & Paket*, *FAQ*), regional currency/language switchers, and high-visibility *"Masuk"* & *"Coba Gratis (150 Kredit) 🚀"* CTA buttons. Hides internal studio modules to prevent cognitive overload for public visitors.
+  - **Studio Cockpit Topbar:** Automatically activates upon login or studio navigation, rendering workspace tools (*Dashboard*, *Proyek Saya*, *Ruang Kerja Tim*, *Pasar Template*, *Pengaturan*, *Supabase OK*, *+ Proyek Baru*, and *Admin Konsol*).
+  - Integrated user-refined official AMF camera emblem (`amf-emblem.png`) with luminous neon styling.
+
+- **Official Master AMF Branding Suite (`public/assets/branding/` & `public/favicon.ico`):**
+  - Installed high-resolution master branding files: `amf-logo-master.png` (2752×1536), user-refined cropped `amf-emblem.png` (321×275), `amf-wordmark.png` (395×222), `favicon-128.png`, and browser `favicon.ico`.
+  - Updated `index.html` OpenGraph / Twitter Cards meta tags and browser favicon pointers.
+
+### Changed
+- **Zero-Duplicate Checkout Modal (`src/components/billing/PaymentModal.tsx` & `src/lib/supabase.ts`):**
+  - Replaced repetitive `useEffect` database order insertion with an in-memory draft pattern (`orderDraft`). Switching between payment tabs (Mandiri, BCA, GoPay, OVO, QRIS) now only swaps UI transfer instructions without persisting draft rows in Supabase.
+  - Database row creation and settlement are combined atomically upon official user confirmation via serverless webhook.
+- **Coretax-Style Automated Admin Settlement (`src/components/admin/AdminDashboardView.tsx`):**
+  - Eliminated manual "Klik Setujui" verification queue. Admin dashboard now displays settled transactions with `LUNAS / AKTIF (OTOMATIS)` badge.
+  - Added emergency intervention capability: **"Batalkan & Tarik Kredit"** button invoking `admin_rollback_order` via `/api/payment-webhook` (marks order cancelled, logs negative credit deduction in immutable ledger, and reverts subscription tier).
+- **Brand Hygiene & Privacy Protection:**
+  - Removed all personal name references from public landing page footer, FAQ, and payment badges. Footer standardized to corporate format: `© 2026 AI Movie Factory. Seluruh Hak Cipta Dilindungi Undang-Undang. All Rights Reserved.`
+  - Removed technical software version badges from public announcement banner, relocating the build identifier subtly to `Sidebar.tsx` footer (`AMF Engine • v3.3.0 (Production)`).
+
+### Fixed
+- **Purged Ghost/Orphan Draft Orders in PostgreSQL:**
+  - Purged 15 orphaned draft orders previously generated during payment method previewing, restoring the database `public.payment_orders` to a completely clean state.
+
 ## [1.13.0] - Phase 13: Vercel Production Go-Live Readiness & Serverless API Layer - 2026-11-08
 
 ### Added

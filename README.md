@@ -1,6 +1,6 @@
 # AI Movie Factory 🎬
 
-> **AI-Powered Film & Drama Production Studio SaaS (`v1.13.0` — Production Go-Live Ready)**  
+> **AI-Powered Film & Drama Production Studio SaaS (`v1.14.0` — Production Live & Flagship Branding Ready)**  
 > Integrated production management and orchestration platform for filmmakers, animators, YouTubers, and creative studios.
 
 ---
