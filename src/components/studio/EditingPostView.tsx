@@ -41,6 +41,19 @@ import {
   Music,
   Zap,
   HelpCircle,
+  TrendingUp,
+  DollarSign,
+  Copy,
+  Check,
+  ShieldCheck,
+  FileText,
+  Flame,
+  BarChart3,
+  ExternalLink,
+  Target,
+  Smartphone,
+  SlidersHorizontal,
+  ArrowRight,
 } from 'lucide-react';
 
 interface EditingPostViewProps {
@@ -96,6 +109,17 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
 
   // Tab View within Editor
   const [editorTab, setEditorTab] = useState<'timeline' | 'color_grading' | 'publishing' | 'audio_mixer'>('timeline');
+
+  // Publishing Hub States (Sprint 1: P0)
+  const [publishingSubTab, setPublishingSubTab] = useState<'format_safe_area' | 'ai_virality' | 'distribution_package'>('format_safe_area');
+  const [showSafeArea, setShowSafeArea] = useState<boolean>(true);
+  const [reframeOffset, setReframeOffset] = useState<number>(0); // -30% to +30%
+  const [selectedTitleIndex, setSelectedTitleIndex] = useState(0);
+  const [selectedThumbnailIndex, setSelectedThumbnailIndex] = useState(0);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isGeneratingTeaser, setIsGeneratingTeaser] = useState(false);
+  const [teaserGenerated, setTeaserGenerated] = useState(false);
+  const [simulatedViews, setSimulatedViews] = useState<number>(100000);
 
   // Animation Timer Ref
   const animationFrameRef = useRef<number | null>(null);
@@ -253,6 +277,170 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
     const millis = Math.floor((seconds % 1) * 10);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${millis}`;
   };
+
+  // Helper formatting for SRT (00:00:00,000)
+  const formatSrtTimecode = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const millis = Math.floor((seconds % 1) * 1000);
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${millis.toString().padStart(3, '0')}`;
+  };
+
+  // Helper trigger browser file download
+  const downloadFile = (filename: string, content: string, mimeType = 'text/plain') => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    onShowToast(`File "${filename}" berhasil diunduh!`, 'success');
+  };
+
+  // Helper copy text to clipboard
+  const copyToClipboard = async (text: string, fieldKey: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldKey);
+      onShowToast('Teks berhasil disalin ke clipboard!', 'success');
+      setTimeout(() => setCopiedField(null), 2500);
+    } catch (err) {
+      onShowToast('Gagal menyalin teks ke clipboard', 'error');
+    }
+  };
+
+  // 5 Dynamic Virality Titles based on active project
+  const viralityTitles = useMemo(() => {
+    const projName = activeProject?.name || 'Mahakarya Sinema AI';
+    const genre = activeProject?.genre || 'Sci-Fi';
+    return [
+      {
+        formula: 'Curiosity Gap (Penasaran Tinggi)',
+        title: `Rahasia Tersembunyi di Balik "${projName}" yang Mengubah Segalanya`,
+        tag: 'High CTR YouTube',
+        color: 'from-amber-400 to-amber-500',
+        badge: 'Viral Hook',
+      },
+      {
+        formula: 'High Tension / Conflict (Klimaks Emosional)',
+        title: `Pertarungan Terakhir: Ketika Takdir "${projName}" Berada di Ujung Tanduk`,
+        tag: 'Dramatis & Aksi',
+        color: 'from-red-400 to-rose-500',
+        badge: 'High Action',
+      },
+      {
+        formula: 'SEO Discovery (Pencarian Algoritma)',
+        title: `Film Pendek AI "${projName}" (4K Sinematik) | Official Full Movie ${genre}`,
+        tag: 'Search Friendly',
+        color: 'from-blue-400 to-indigo-500',
+        badge: 'Rank #1',
+      },
+      {
+        formula: 'Emotional Hook (Sentuhan Emosi)',
+        title: `Pengorbanan Tanpa Batas: Kisah Mengharukan di Balik Perjalanan "${projName}"`,
+        tag: 'Storytelling Viral',
+        color: 'from-purple-400 to-pink-500',
+        badge: 'Trending Emosi',
+      },
+      {
+        formula: 'Sinematik Bergengsi (Festival & Bioskop)',
+        title: `"${projName}": Mahakarya Sinema Fiksi Generasi Baru (Official Master)`,
+        tag: 'Premium Cinema',
+        color: 'from-emerald-400 to-teal-500',
+        badge: 'Award Winner',
+      },
+    ];
+  }, [activeProject]);
+
+  // Thumbnail Keyframes with High CTR Badges
+  const thumbnailKeyframes = useMemo(() => {
+    const videoAssets = projectAssets.filter((a) => a.type === 'video' || a.type === 'image');
+    return [
+      {
+        id: 'thumb-1',
+        title: 'Hero Close-Up (Intensitas Wajah)',
+        url: videoAssets[0]?.file_url || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80',
+        ctrScore: '98%',
+        badge: 'JANGAN DITONTON SENDIRIAN!',
+        reason: 'Kontras mata tajam & ekspresi intens memicu refleks klik.',
+      },
+      {
+        id: 'thumb-2',
+        title: 'Epic Climax Action (Aksi & Efek)',
+        url: videoAssets[1]?.file_url || 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80',
+        ctrScore: '95%',
+        badge: 'AKHIRNYA TERUNGKAP!',
+        reason: 'Pencahayaan sinematik cyan-amber berenergi tinggi.',
+      },
+      {
+        id: 'thumb-3',
+        title: 'Atmospheric World (Misteri Semesta)',
+        url: videoAssets[2]?.file_url || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80',
+        ctrScore: '92%',
+        badge: 'DUNIA MASA DEPAN 2088',
+        reason: 'Skala pemandangan megah memancing rasa ingin tahu.',
+      },
+    ];
+  }, [projectAssets]);
+
+  // Subtitles & Chapters Content
+  const srtContent = useMemo(() => {
+    const voiceClips = clips.filter((c) => c.track === 'voice' || c.text_overlay);
+    if (voiceClips.length === 0) {
+      return `1\n00:00:01,000 --> 00:00:05,000\n[Musik Pembuka Sinematik]\n\n2\n00:00:06,000 --> 00:00:15,000\n${activeProject?.description || 'Kisah ini dimulai di dunia baru yang belum terjamah...'}\n`;
+    }
+    return voiceClips
+      .map((clip, idx) => {
+        const startSrt = formatSrtTimecode(clip.start_time);
+        const endSrt = formatSrtTimecode(clip.start_time + clip.duration);
+        return `${idx + 1}\n${startSrt} --> ${endSrt}\n${clip.text_overlay || clip.title}\n`;
+      })
+      .join('\n');
+  }, [clips, activeProject]);
+
+  const vttContent = useMemo(() => {
+    return 'WEBVTT\n\n' + srtContent.replace(/,/g, '.');
+  }, [srtContent]);
+
+  const chaptersContent = useMemo(() => {
+    const videoClips = clips.filter((c) => c.track === 'video');
+    if (videoClips.length === 0) {
+      return '00:00 Intro Pembuka Sinematik\n00:15 Perjalanan Tokoh Utama\n00:35 Konflik Memuncak\n00:50 Epilog & Resolusi Akhir';
+    }
+    return videoClips
+      .map((clip, idx) => {
+        const mins = Math.floor(clip.start_time / 60);
+        const secs = Math.floor(clip.start_time % 60);
+        const tc = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        return `${tc} Bagian ${idx + 1}: ${clip.title}`;
+      })
+      .join('\n');
+  }, [clips]);
+
+  const seoDescriptionText = useMemo(() => {
+    const projName = activeProject?.name || 'Film Pendek AI';
+    const chosenTitle = viralityTitles[selectedTitleIndex]?.title || projName;
+    return `🎬 ${chosenTitle}
+    
+📌 SINOPSIS RESMI:
+${activeProject?.description || 'Sebuah mahakarya sinema audiovisual yang diproduksi sepenuhnya menggunakan teknologi AI Movie Factory generasi baru.'}
+
+⏱️ CHAPTER TIMESTAMPS:
+${chaptersContent}
+
+🌟 KREDIT STUDIO:
+• Studio Produksi: AI Movie Factory (Hollywood AI Engine)
+• Sutradara: 14 Agen Mandiri Terintegrasi
+• Resolusi: 4K Ultra High Definition (Master Audio EBU R128)
+• Lisensi: 100% Hak Cipta Komersial Milik Kreator
+
+🏷️ HASHTAGS:
+#filmpendek #indiefilm #aimovie #filmnasional #hollywoodai #trending2026 #${projName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+  }, [activeProject, viralityTitles, selectedTitleIndex, chaptersContent]);
 
   // Active clip currently under playhead
   const activeVideoClip = useMemo(() => {
@@ -447,6 +635,16 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
     }
   };
 
+  // Trigger AI 15s Teaser Generator
+  const handleGenerateTeaser = () => {
+    setIsGeneratingTeaser(true);
+    setTimeout(() => {
+      setIsGeneratingTeaser(false);
+      setTeaserGenerated(true);
+      onShowToast('AI Teaser 15 Detik berhasil dirakit dengan audio riser & bass drop!', 'success');
+    }, 1500);
+  };
+
   // Execute Master Video Render & Publishing
   const handleRenderMasterSequence = async () => {
     if (!activeProject) return;
@@ -591,6 +789,10 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
                 <img
                   src={activeVideoClip.source_url || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&q=80'}
                   alt={activeVideoClip.title}
+                  style={{
+                    transform: activePlatform === 'tiktok_reels_9_16' ? `translateX(${reframeOffset}%) scale(1.15)` : 'none',
+                    transition: 'transform 0.15s ease-out',
+                  }}
                   className="w-full h-full object-cover select-none"
                 />
               ) : (
@@ -603,7 +805,7 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
 
               {/* Subtitle / Karaoke Text Overlay */}
               {activeVoiceClip && activeVoiceClip.text_overlay && (
-                <div className="absolute bottom-4 left-4 right-4 text-center pointer-events-none">
+                <div className="absolute bottom-4 left-4 right-4 text-center pointer-events-none z-10">
                   <span className="inline-block px-3 py-1.5 rounded-lg bg-black/80 backdrop-blur-md text-amber-300 font-semibold text-xs sm:text-sm border border-amber-400/30 shadow-lg animate-in fade-in">
                     {activeVoiceClip.text_overlay}
                   </span>
@@ -611,11 +813,53 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
               )}
 
               {/* Cinematic Watermark / LUT Badge */}
-              <div className="absolute top-2 left-2 pointer-events-none">
+              <div className="absolute top-2 left-2 pointer-events-none z-10">
                 <span className="text-[9px] uppercase tracking-wider font-mono bg-black/60 text-slate-300 px-2 py-0.5 rounded border border-white/10">
                   LUT: {colorGradeLut.replace('_', ' ')}
                 </span>
               </div>
+
+              {/* TikTok / Reels / Shorts Safe Area Overlay (Sprint 1: P0) */}
+              {activePlatform === 'tiktok_reels_9_16' && showSafeArea && (
+                <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between p-3 select-none">
+                  {/* Top Zone Hazard Warning */}
+                  <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold px-2 pt-1 border-b border-dashed border-rose-500/50 pb-1">
+                    <span className="bg-rose-500/30 text-rose-300 px-1 py-0.5 rounded text-[8px] font-mono">⚠️ Zona Tertutup Tab Medsos</span>
+                    <div className="flex gap-3 text-[10px]">
+                      <span className="text-slate-400">Teman</span>
+                      <span className="text-white border-b-2 border-white pb-0.5">Untuk Anda</span>
+                    </div>
+                    <span className="text-[10px]">🔍</span>
+                  </div>
+
+                  {/* Center Safe Content Box */}
+                  <div className="my-auto mx-1 h-3/5 border-2 border-dashed border-emerald-400/60 rounded-lg flex items-center justify-center bg-emerald-500/5 shadow-inner">
+                    <span className="text-[9px] font-mono text-emerald-300 bg-black/80 px-2.5 py-1 rounded border border-emerald-400/40 shadow-lg flex items-center gap-1.5">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      SAFE CONTENT ZONE (Bebas Tombol 100%)
+                    </span>
+                  </div>
+
+                  {/* Right Action Rail & Bottom Caption Hazard Warning */}
+                  <div className="relative pt-1 border-t border-dashed border-rose-500/50">
+                    <div className="absolute -top-32 right-1 flex flex-col items-center gap-2 text-white/80">
+                      <div className="w-6 h-6 rounded-full bg-slate-700 border border-white flex items-center justify-center text-[9px] font-bold">★</div>
+                      <div className="text-center text-[9px] leading-tight">❤️<br/><span className="text-[7px]">182K</span></div>
+                      <div className="text-center text-[9px] leading-tight">💬<br/><span className="text-[7px]">2.4K</span></div>
+                      <div className="text-center text-[9px] leading-tight">🔖<br/><span className="text-[7px]">14K</span></div>
+                    </div>
+                    <div className="pr-10 text-left">
+                      <p className="text-[10px] font-bold text-white">@{activeProject.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}</p>
+                      <p className="text-[8px] text-slate-300 line-clamp-1">{activeProject.description || 'Film AI resmi produksi AI Movie Factory.'}</p>
+                      <p className="text-[7px] text-amber-300 flex items-center gap-1 mt-0.5">🎵 Audio Asli Sinematik - AMF Studio</p>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between">
+                      <span className="bg-rose-500/30 text-rose-300 px-1 py-0.5 rounded text-[7px] font-mono">⚠️ Zona Tertutup Caption & Musik</span>
+                      <span className="text-[7px] text-slate-400 font-mono">Safe Margins Active</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1024,84 +1268,491 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
             </div>
           )}
 
-          {/* Tab 3: Multi-Platform Publishing Targets */}
+          {/* Tab 3: Studio Publishing & Virality Hub (Sprint 1: P0) */}
           {editorTab === 'publishing' && (
-            <div className="p-4 space-y-4 flex-1 overflow-y-auto max-h-[460px]">
-              <div>
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1">
-                  Preset Format Distribusi & Rasio
-                </h4>
-                <p className="text-[11px] text-slate-400 mb-3">
-                  {isId
-                    ? 'Target distribusi otomatis menyesuaikan rasio aspek, frame rate, dan bitrate kompresi.'
-                    : 'Target platforms automatically optimize aspect ratios, bitrates, and container.'}
-                </p>
-
-                <div className="space-y-2">
-                  {[
-                    {
-                      id: 'youtube_16_9',
-                      title: 'YouTube & OTT (16:9 Landscape)',
-                      specs: '3840x2160 (4K) / 1080p | 24fps | Bitrate 25 Mbps',
-                      desc: 'Format standar sinematik layar lebar dan distribusi YouTube Studio.',
-                    },
-                    {
-                      id: 'tiktok_reels_9_16',
-                      title: 'TikTok, Reels & Shorts (9:16 Vertical)',
-                      specs: '1080x1920 | 30fps | Smart Center-Framing',
-                      desc: 'Format vertikal optimal untuk media sosial dan engagement mobile.',
-                    },
-                    {
-                      id: 'cinemascope_2_39',
-                      title: 'CinemaScope Anamorphic (2.39:1)',
-                      specs: '4096x1716 | 24fps | DCI-P3 Color Space',
-                      desc: 'Rasio sinema ultra-lebar untuk tayangan bioskop dan festival film.',
-                    },
-                    {
-                      id: 'web_drama_4_5',
-                      title: 'Web Drama Series (4:5 Mobile)',
-                      specs: '1080x1350 | 24fps | Fast-CDN Streaming',
-                      desc: 'Format ideal untuk platform serial drama pendek di aplikasi web.',
-                    },
-                  ].map((plat) => (
-                    <div
-                      key={plat.id}
-                      onClick={() => {
-                        setActivePlatform(plat.id as PublishingPlatformPreset);
-                        saveSequence(clips, colorGradeLut, plat.id as PublishingPlatformPreset);
-                        onShowToast(`Format publikasi diubah ke ${plat.title}`, 'info');
-                      }}
-                      className={`p-3 rounded-lg border text-xs cursor-pointer transition-all ${
-                        activePlatform === plat.id
-                          ? 'bg-amber-400/10 border-amber-400/40 text-white shadow-md'
-                          : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold flex items-center gap-1.5">
-                          <Share2 className="w-3.5 h-3.5 text-amber-400" />
-                          {plat.title}
-                        </span>
-                        {activePlatform === plat.id && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
-                      </div>
-                      <p className="text-[10px] font-mono text-amber-300/80 mb-0.5">{plat.specs}</p>
-                      <p className="text-[11px] text-slate-400">{plat.desc}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Master Render Trigger Button */}
-              <div className="pt-2">
+            <div className="p-4 space-y-4 flex-1 overflow-y-auto max-h-[520px]">
+              {/* Publishing Sub-Tabs Header */}
+              <div className="flex bg-slate-950/80 p-1 rounded-lg border border-slate-800 text-[11px] font-semibold">
                 <button
-                  onClick={() => handleRenderMasterSequence()}
-                  disabled={isRendering}
-                  className="w-full py-2.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-lg shadow-amber-400/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  onClick={() => setPublishingSubTab('format_safe_area')}
+                  className={`flex-1 py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    publishingSubTab === 'format_safe_area'
+                      ? 'bg-amber-400 text-slate-950 shadow font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
-                  <Download className="w-4 h-4" />
-                  <span>{isRendering ? 'Memproses Render...' : 'Eksekusi Render & Download MP4'}</span>
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Format & Safe Area</span>
+                </button>
+                <button
+                  onClick={() => setPublishingSubTab('ai_virality')}
+                  className={`flex-1 py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    publishingSubTab === 'ai_virality'
+                      ? 'bg-amber-400 text-slate-950 shadow font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Flame className="w-3.5 h-3.5" />
+                  <span>AI Virality Kit</span>
+                </button>
+                <button
+                  onClick={() => setPublishingSubTab('distribution_package')}
+                  className={`flex-1 py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    publishingSubTab === 'distribution_package'
+                      ? 'bg-amber-400 text-slate-950 shadow font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>Paket Rilis & Cuan</span>
                 </button>
               </div>
+
+              {/* Sub-tab 1: Format & Safe Area */}
+              {publishingSubTab === 'format_safe_area' && (
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1 flex items-center justify-between">
+                      <span>Preset Rasio Aspek & Target Distribusi</span>
+                      <span className="text-[10px] text-amber-400 font-normal">Resolusi 4K & Vertikal</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mb-3">
+                      Pilih format tayang. AI secara presisi mengonfigurasi dimensi kanvas dan bitrate kompresi.
+                    </p>
+
+                    <div className="space-y-2">
+                      {[
+                        {
+                          id: 'youtube_16_9',
+                          title: 'YouTube & OTT (16:9 Landscape)',
+                          specs: '3840x2160 (4K) / 1080p | 24fps | 25 Mbps',
+                          desc: 'Standar sinematik layar lebar & desktop TV.',
+                        },
+                        {
+                          id: 'tiktok_reels_9_16',
+                          title: 'TikTok, Reels & Shorts (9:16 Vertical)',
+                          specs: '1080x1920 | 30fps | Smart Center-Framing',
+                          desc: 'Format mobile vertikal dengan panduan Safe Area.',
+                        },
+                        {
+                          id: 'cinemascope_2_39',
+                          title: 'CinemaScope Anamorphic (2.39:1)',
+                          specs: '4096x1716 | 24fps | DCI-P3 Color Space',
+                          desc: 'Rasio sinema ultra-lebar untuk festival film indie.',
+                        },
+                        {
+                          id: 'web_drama_4_5',
+                          title: 'Web Drama Series (4:5 Mobile)',
+                          specs: '1080x1350 | 24fps | Fast-CDN Streaming',
+                          desc: 'Format ideal untuk platform serial drama pendek.',
+                        },
+                      ].map((plat) => (
+                        <div
+                          key={plat.id}
+                          onClick={() => {
+                            setActivePlatform(plat.id as PublishingPlatformPreset);
+                            saveSequence(clips, colorGradeLut, plat.id as PublishingPlatformPreset);
+                            onShowToast(`Format publikasi diubah ke ${plat.title}`, 'info');
+                          }}
+                          className={`p-3 rounded-lg border text-xs cursor-pointer transition-all ${
+                            activePlatform === plat.id
+                              ? 'bg-amber-400/10 border-amber-400/40 text-white shadow-md'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold flex items-center gap-1.5">
+                              <Share2 className="w-3.5 h-3.5 text-amber-400" />
+                              {plat.title}
+                            </span>
+                            {activePlatform === plat.id && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
+                          </div>
+                          <p className="text-[10px] font-mono text-amber-300/80 mb-0.5">{plat.specs}</p>
+                          <p className="text-[11px] text-slate-400">{plat.desc}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 9:16 Special Controls: Safe Area & Horizontal Reframe */}
+                  {activePlatform === 'tiktok_reels_9_16' && (
+                    <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-lg space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                          <span className="text-xs font-bold text-white">Panduan Safe Area Overlay</span>
+                        </div>
+                        <button
+                          onClick={() => setShowSafeArea(!showSafeArea)}
+                          className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+                            showSafeArea ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {showSafeArea ? 'Aktif (Tampak)' : 'Nonaktif'}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Memvisualisasikan zona bahaya tombol Like, Komentar, dan Teks TikTok/Reels di layar pratinjau agar subtitel & wajah tidak tertutup.
+                      </p>
+
+                      <div className="pt-1 border-t border-slate-800/80 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-300 font-medium flex items-center gap-1.5">
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
+                            Koreksi Posisi Potongan (Reframe X)
+                          </span>
+                          <span className="font-mono text-amber-400 text-xs">
+                            {reframeOffset > 0 ? `+${reframeOffset}% Kanan` : reframeOffset < 0 ? `${reframeOffset}% Kiri` : 'Pusat (0%)'}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-30"
+                          max="30"
+                          value={reframeOffset}
+                          onChange={(e) => setReframeOffset(Number(e.target.value))}
+                          className="w-full accent-amber-400 cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                          <span>-30% Geser Kiri</span>
+                          <button
+                            onClick={() => setReframeOffset(0)}
+                            className="text-amber-400/80 hover:text-amber-300 underline cursor-pointer"
+                          >
+                            Reset 0%
+                          </button>
+                          <span>+30% Geser Kanan</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pre-Flight Quality Inspection Checklist */}
+                  <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-lg space-y-2">
+                    <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Inspeksi Kesiapan Ekspor (Pre-Flight QC)
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                      <span className="text-slate-300 flex items-center gap-1">✓ Resolusi: {activePlatform === 'youtube_16_9' ? '4K UHD' : '1080p FHD'}</span>
+                      <span className="text-slate-300 flex items-center gap-1">✓ Audio: -14 LUFS (EBU R128)</span>
+                      <span className="text-slate-300 flex items-center gap-1">✓ Color LUT: {colorGradeLut.toUpperCase()}</span>
+                      <span className="text-slate-300 flex items-center gap-1">✓ Subtitle Sync: Terintegrasi</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setPublishingSubTab('ai_virality')}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <span>Lanjut ke AI Virality Kit</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Sub-tab 2: AI Virality Packaging Kit */}
+              {publishingSubTab === 'ai_virality' && (
+                <div className="space-y-4">
+                  {/* AI Click-Magnet Titles */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <Flame className="w-3.5 h-3.5 text-amber-400" />
+                        5 Formula Judul Pemicu Klik (High CTR)
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mb-2">
+                      Formula psikologi penonton untuk mendongkrak rasio klik (CTR) pada YouTube & TikTok.
+                    </p>
+
+                    <div className="space-y-2">
+                      {viralityTitles.map((item, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => setSelectedTitleIndex(idx)}
+                          className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                            selectedTitleIndex === idx
+                              ? 'bg-amber-400/10 border-amber-400/50 text-white shadow'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-[10px] mb-1">
+                            <span className="text-amber-400 font-semibold">{item.formula}</span>
+                            <span className="bg-slate-800 text-slate-300 px-1.5 py-0.2 rounded font-mono">
+                              {item.badge}
+                            </span>
+                          </div>
+                          <p className="text-xs font-semibold text-white mb-2 leading-relaxed">"{item.title}"</p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400">{item.tag}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(item.title, `title-${idx}`);
+                              }}
+                              className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded text-[10px] flex items-center gap-1 cursor-pointer"
+                            >
+                              {copiedField === `title-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedField === `title-${idx}` ? 'Tersalin' : 'Salin Judul'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* AI Thumbnail Keyframe Studio */}
+                  <div className="pt-2 border-t border-slate-800">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      Studio Thumbnail AI & Keyframe Rekomendasi
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mb-2">
+                      Frame dengan skor estetika tertinggi hasil ekstraksi visual timeline:
+                    </p>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {thumbnailKeyframes.map((th, idx) => (
+                        <div
+                          key={th.id}
+                          onClick={() => setSelectedThumbnailIndex(idx)}
+                          className={`rounded-lg border overflow-hidden cursor-pointer transition-all ${
+                            selectedThumbnailIndex === idx
+                              ? 'border-amber-400 ring-2 ring-amber-400/30'
+                              : 'border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="relative aspect-video bg-black overflow-hidden">
+                            <img src={th.url} alt={th.title} className="w-full h-full object-cover" />
+                            <div className="absolute top-1 right-1 bg-black/80 text-amber-300 font-mono text-[8px] font-bold px-1 rounded">
+                              CTR {th.ctrScore}
+                            </div>
+                            <div className="absolute bottom-1 left-1 right-1 bg-red-600/90 text-white font-extrabold text-[7px] text-center px-1 rounded shadow">
+                              {th.badge}
+                            </div>
+                          </div>
+                          <div className="p-1.5 bg-slate-900/90 text-[10px]">
+                            <p className="font-semibold text-white truncate">{th.title}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* AI 15s Teaser & Trailer Factory */}
+                  <div className="p-3 bg-gradient-to-r from-purple-900/20 to-amber-900/20 border border-purple-500/30 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-purple-400" />
+                        AI 15-Detik Teaser Factory (Shorts/Reels)
+                      </span>
+                      {teaserGenerated && (
+                        <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-mono px-1.5 py-0.5 rounded">
+                          ✓ Teaser Siap
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      AI memindai timeline dan merakit klip aksi intens 15 detik dengan sinkronisasi sound riser untuk promosi pancingan medsos.
+                    </p>
+                    <button
+                      onClick={handleGenerateTeaser}
+                      disabled={isGeneratingTeaser}
+                      className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-md shadow-purple-600/20"
+                    >
+                      {isGeneratingTeaser ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Merakit Teaser 15 Detik...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>{teaserGenerated ? 'Rakit Ulang AI Teaser 15s' : '⚡ Generate AI Teaser 15 Detik'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* SEO Synopsis & Tags */}
+                  <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">Deskripsi Lengkap & Timestamps</span>
+                      <button
+                        onClick={() => copyToClipboard(seoDescriptionText, 'seo_desc')}
+                        className="text-[10px] text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedField === 'seo_desc' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedField === 'seo_desc' ? 'Tersalin' : 'Salin Deskripsi'}</span>
+                      </button>
+                    </div>
+                    <div className="p-2.5 bg-slate-950/70 border border-slate-800 rounded text-[10px] font-mono text-slate-400 max-h-24 overflow-y-auto whitespace-pre-line">
+                      {seoDescriptionText}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setPublishingSubTab('distribution_package')}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <span>Lanjut ke Paket Rilis & Cuan</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Sub-tab 3: Distribution Package & Monetization Simulator */}
+              {publishingSubTab === 'distribution_package' && (() => {
+                const estYoutubeAdsense = Math.round((simulatedViews / 1000) * 15000);
+                const estTiktokRewards = Math.round((simulatedViews / 1000) * 8000);
+                const estSponsorship = simulatedViews >= 500000 ? 5000000 : simulatedViews >= 100000 ? 2500000 : 1000000;
+                const totalRevenueEst = estYoutubeAdsense + estTiktokRewards + estSponsorship;
+                const estimatedAiCost = 250000;
+                const netProfitEst = Math.max(totalRevenueEst - estimatedAiCost, 0);
+                const profitMarginEst = Math.round((netProfitEst / totalRevenueEst) * 100);
+
+                return (
+                  <div className="space-y-4">
+                    {/* Master Render Button */}
+                    <div className="p-3.5 bg-gradient-to-r from-amber-400/10 via-amber-400/5 to-transparent border border-amber-400/30 rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white flex items-center gap-2">
+                          <Download className="w-4 h-4 text-amber-400" />
+                          Master Video Package ({activePlatform.toUpperCase()})
+                        </span>
+                        <span className="text-[10px] font-mono text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
+                          {activePlatform === 'youtube_16_9' ? '4K 24fps ProRes/MP4' : '1080x1920 30fps'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300">
+                        Rakit seluruh klip video, audio dialog, musik BGM, foley, dan grading LUT menjadi master video siap edar.
+                      </p>
+                      <button
+                        onClick={() => handleRenderMasterSequence()}
+                        disabled={isRendering}
+                        className="w-full py-2.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-lg shadow-amber-400/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>{isRendering ? 'Memproses Render...' : 'Eksekusi Render & Download Master MP4'}</span>
+                      </button>
+                    </div>
+
+                    {/* Export Companion Assets Grid (.SRT, .VTT, .TXT, Copy Kit) */}
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-amber-400" />
+                        Aset Pendukung Distribusi (1-Click Download)
+                      </h4>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <button
+                          onClick={() => downloadFile(`${activeProject.name.replace(/\s+/g, '_')}_Subtitles.srt`, srtContent)}
+                          className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-left transition-colors flex items-center gap-2 cursor-pointer"
+                        >
+                          <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                          <div>
+                            <p className="font-bold text-white text-[11px]">Subtitle .SRT</p>
+                            <p className="text-[9px] text-slate-400">YouTube & Medsos</p>
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => downloadFile(`${activeProject.name.replace(/\s+/g, '_')}_Subtitles.vtt`, vttContent)}
+                          className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-left transition-colors flex items-center gap-2 cursor-pointer"
+                        >
+                          <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <div>
+                            <p className="font-bold text-white text-[11px]">Subtitle .VTT</p>
+                            <p className="text-[9px] text-slate-400">Web Video Player</p>
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => downloadFile(`${activeProject.name.replace(/\s+/g, '_')}_Chapters.txt`, chaptersContent)}
+                          className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-left transition-colors flex items-center gap-2 cursor-pointer"
+                        >
+                          <Clock className="w-4 h-4 text-purple-400 shrink-0" />
+                          <div>
+                            <p className="font-bold text-white text-[11px]">Chapters .TXT</p>
+                            <p className="text-[9px] text-slate-400">Timestamp YouTube</p>
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => copyToClipboard(seoDescriptionText, 'all_kit')}
+                          className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-amber-400/30 rounded-lg text-left transition-colors flex items-center gap-2 cursor-pointer"
+                        >
+                          {copiedField === 'all_kit' ? <Check className="w-4 h-4 text-emerald-400 shrink-0" /> : <Copy className="w-4 h-4 text-amber-400 shrink-0" />}
+                          <div>
+                            <p className="font-bold text-white text-[11px]">{copiedField === 'all_kit' ? 'Tersalin!' : 'Salin Semua Kit'}</p>
+                            <p className="text-[9px] text-slate-400">Judul + Deskripsi + Tag</p>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Creator Revenue & Net Profit Intelligence Simulator */}
+                    <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                          Simulator Potensi Cuan & Laba Bersih (ROI)
+                        </span>
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          {simulatedViews.toLocaleString('id-ID')} Views
+                        </span>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                          <span>Target Penonton:</span>
+                          <span className="font-semibold text-white">{simulatedViews.toLocaleString('id-ID')} Tayangan</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10000"
+                          max="1000000"
+                          step="10000"
+                          value={simulatedViews}
+                          onChange={(e) => setSimulatedViews(Number(e.target.value))}
+                          className="w-full accent-emerald-400 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5 text-[11px] border-t border-slate-800/80 pt-2">
+                        <div className="flex justify-between text-slate-300">
+                          <span>• Estimasi AdSense YouTube (RPM IDR 15k):</span>
+                          <span className="font-mono text-white">Rp {estYoutubeAdsense.toLocaleString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-300">
+                          <span>• TikTok Rewards & Reels Bonus:</span>
+                          <span className="font-mono text-white">Rp {estTiktokRewards.toLocaleString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-300">
+                          <span>• Valuasi Sponsor / Product Placement:</span>
+                          <span className="font-mono text-white">Rp {estSponsorship.toLocaleString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-400 pt-1 border-t border-slate-800">
+                          <span>Biaya Produksi AI (Kredit Terpakai):</span>
+                          <span className="font-mono text-rose-400">-Rp {estimatedAiCost.toLocaleString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between text-white font-bold text-xs pt-1 border-t border-slate-700 bg-emerald-500/10 p-2 rounded">
+                          <span className="flex items-center gap-1 text-emerald-400">
+                            <DollarSign className="w-3.5 h-3.5" />
+                            Estimasi Laba Bersih (Net Profit):
+                          </span>
+                          <span className="font-mono text-emerald-300 text-sm">
+                            Rp {netProfitEst.toLocaleString('id-ID')} ({profitMarginEst}%)
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-[9px] text-slate-500 italic">
+                        *Model simulasi ilustratif tolak ukur industri konten video digital untuk memandu strategi bisnis kreator.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

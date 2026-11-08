@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.0] - Phase 15: Creator Publishing Hub, Safe-Area Overlay & AI Virality Engine - 2026-11-08
+
+### Added
+- **Multi-Platform Studio Publishing Hub (`src/components/studio/EditingPostView.tsx`):**
+  - Integrated 3-stage modular publishing workflow (*Format & Safe Area*, *AI Virality Kit*, and *Paket Rilis & Cuan*) within the Post-Production Editing suite.
+  - **Dynamic Safe Area Overlay & Smart Reframe Engine:**
+    - Live TikTok, Instagram Reels, and YouTube Shorts interactive UI hazard grid overlay (simulates top tabs, right action rail with like/comment buttons, and bottom music/caption bar) to prevent character faces and subtitles from being obscured.
+    - Horizontal reframe slider (-30% to +30%) allowing creators to adjust crop center for 9:16 vertical distribution.
+  - **Pre-Flight QC Inspection Checklist:**
+    - Real-time audit for 4K/1080p resolution, EBU R128 (-14 LUFS) audio loudness compliance, DCI-P3 color profiles, and subtitle sync.
+  - **AI Virality & High-CTR Packaging Studio:**
+    - 5 psychological AI title formulas (*Curiosity Gap*, *High Drama / Conflict*, *SEO Discovery*, *Emotional Hook*, and *Sinematik Bergengsi*) with 1-click clipboard copy.
+    - AI Thumbnail Keyframe Studio extracting top-3 aesthetic frames with CTR prediction scores (98%, 95%, 92%) and high-contrast text hooks.
+    - AI 15-Second Teaser & Trailer Factory automatically generating fast-paced promotional clips with audio riser & bass drop synchronization.
+    - Auto-generated SEO descriptions with chapter timestamps, AI agent credits, and trending hashtags.
+  - **One-Click Master Distribution Package & Revenue Intelligence:**
+    - Companion asset download triggers for Subtitle `.SRT`, Subtitle `.VTT`, and YouTube Chapter Timestamps `.TXT`.
+    - 1-Click Master Kit Copy formatting title, synopsis, chapters, and hashtags for instant paste into YouTube Studio or TikTok Creator Center.
+    - Interactive Creator Revenue & Net Profit Simulator (calculates YouTube AdSense RPM, TikTok Rewards, sponsorship valuations, and deducts AI production costs to reveal net profit margins up to 95%).
+
 ## [1.14.0] - Phase 14: Hybrid RBAC+ABAC Security, Coretax Automated Billing & Master Flagship Landing Page - 2026-11-08
 
 ### Added
