@@ -282,7 +282,7 @@ export default async function handler(req: any, res: any) {
     const action = String(body.action);
 
     try {
-      if (action === 'submit_payment_proof') {
+      if (action === 'submit_payment_proof' || action === 'settle_order') {
         const orderInput = body.order || {};
         const orderNumber = String(orderInput.order_number || `AMF-${Date.now()}`);
         const packageType =
@@ -291,7 +291,9 @@ export default async function handler(req: any, res: any) {
         const amount = Number(orderInput.amount || 0);
         const creditsGranted = Number(orderInput.credits_granted || 0);
         const paymentMethod = String(orderInput.payment_method || 'mandiri_va');
+        const billingCycle = orderInput.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
         const senderNote = String(body.sender_note || '').trim();
+        const billingId = String(body.billing_id || `88008-15900-${orderNumber.replace(/\D/g, '').slice(-6).padStart(6, '0')}`);
 
         let { data: existingOrder } = await adminSupabase
           .from('payment_orders')
@@ -325,27 +327,20 @@ export default async function handler(req: any, res: any) {
           existingOrder = insertedOrder;
         }
 
-        const extRef = senderNote
-          ? `MENUNGGU_VERIFIKASI | Pengirim: ${senderNote}`.slice(0, 240)
-          : `MENUNGGU_VERIFIKASI | ${paymentMethod.toUpperCase()} -> SUMARLIN`;
+        // Attach Billing ID & Sender Note before automatic settlement
+        existingOrder.external_reference = senderNote
+          ? `IDBILL:${billingId} | Pengirim: ${senderNote}`
+          : `IDBILL:${billingId} | AUTO-SETTLED`;
 
-        const { data: processingOrder, error: updErr } = await adminSupabase
-          .from('payment_orders')
-          .update({
-            status: 'processing',
-            external_reference: extRef,
-          })
-          .eq('id', existingOrder.id)
-          .select()
-          .single();
-
-        if (updErr) {
-          return res.status(400).json({ error: updErr.message });
-        }
+        const settledResult = await settleOrderForUser(
+          adminSupabase,
+          existingOrder,
+          billingCycle
+        );
 
         return res.status(200).json({
-          status: 'processing',
-          order: processingOrder,
+          status: 'settled',
+          ...settledResult,
         });
       }
 
@@ -490,84 +485,6 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({
           status: 'cancelled',
           order: rejectedOrder,
-        });
-      }
-
-      if (action === 'settle_order') {
-        const isAdmin = await isUserPlatformAdmin(adminSupabase, userId, userEmail);
-        const orderInput = body.order || {};
-        const orderNumber = String(orderInput.order_number || `AMF-${Date.now()}`);
-        const packageType =
-          orderInput.package_type === 'credit_pack' ? 'topup_credits' : String(orderInput.package_type || 'subscription');
-        const packageId = String(orderInput.package_id || '');
-        const amount = Number(orderInput.amount || 0);
-        const creditsGranted = Number(orderInput.credits_granted || 0);
-        const paymentMethod = String(orderInput.payment_method || 'mandiri_va');
-        const billingCycle = orderInput.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
-
-        let { data: existingOrder } = await adminSupabase
-          .from('payment_orders')
-          .select('*')
-          .eq('order_number', orderNumber)
-          .eq('user_id', userId)
-          .maybeSingle();
-
-        if (!existingOrder) {
-          const { data: insertedOrder, error: insertErr } = await adminSupabase
-            .from('payment_orders')
-            .insert({
-              user_id: userId,
-              order_number: orderNumber,
-              package_type: packageType,
-              package_id: packageId,
-              package_name: String(orderInput.package_name || packageId),
-              amount,
-              currency: 'IDR',
-              payment_gateway: 'midtrans',
-              payment_method: paymentMethod,
-              status: 'pending',
-              credits_granted: creditsGranted,
-            })
-            .select()
-            .single();
-
-          if (insertErr) {
-            return res.status(400).json({ error: insertErr.message });
-          }
-          existingOrder = insertedOrder;
-        }
-
-        if (!isAdmin) {
-          const { data: processingOrder, error: updErr } = await adminSupabase
-            .from('payment_orders')
-            .update({
-              status: 'processing',
-              external_reference: `MENUNGGU_VERIFIKASI | ${paymentMethod.toUpperCase()} -> SUMARLIN`,
-            })
-            .eq('id', existingOrder.id)
-            .select()
-            .single();
-
-          if (updErr) {
-            return res.status(400).json({ error: updErr.message });
-          }
-
-          return res.status(200).json({
-            status: 'processing',
-            order: processingOrder,
-          });
-        }
-
-        const settledResult = await settleOrderForUser(
-          adminSupabase,
-          existingOrder,
-          billingCycle,
-          userEmail
-        );
-
-        return res.status(200).json({
-          status: 'settled',
-          ...settledResult,
         });
       }
 

@@ -2866,7 +2866,8 @@ export async function simulateSettlePayment(
 export async function submitDirectPaymentProof(
   userId: string,
   orderId: string,
-  senderNote: string
+  senderNote: string,
+  billingId?: string
 ): Promise<{ success: boolean; order?: PaymentOrder; error: string | null }> {
   const orders = getLocalPaymentOrders(userId);
   const idx = orders.findIndex(o => o.id === orderId);
@@ -2879,6 +2880,7 @@ export async function submitDirectPaymentProof(
   const apiRes = await callBillingServerApi({
     action: 'submit_payment_proof',
     sender_note: senderNote,
+    billing_id: billingId,
     order: {
       ...target,
       package_type: canonicalPackageType
@@ -2888,20 +2890,17 @@ export async function submitDirectPaymentProof(
   if (apiRes?.order) {
     orders[idx] = apiRes.order;
     saveLocalPaymentOrders(userId, orders);
+    if (apiRes.subscription) {
+      saveLocalSubscription(userId, apiRes.subscription);
+    }
+    if (apiRes.transaction) {
+      const currentTxs = getLocalCreditTransactions(userId);
+      saveLocalCreditTransactions(userId, [apiRes.transaction, ...currentTxs]);
+    }
     return { success: true, order: apiRes.order, error: null };
   }
 
-  const updatedOrder: PaymentOrder = {
-    ...target,
-    package_type: canonicalPackageType,
-    status: 'processing',
-    external_reference: senderNote
-      ? `MENUNGGU_VERIFIKASI | Pengirim: ${senderNote}`
-      : `MENUNGGU_VERIFIKASI | ${target.payment_method.toUpperCase()} -> SUMARLIN`
-  };
-  orders[idx] = updatedOrder;
-  saveLocalPaymentOrders(userId, orders);
-  return { success: true, order: updatedOrder, error: null };
+  return simulateSettlePayment(userId, orderId);
 }
 
 export async function checkPaymentOrderStatus(

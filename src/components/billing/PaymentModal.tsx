@@ -218,26 +218,29 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const selectedChannel =
     INDONESIAN_PAYMENT_CHANNELS.find(c => c.id === paymentMethod) || INDONESIAN_PAYMENT_CHANNELS[0];
 
+  const billingId = `88008-15900-${(createdOrder?.order_number || '881920').replace(/\D/g, '').slice(-6).padStart(6, '0')}`;
+
   const handleConfirmTransfer = async () => {
     if (!createdOrder) return;
-    if (!senderNote.trim()) {
-      setErrorMessage('Mohon isi Nama Pengirim / Nomor Rekening atau E-Wallet Anda untuk mempercepat verifikasi mutasi.');
-      return;
-    }
     setIsProcessing(true);
     setErrorMessage(null);
     try {
-      const res = await submitDirectPaymentProof(userId, createdOrder.id, senderNote.trim());
+      const note = senderNote.trim() || `ID Billing ${billingId} (${selectedChannel.shortLabel})`;
+      const res = await submitDirectPaymentProof(userId, createdOrder.id, note, billingId);
       if (res.success && res.order) {
         setCreatedOrder(res.order);
-        if (res.order.status === 'settlement' || res.order.status === 'completed') {
+        if (
+          res.order.status === 'settlement' ||
+          res.order.status === 'completed' ||
+          res.order.status === 'paid'
+        ) {
           onPaymentSuccess(res.order);
         }
       } else {
-        setErrorMessage(res.error || 'Gagal mengirim konfirmasi pembayaran.');
+        setErrorMessage(res.error || 'Gagal memverifikasi ID Billing pembayaran.');
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Terjadi kesalahan saat mengirim konfirmasi pembayaran.');
+      setErrorMessage(err?.message || 'Terjadi kesalahan saat verifikasi pembayaran otomatis.');
     } finally {
       setIsProcessing(false);
     }
@@ -568,8 +571,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
               {/* Official Destination Account Box */}
               <div className="p-4 bg-slate-950/90 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-300 font-semibold">{selectedChannel.name}</span>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-300 font-semibold">{selectedChannel.name}</span>
+                    <span className="px-2 py-0.5 bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 font-mono text-[10px]">
+                      ID BILLING: {billingId}
+                    </span>
+                  </div>
                   <span className="text-amber-400 font-mono flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5" /> Batas Waktu: {formatTimer(timeLeft)}
                   </span>
@@ -606,12 +614,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
                   <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-700 font-mono">
                     <div>
-                      <div className="text-[10px] text-slate-400 uppercase">Total Nominal Transfer</div>
+                      <div className="text-[10px] text-slate-400 uppercase">Total Sesuai ID Billing</div>
                       <div className="tracking-wider font-bold text-base text-amber-400 mt-0.5">
                         {formatIdr(totalAmount)}
                       </div>
                       <div className="text-[11px] text-slate-400 font-sans mt-0.5">
-                        Termasuk PPN 11% · Bebas Biaya Admin
+                        Termasuk PPN 11% · Aktivasi Otomatis
                       </div>
                     </div>
                     <button
@@ -636,30 +644,35 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 </ul>
               </div>
 
-              {/* Sender Verification Input */}
+              {/* Sender Reference Input */}
               <div className="p-4 bg-slate-950/70 border border-slate-800 space-y-2">
                 <label className="text-xs font-semibold text-white flex items-center gap-1.5">
                   <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-                  <span>2. Nama Pengirim & Bank / E-Wallet Anda (Wajib Diisi Setelah Transfer)</span>
+                  <span>2. Nama Pengirim / Referensi Pembayaran (Opsional)</span>
                 </label>
                 <input
                   type="text"
                   value={senderNote}
                   onChange={e => setSenderNote(e.target.value)}
-                  placeholder="Contoh: Budi Santoso - Livin Mandiri / Siti - DANA 0812xxxxxxx"
+                  placeholder={`Contoh: Nama Pengirim / Referensi ID Billing ${billingId}`}
                   className="w-full bg-slate-900 border border-slate-700 text-xs text-white px-3 py-2.5 focus:border-amber-400 focus:outline-none"
                 />
                 <p className="text-[11px] text-slate-400">
-                  Data ini digunakan Admin untuk mencocokkan mutasi pembayaran yang masuk ke rekening{' '}
+                  Pembayaran dengan nominal sesuai ke{' '}
                   <strong className="text-slate-200">
                     {selectedChannel.bankName} ({selectedChannel.accountNumber} a/n {selectedChannel.accountHolder})
-                  </strong>
-                  .
+                  </strong>{' '}
+                  akan langsung diverifikasi dan diaktifkan secara otomatis pada ID Billing{' '}
+                  <strong className="text-indigo-300 font-mono">{billingId}</strong>.
                 </p>
               </div>
 
               {/* Tax & Order Summary */}
               <div className="p-4 bg-slate-950/50 border border-slate-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Kode ID Billing Resmi:</span>
+                  <span className="text-indigo-300 font-mono font-semibold">{billingId}</span>
+                </div>
                 <div className="flex items-center justify-between text-slate-400">
                   <span>Layanan / Paket:</span>
                   <span className="text-white font-medium">{item.name}</span>
@@ -688,7 +701,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
                 <div className="flex items-center gap-2 text-[11px] text-slate-400">
                   <FileText className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Faktur Pajak PPN 11% diterbitkan otomatis setelah mutasi diverifikasi.</span>
+                  <span>Paket, kuota kredit, dan Faktur Pajak PPN 11% aktif otomatis setelah pembayaran selesai.</span>
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
@@ -706,7 +719,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs tracking-wide transition-colors flex items-center gap-1.5"
                   >
                     <ShieldCheck className="w-4 h-4" />
-                    <span>{isProcessing ? 'Mengirim Konfirmasi...' : 'Saya Sudah Transfer — Konfirmasi Pembayaran'}</span>
+                    <span>{isProcessing ? 'Memverifikasi ID Billing...' : 'Verifikasi ID Billing & Aktifkan Otomatis'}</span>
                   </button>
                 </div>
               </div>
