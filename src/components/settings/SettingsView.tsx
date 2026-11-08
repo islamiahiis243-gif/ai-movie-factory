@@ -18,15 +18,22 @@ import {
   Terminal,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
   Zap,
-  Lock
+  Lock,
+  KeyRound,
+  Sliders,
+  Settings,
+  Sparkles,
+  ShieldAlert
 } from 'lucide-react';
 import { LanguageCode, CurrencyCode } from '../../types/database';
 import { REGIONAL_CURRENCIES } from '../../lib/multilingualAdapters';
 import { supabase, isSupabaseConfigured, supabaseUrl, rawSupabaseUrl, supabaseAnonKey } from '../../lib/supabase';
+import { isPlatformAdmin } from '../../lib/accessControl';
 
 const SUPPORTED_LANGUAGES: { code: LanguageCode; name: string; flag: string; native: string }[] = [
-  { code: 'id', name: 'Bahasa Indonesia', flag: '🇮🇩', native: 'Bahasa Indonesia (Default)' },
+  { code: 'id', name: 'Bahasa Indonesia', flag: '🇮🇩', native: 'Bahasa Indonesia (Utama)' },
   { code: 'en', name: 'English', flag: '🇺🇸', native: 'English (Global)' },
   { code: 'zh', name: 'Mandarin Chinese', flag: '🇨🇳', native: '简体中文 (Xianxia/Wuxia)' },
   { code: 'ja', name: 'Japanese', flag: '🇯🇵', native: '日本語 (Anime/J-Drama)' },
@@ -50,11 +57,25 @@ interface WalkthroughStep {
   detail: string;
 }
 
-export const SettingsView: React.FC<{ onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }> = ({ onShowToast }) => {
-  const { profile, language, setLanguage, currency, setCurrency, t, isConfigured, updateProfileData } = useAuth();
+export const SettingsView: React.FC<{ 
+  onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void;
+  onNavigateToSubscription?: () => void;
+}> = ({ onShowToast, onNavigateToSubscription }) => {
+  const { user, profile, language, setLanguage, currency, setCurrency, t, isConfigured, updateProfileData } = useAuth();
+  const isOwnerAdmin = isPlatformAdmin(user?.email || profile?.email, profile?.role);
 
+  // Profile Form State
   const [displayName, setDisplayName] = useState(profile.display_name);
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url || '');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // Password Update State
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  // Admin Diagnostic State
+  const [showAdminDiagnostics, setShowAdminDiagnostics] = useState(true);
   const [testingSupabase, setTestingSupabase] = useState(false);
   const [supabaseTestResult, setSupabaseTestResult] = useState<{ status: 'success' | 'info' | 'error'; message: string; latency?: number } | null>(null);
   const [copiedScript, setCopiedScript] = useState(false);
@@ -75,14 +96,47 @@ export const SettingsView: React.FC<{ onShowToast: (msg: string, type: 'success'
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSavingProfile(true);
     const res = await updateProfileData({
       display_name: displayName,
       avatar_url: avatarUrl || null,
     });
+    setIsSavingProfile(false);
     if (res.error) {
       onShowToast(res.error, 'error');
     } else {
-      onShowToast('Profil studio berhasil diperbarui.', 'success');
+      onShowToast('Profil studio Anda berhasil diperbarui.', 'success');
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      onShowToast('Kata sandi harus terdiri dari minimal 6 karakter.', 'error');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      onShowToast('Konfirmasi kata sandi tidak cocok.', 'error');
+      return;
+    }
+    setIsUpdatingPassword(true);
+    try {
+      if (!supabase) {
+        onShowToast('Fitur ini memerlukan koneksi Supabase aktif.', 'info');
+        return;
+      }
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        onShowToast(error.message, 'error');
+      } else {
+        onShowToast('Kata sandi berhasil diperbarui dengan aman.', 'success');
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } catch (err: any) {
+      onShowToast(err.message || 'Gagal memperbarui kata sandi.', 'error');
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
 
@@ -93,7 +147,6 @@ export const SettingsView: React.FC<{ onShowToast: (msg: string, type: 'success'
 
     try {
       if (isSupabaseConfigured && supabase) {
-        // Diagnostic check: check if the user mistakenly provided a platform management key
         if (supabaseAnonKey.startsWith('sb_publishable_')) {
           setSupabaseTestResult({
             status: 'error',
@@ -186,33 +239,114 @@ export const SettingsView: React.FC<{ onShowToast: (msg: string, type: 'success'
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8 animate-fadeIn">
+      {/* Clean User-Facing Header */}
       <div>
         <div className="flex items-center gap-2 text-amber-400 font-mono text-xs uppercase tracking-wider mb-1">
-          <Server className="w-4 h-4" />
-          <span>Production Readiness & Studio Configuration (Phase 8)</span>
+          <Settings className="w-4 h-4" />
+          <span>Studio Preferences & Account</span>
         </div>
-        <h2 className="text-2xl font-bold text-white tracking-tight">{t.settings.title}</h2>
-        <p className="text-xs text-slate-400 mt-1">{t.settings.subtitle}</p>
+        <h2 className="text-2xl font-bold text-white tracking-tight">Pengaturan Studio & Akun</h2>
+        <p className="text-xs text-slate-400 mt-1">
+          Kelola profil kreator, preferensi bahasa, mata uang, dan keamanan akun Anda.
+        </p>
       </div>
 
-      {/* Global Interface Language & Regional Currency Card */}
+      {/* 1. Creator Profile Card */}
+      <div className="p-6 rounded-2xl bg-[#101726] border border-slate-800/80 shadow-xl space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <User className="w-5 h-5 text-amber-400" />
+            <div>
+              <h3 className="text-sm font-bold text-white">Profil Kreator Studio</h3>
+              <p className="text-xs text-slate-400">Identitas pembuat film dan nama tampilan di seluruh proyek.</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isOwnerAdmin ? (
+              <span className="px-2.5 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider">
+                Platform Administrator
+              </span>
+            ) : (
+              <span className="px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 text-[10px] font-mono font-medium">
+                Studio Creator
+              </span>
+            )}
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveProfile} className="space-y-4 max-w-2xl">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Nama Tampilan Kreator
+              </label>
+              <input
+                type="text"
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Misal: Christopher Nolan"
+                className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Alamat Email Akun
+              </label>
+              <input
+                type="text"
+                disabled
+                value={user?.email || profile.email || 'creator@aimoviefactory.local'}
+                className="w-full px-3.5 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-400 font-mono cursor-not-allowed"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              URL Foto Avatar (Opsional)
+            </label>
+            <input
+              type="url"
+              value={avatarUrl}
+              onChange={(e) => setAvatarUrl(e.target.value)}
+              placeholder="https://example.com/foto-avatar.jpg"
+              className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
+            />
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={isSavingProfile}
+              className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md shadow-amber-400/20 cursor-pointer"
+            >
+              {isSavingProfile ? 'Menyimpan...' : 'Simpan Perubahan Profil'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* 2. Global Interface Language & Regional Currency Card */}
       <div className="p-6 rounded-2xl bg-[#101726] border border-slate-800/80 shadow-xl space-y-6">
         <div>
           <div className="flex items-center gap-2.5 mb-1">
-            <Globe className="w-5 h-5 text-amber-400" />
-            <h3 className="text-sm font-bold text-white">Bahasa Antarmuka & Mata Uang Regional (SSOT Section 25, 42)</h3>
+            <Globe className="w-5 h-5 text-cyan-400" />
+            <h3 className="text-sm font-bold text-white">Bahasa Antarmuka & Format Mata Uang</h3>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Pilih bahasa antarmuka studio dan preferensi konversi mata uang regional untuk faktur dan perhitungan kredit.
+            Sesuaikan bahasa menu studio dan preferensi konversi mata uang regional untuk faktur serta kuota kredit.
           </p>
         </div>
 
         {/* 5-Language Selector Grid */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2.5">
             Bahasa Antarmuka Studio:
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {SUPPORTED_LANGUAGES.map((lang) => {
               const isSelected = language === lang.code;
               return (
@@ -242,10 +376,10 @@ export const SettingsView: React.FC<{ onShowToast: (msg: string, type: 'success'
 
         {/* Regional Currency Selector */}
         <div className="pt-4 border-t border-slate-800/80">
-          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2.5">
             Mata Uang Regional:
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {(Object.keys(REGIONAL_CURRENCIES) as CurrencyCode[]).map((cCode) => {
               const currMeta = REGIONAL_CURRENCIES[cCode];
               const isSelected = currency === cCode;
@@ -272,341 +406,264 @@ export const SettingsView: React.FC<{ onShowToast: (msg: string, type: 'success'
         </div>
       </div>
 
-      {/* End-to-End Walkthrough Simulator Card */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-[#121B2F] via-[#0E1526] to-[#101726] border border-amber-500/20 shadow-xl space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Zap className="w-4 h-4 text-amber-400" />
-              <h3 className="text-base font-bold text-white">End-to-End Integration Walkthrough Simulator</h3>
-            </div>
-            <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
-              Uji coba otomatis seluruh alur pipa produksi audiovisual dari World Building hingga Master Package Export dan Multi-Seat Workspace.
-            </p>
-          </div>
-
-          <button
-            onClick={handleRunFullWalkthrough}
-            disabled={isWalkthroughRunning}
-            className="flex items-center gap-2 px-4 py-2.5 bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-slate-950 text-xs font-bold rounded-lg transition-all shadow-md shadow-amber-400/20 whitespace-nowrap cursor-pointer shrink-0"
-          >
-            <Play className={`w-3.5 h-3.5 fill-current ${isWalkthroughRunning ? 'animate-pulse' : ''}`} />
-            <span>{isWalkthroughRunning ? 'Menguji Alur...' : 'Jalankan Walkthrough'}</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {walkthroughSteps.map((step, idx) => (
-            <div 
-              key={idx}
-              className={`p-3 rounded-xl border transition-all text-xs ${
-                step.status === 'completed'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                  : step.status === 'running'
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 animate-pulse'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold truncate pr-2">{step.name}</span>
-                {step.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                {step.status === 'running' && <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />}
-                {step.status === 'pending' && <span className="w-2 h-2 rounded-full bg-slate-700 shrink-0" />}
-              </div>
-              <p className="text-[10px] text-slate-400 line-clamp-1">{step.detail}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Supabase & Production Environment Variables Readiness */}
-      <div className="p-6 rounded-2xl bg-[#101726] border border-slate-800/80 shadow-xl space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <Database className="w-5 h-5 text-amber-400" />
-            <div>
-              <h3 className="text-sm font-bold text-white">Status Koneksi Supabase & Variabel Produksi (SSOT Part 11)</h3>
-              <p className="text-xs text-slate-400">Penyimpanan awan PostgreSQL, autentikasi RLS, dan verifikasi environment variables.</p>
-            </div>
-          </div>
-          <span
-            className={`text-xs font-mono font-medium px-2.5 py-1 rounded-full border ${
-              isConfigured
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-            }`}
-          >
-            {isConfigured ? '● Supabase Cloud Terhubung' : '○ Local Sandbox Active'}
-          </span>
-        </div>
-
-        {/* Environment Variables Table */}
-        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 font-mono bg-slate-900/60">
-                <th className="py-2.5 px-4">Environment Variable</th>
-                <th className="py-2.5 px-4">Cakupan (Scope)</th>
-                <th className="py-2.5 px-4">Status Nilai</th>
-                <th className="py-2.5 px-4">Deskripsi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-              <tr>
-                <td className="py-2.5 px-4 font-semibold text-slate-200">VITE_SUPABASE_URL</td>
-                <td className="py-2.5 px-4 text-slate-400">Client / Browser</td>
-                <td className="py-2.5 px-4">
-                  {supabaseUrl ? (
-                    <div>
-                      <span className="text-emerald-400">{supabaseUrl}</span>
-                      {rawSupabaseUrl !== supabaseUrl && (
-                        <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-amber-400/20 text-amber-300 font-sans">
-                          Auto-Normalized
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-amber-400">Local Fallback Sandbox</span>
-                  )}
-                </td>
-                <td className="py-2.5 px-4 text-slate-400 font-sans text-xs">Endpoint REST API Supabase</td>
-              </tr>
-              <tr>
-                <td className="py-2.5 px-4 font-semibold text-slate-200">VITE_SUPABASE_ANON_KEY</td>
-                <td className="py-2.5 px-4 text-slate-400">Client / Browser</td>
-                <td className="py-2.5 px-4">
-                  {supabaseAnonKey ? (
-                    supabaseAnonKey.startsWith('sb_publishable_') ? (
-                      <div className="space-y-0.5">
-                        <span className="text-amber-400 font-semibold">⚠️ Platform Key Terpasang</span>
-                        <div className="text-[10px] text-rose-300 font-sans">
-                          Ganti dengan <strong>anon public key (JWT)</strong> dari Project Settings ➔ API
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-emerald-400">•••••••• Terkonfigurasi (JWT)</span>
-                    )
-                  ) : (
-                    <span className="text-amber-400">Local Fallback Sandbox</span>
-                  )}
-                </td>
-                <td className="py-2.5 px-4 text-slate-400 font-sans text-xs">Public publishable key dengan proteksi RLS</td>
-              </tr>
-              <tr>
-                <td className="py-2.5 px-4 font-semibold text-slate-200">GEMINI_API_KEY</td>
-                <td className="py-2.5 px-4 text-slate-400">Server / Secret</td>
-                <td className="py-2.5 px-4 text-emerald-400">Server-Only (/api/ai-generate)</td>
-                <td className="py-2.5 px-4 text-slate-400 font-sans text-xs">Generasi gambar, video Veo, suara TTS & naskah</td>
-              </tr>
-              <tr>
-                <td className="py-2.5 px-4 font-semibold text-slate-200">SUPABASE_SECRET_KEY</td>
-                <td className="py-2.5 px-4 text-slate-400">Server / Secret</td>
-                <td className="py-2.5 px-4 text-emerald-400">Server-Only (/api/payment-webhook)</td>
-                <td className="py-2.5 px-4 text-slate-400 font-sans text-xs">Otorisasi service_role penyelesaian webhook pembayaran</td>
-              </tr>
-              <tr>
-                <td className="py-2.5 px-4 font-semibold text-slate-200">MIDTRANS_SERVER_KEY</td>
-                <td className="py-2.5 px-4 text-slate-400">Server / Secret</td>
-                <td className="py-2.5 px-4 text-emerald-400">Server-Only (SHA-512 Verifier)</td>
-                <td className="py-2.5 px-4 text-slate-400 font-sans text-xs">Verifikasi tanda tangan kriptografi webhook Midtrans</td>
-              </tr>
-              <tr>
-                <td className="py-2.5 px-4 font-semibold text-slate-200">APP_URL</td>
-                <td className="py-2.5 px-4 text-slate-400">Server / Runtime</td>
-                <td className="py-2.5 px-4 text-emerald-400">Vercel Production Domain / Local</td>
-                <td className="py-2.5 px-4 text-slate-400 font-sans text-xs">URL publik canonical untuk webhook Midtrans/Stripe</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Vercel Go-Live Readiness Checklist */}
-        <div className="p-4 rounded-xl bg-slate-950/90 border border-indigo-500/30 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Server className="w-4 h-4 text-indigo-400" />
-              <span className="text-xs font-bold text-white">
-                Vercel Go-Live Readiness & Serverless API Endpoints (v1.13.0)
-              </span>
-            </div>
-            <span className="text-[11px] font-mono px-2.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-              READY FOR VERCEL PRODUCTION DEPLOY
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs">
-            <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
-              <div className="font-mono font-bold text-amber-400">GET /api/health</div>
-              <p className="text-[11px] text-slate-400">
-                Endpoint diagnostik kesiapan server & audit variabel lingkungan tanpa membocorkan kunci rahasia.
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
-              <div className="font-mono font-bold text-indigo-400">POST /api/ai-generate</div>
-              <p className="text-[11px] text-slate-400">
-                Proxy orkestrasi Gemini AI sisi server yang menjaga GEMINI_API_KEY tetap aman di belakang server Vercel.
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
-              <div className="font-mono font-bold text-emerald-400">POST /api/payment-webhook</div>
-              <p className="text-[11px] text-slate-400">
-                Verifikator SHA-512 Midtrans & Stripe sisi server dengan hak akses service_role untuk mutasi buku besar kredit.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {supabaseTestResult && (
-          <div className={`p-4 rounded-xl border text-xs flex items-center justify-between ${
-            supabaseTestResult.status === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-              : supabaseTestResult.status === 'error'
-                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                : 'bg-slate-900 border-slate-800 text-slate-300'
-          }`}>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>{supabaseTestResult.message}</span>
-            </div>
-            {supabaseTestResult.latency && (
-              <span className="font-mono text-[10px] opacity-75">{supabaseTestResult.latency}ms</span>
-            )}
-          </div>
-        )}
-
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleTestConnection}
-            disabled={testingSupabase}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-200 border border-slate-700 rounded-lg transition-colors cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${testingSupabase ? 'animate-spin' : ''}`} />
-            <span>{t.settings.testConnection}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Database Migrations List & Master Deployment Script */}
-      <div className="p-6 rounded-2xl bg-[#101726] border border-slate-800/80 shadow-xl space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <FileCode className="w-5 h-5 text-amber-400" />
-            <div>
-              <h3 className="text-sm font-bold text-white">PostgreSQL Migrations & Master Deployment Script</h3>
-              <p className="text-xs text-slate-400">Seluruh 24 tabel sistem telah memiliki skrip tunggal terintegrasi dengan Row Level Security.</p>
-            </div>
-          </div>
-          <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 whitespace-nowrap self-start sm:self-auto">
-            24 Tabel Terlindungi RLS
-          </span>
-        </div>
-
-        {/* Master Deployment Script Highlight */}
-        <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/10 via-slate-900 to-indigo-500/10 border border-amber-500/30 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Terminal className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-mono font-bold text-white">supabase/deploy_all_migrations.sql</span>
-              <span className="text-[10px] bg-amber-400/20 text-amber-300 font-mono px-2 py-0.5 rounded">1,433 Baris SQL Master V3.2 (24 Tabel + 2 Storage Buckets)</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText('supabase/deploy_all_migrations.sql');
-                setCopiedScript(true);
-                onShowToast('Path skrip deployment disalin ke clipboard.', 'success');
-                setTimeout(() => setCopiedScript(false), 2000);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-xs font-medium text-slate-200 border border-slate-700 rounded-lg transition-all cursor-pointer shrink-0"
-            >
-              {copiedScript ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedScript ? 'Tersalin' : 'Salin Path Skrip'}</span>
-            </button>
-          </div>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            Skrip master tunggal menggabungkan seluruh Phase 1 s/d Phase 7 (tabel, foreign keys, triggers, dan kebijakan Row Level Security). Siap dieksekusi sekali jalan di <strong>Supabase SQL Editor</strong>.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
-            <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800">
-              <div className="text-amber-400 font-bold mb-0.5">Langkah 1</div>
-              <div className="text-slate-400 text-[10px]">Buka Supabase Dashboard ➔ SQL Editor</div>
-            </div>
-            <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800">
-              <div className="text-amber-400 font-bold mb-0.5">Langkah 2</div>
-              <div className="text-slate-400 text-[10px]">Tempel isi deploy_all_migrations.sql & Run</div>
-            </div>
-            <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800">
-              <div className="text-amber-400 font-bold mb-0.5">Langkah 3</div>
-              <div className="text-slate-400 text-[10px]">Salin Project URL & anon key dari API Settings</div>
-            </div>
-            <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800">
-              <div className="text-amber-400 font-bold mb-0.5">Langkah 4</div>
-              <div className="text-slate-400 text-[10px]">Set di .env.local untuk live connection</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          {MIGRATIONS_LIST.map((m, idx) => (
-            <div key={idx} className="p-3 rounded-lg bg-slate-900/60 border border-slate-800 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2.5 font-mono">
-                <span className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center text-[10px] text-amber-400">
-                  {idx + 1}
-                </span>
-                <span className="text-slate-200 font-semibold">{m.file}</span>
-              </div>
-              <span className="text-slate-400 text-[11px]">{m.desc}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Creator Profile Card */}
+      {/* 3. Account Security (Change Password) Card */}
       <div className="p-6 rounded-2xl bg-[#101726] border border-slate-800/80 shadow-xl space-y-4">
         <div className="flex items-center gap-2.5">
-          <User className="w-5 h-5 text-amber-400" />
-          <h3 className="text-sm font-bold text-white">{t.settings.profileCardTitle}</h3>
-        </div>
-        <p className="text-xs text-slate-400">{t.settings.profileCardDesc}</p>
-
-        <form onSubmit={handleSaveProfile} className="space-y-4 max-w-lg">
+          <KeyRound className="w-5 h-5 text-purple-400" />
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Nama Tampilan Kreator
-            </label>
-            <input
-              type="text"
-              required
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-amber-400"
-            />
+            <h3 className="text-sm font-bold text-white">Keamanan Akun & Kata Sandi</h3>
+            <p className="text-xs text-slate-400">Perbarui kata sandi akun Anda untuk menjaga keamanan aset studio film.</p>
           </div>
+        </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Alamat Email Studio
-            </label>
-            <input
-              type="text"
-              disabled
-              value={profile.email || 'creator@aimoviefactory.local'}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-500 font-mono cursor-not-allowed"
-            />
+        <form onSubmit={handleUpdatePassword} className="space-y-4 max-w-xl">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Kata Sandi Baru
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimal 6 karakter"
+                className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Ulangi Kata Sandi Baru
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Konfirmasi kata sandi"
+                className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 transition-colors"
+              />
+            </div>
           </div>
 
           <div className="pt-2">
             <button
               type="submit"
-              className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+              disabled={isUpdatingPassword}
+              className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-purple-600/20 cursor-pointer"
             >
-              {t.settings.saveSettings}
+              {isUpdatingPassword ? 'Memperbarui Kata Sandi...' : 'Perbarui Kata Sandi'}
             </button>
           </div>
         </form>
       </div>
+
+      {/* 4. SUPER ADMIN ONLY: Infrastructure & Developer Diagnostic Instruments */}
+      {isOwnerAdmin && (
+        <div className="rounded-2xl border-2 border-amber-500/40 bg-[#0C121E] shadow-2xl overflow-hidden">
+          {/* Admin Header Accordion Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowAdminDiagnostics(!showAdminDiagnostics)}
+            className="w-full p-5 bg-gradient-to-r from-amber-500/15 via-slate-900 to-indigo-500/10 flex items-center justify-between text-left cursor-pointer border-b border-slate-800/80"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white">Diagnostik Teknis & Infrastruktur Backend</h3>
+                  <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-400 text-slate-950 uppercase tracking-wider">
+                    Khusus Pemilik Platform
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Panel ini terproteksi RBAC dan hanya dapat diakses oleh akun Administrator (<span className="text-slate-300 font-mono">islamiahiis243@gmail.com</span>).
+                </p>
+              </div>
+            </div>
+
+            <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${showAdminDiagnostics ? 'rotate-180 text-amber-400' : ''}`} />
+          </button>
+
+          {showAdminDiagnostics && (
+            <div className="p-6 space-y-6">
+              {/* End-to-End Walkthrough Simulator Card */}
+              <div className="p-5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Zap className="w-4 h-4 text-amber-400" />
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        End-to-End Integration Walkthrough Simulator
+                      </h4>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Uji coba otomatis seluruh alur pipa produksi audiovisual dari World Building hingga Master Package Export.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleRunFullWalkthrough}
+                    disabled={isWalkthroughRunning}
+                    className="flex items-center gap-2 px-4 py-2 bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-slate-950 text-xs font-bold rounded-lg transition-all shadow-md shadow-amber-400/20 whitespace-nowrap cursor-pointer shrink-0"
+                  >
+                    <Play className={`w-3.5 h-3.5 fill-current ${isWalkthroughRunning ? 'animate-pulse' : ''}`} />
+                    <span>{isWalkthroughRunning ? 'Menguji Alur...' : 'Jalankan Walkthrough'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                  {walkthroughSteps.map((step, idx) => (
+                    <div 
+                      key={idx}
+                      className={`p-2.5 rounded-lg border transition-all text-xs ${
+                        step.status === 'completed'
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : step.status === 'running'
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 animate-pulse'
+                            : 'bg-slate-900/60 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold truncate pr-2 text-[11px]">{step.name}</span>
+                        {step.status === 'completed' && <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />}
+                        {step.status === 'running' && <RefreshCw className="w-3 h-3 text-amber-400 animate-spin shrink-0" />}
+                        {step.status === 'pending' && <span className="w-1.5 h-1.5 rounded-full bg-slate-700 shrink-0" />}
+                      </div>
+                      <p className="text-[10px] text-slate-500 line-clamp-1">{step.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Supabase Connection & Production Env Table */}
+              <div className="p-5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-emerald-400" />
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Status Koneksi Supabase & Variabel Produksi (SSOT Part 11)
+                      </h4>
+                      <p className="text-[11px] text-slate-400">Penyimpanan awan PostgreSQL, autentikasi RLS, dan verifikasi environment variables.</p>
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                      isConfigured
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                    }`}
+                  >
+                    {isConfigured ? '● Supabase Cloud Terhubung' : '○ Local Sandbox Active'}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/70">
+                  <table className="w-full text-left text-xs border-collapse font-mono text-[11px]">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 bg-slate-950">
+                        <th className="py-2 px-3">Environment Variable</th>
+                        <th className="py-2 px-3">Scope</th>
+                        <th className="py-2 px-3">Nilai</th>
+                        <th className="py-2 px-3 font-sans">Deskripsi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      <tr>
+                        <td className="py-2 px-3 font-bold text-slate-200">VITE_SUPABASE_URL</td>
+                        <td className="py-2 px-3 text-slate-400">Browser</td>
+                        <td className="py-2 px-3 text-emerald-400">{supabaseUrl || 'Fallback'}</td>
+                        <td className="py-2 px-3 text-slate-400 font-sans text-[11px]">Endpoint REST API Supabase</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-bold text-slate-200">VITE_SUPABASE_ANON_KEY</td>
+                        <td className="py-2 px-3 text-slate-400">Browser</td>
+                        <td className="py-2 px-3 text-emerald-400">•••••••• Terkonfigurasi (JWT)</td>
+                        <td className="py-2 px-3 text-slate-400 font-sans text-[11px]">Public publishable key dengan proteksi RLS</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-bold text-slate-200">GEMINI_API_KEY</td>
+                        <td className="py-2 px-3 text-slate-400">Server</td>
+                        <td className="py-2 px-3 text-emerald-400">Server-Only (/api/ai-generate)</td>
+                        <td className="py-2 px-3 text-slate-400 font-sans text-[11px]">Generasi gambar, video Veo, suara TTS & naskah</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-bold text-slate-200">SUPABASE_SECRET_KEY</td>
+                        <td className="py-2 px-3 text-slate-400">Server</td>
+                        <td className="py-2 px-3 text-emerald-400">Server-Only (/api/payment-webhook)</td>
+                        <td className="py-2 px-3 text-slate-400 font-sans text-[11px]">Otorisasi service_role webhook pembayaran</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={testingSupabase}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-200 border border-slate-700 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${testingSupabase ? 'animate-spin' : ''}`} />
+                    <span>Uji Koneksi Supabase Real-Time</span>
+                  </button>
+
+                  {supabaseTestResult && (
+                    <span className="text-[11px] font-mono text-emerald-400">
+                      {supabaseTestResult.message}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* PostgreSQL Migrations List & Master Deployment Script */}
+              <div className="p-5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileCode className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        PostgreSQL Migrations & Master Deployment Script
+                      </h4>
+                      <p className="text-[11px] text-slate-400">Skrip migrasi database DDL yang terpasang di Supabase.</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    24 Tabel Terlindungi RLS
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-mono text-xs">
+                    <Terminal className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-white font-semibold">supabase/deploy_all_migrations.sql</span>
+                    <span className="text-[10px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded">V3.3 Hybrid RBAC+ABAC</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText('supabase/deploy_all_migrations.sql');
+                      setCopiedScript(true);
+                      onShowToast('Path skrip deployment disalin ke clipboard.', 'success');
+                      setTimeout(() => setCopiedScript(false), 2000);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 rounded transition-all cursor-pointer"
+                  >
+                    {copiedScript ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedScript ? 'Tersalin' : 'Salin Path'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

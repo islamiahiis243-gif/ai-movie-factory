@@ -42,6 +42,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Brand Hygiene & Privacy Protection:**
   - Removed all personal name references from public landing page footer, FAQ, and payment badges. Footer standardized to corporate format: `© 2026 AI Movie Factory. Seluruh Hak Cipta Dilindungi Undang-Undang. All Rights Reserved.`
   - Removed technical software version badges from public announcement banner, relocating the build identifier subtly to `Sidebar.tsx` footer (`AMF Engine • v3.3.0 (Production)`).
+- **Settings Page UX Cleanup & Developer Diagnostics Protection (`src/components/settings/SettingsView.tsx`):**
+  - Streamlined studio settings for ordinary creators into 3 intuitive cards: **Profil Kreator Studio**, **Bahasa & Mata Uang**, and **Keamanan Akun & Kata Sandi** (integrated with `supabase.auth.updateUser`).
+  - Restricted technical developer panels (Supabase connection parameters, secret environment variables audit, PostgreSQL migration scripts, and the End-to-End Walkthrough Simulator) strictly to Super Admins (`isPlatformAdmin` / `islamiahiis243@gmail.com`) inside a collapsible diagnostic console.
 
 ### Fixed
 - **Purged Ghost/Orphan Draft Orders in PostgreSQL:**
