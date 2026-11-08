@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Film, User, Globe, LogIn, LogOut, Database, ShieldAlert, Sparkles, ArrowRight } from 'lucide-react';
 import { LanguageCode, CurrencyCode } from '../../types/database';
 import { REGIONAL_CURRENCIES } from '../../lib/multilingualAdapters';
+import amfEmblem from '../../assets/branding/amf-emblem.png';
 
 interface NavbarProps {
   onOpenAuth: () => void;
@@ -39,11 +40,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         className="flex items-center gap-2.5 text-left transition-opacity hover:opacity-90 shrink-0 cursor-pointer group"
         title="AI Movie Factory (AMF)"
       >
-        <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-700/80 flex items-center justify-center overflow-hidden shadow-lg group-hover:border-cyan-400/60 transition-colors">
+        <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-700/80 flex items-center justify-center overflow-hidden shadow-lg group-hover:border-cyan-400/60 transition-colors p-0.5">
           <img
-            src="/assets/branding/amf-emblem.png"
+            src={amfEmblem}
             alt="AMF Logo"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
           />
         </div>
         <div className="flex flex-col">

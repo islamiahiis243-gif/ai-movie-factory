@@ -36,6 +36,8 @@ import {
 import { SUBSCRIPTION_PLANS } from '../../lib/billingEngine';
 import { useAuth } from '../../context/AuthContext';
 import { convertPrice } from '../../lib/multilingualAdapters';
+import amfLogoMaster from '../../assets/branding/amf-logo-master.png';
+import amfEmblem from '../../assets/branding/amf-emblem.png';
 
 interface LandingPageViewProps {
   onEnterStudio: () => void;
@@ -175,7 +177,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500/20 via-purple-500/20 to-amber-500/20 rounded-3xl blur-2xl opacity-75 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
           <div className="relative rounded-2xl border border-slate-800/80 bg-slate-950/70 p-3 sm:p-5 backdrop-blur-xl shadow-2xl max-w-xl mx-auto">
             <img
-              src="/assets/branding/amf-logo-master.png"
+              src={amfLogoMaster}
               alt="AI Movie Factory Official Branding"
               className="w-full h-auto object-contain rounded-xl max-h-52 sm:max-h-64 drop-shadow-[0_0_35px_rgba(56,189,248,0.25)]"
             />
@@ -785,7 +787,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
           <div className="flex items-center gap-3">
             <img
-              src="/assets/branding/amf-emblem.png"
+              src={amfEmblem}
               alt="AI Movie Factory Icon"
               className="w-8 h-8 object-contain rounded-md"
             />
