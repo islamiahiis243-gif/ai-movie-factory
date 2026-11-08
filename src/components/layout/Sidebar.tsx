@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   Clock,
   Scissors,
+  Globe,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -37,6 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     {
       group: t.nav.overview,
       items: [
+        { id: 'landing', label: 'Beranda / Showcase', icon: Globe, status: 'active' },
         { id: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard, status: 'active' },
         ...(isOwnerAdmin
           ? [{ id: 'admin_panel', label: 'Konsol Pemilik (Admin)', icon: ShieldCheck, status: 'active' }]

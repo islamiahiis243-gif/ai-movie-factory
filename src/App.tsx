@@ -75,6 +75,9 @@ const WorkspaceView = lazy(() =>
 const MarketplaceView = lazy(() =>
   import('./components/marketplace/MarketplaceView').then((m) => ({ default: m.MarketplaceView }))
 );
+const LandingPageView = lazy(() =>
+  import('./components/landing/LandingPageView').then((m) => ({ default: m.LandingPageView }))
+);
 const ModulePlaceholderView = lazy(() =>
   import('./components/studio/ModulePlaceholderView').then((m) => ({
     default: m.ModulePlaceholderView,
@@ -84,8 +87,22 @@ const ModulePlaceholderView = lazy(() =>
 function StudioApp() {
   const { user, profile, isConfigured, language, t } = useAuth();
 
-  // Navigation tab state
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // Navigation tab state: unauthenticated visitors default to landing page
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.replace('#', '');
+      if (['landing', 'dashboard', 'projects', 'subscription'].includes(hash)) {
+        return hash;
+      }
+    }
+    try {
+      const hasSession = localStorage.getItem('sb-jixfakvbhugpypjtyshq-auth-token');
+      if (hasSession) return 'dashboard';
+    } catch {
+      // fallback to landing
+    }
+    return 'landing';
+  });
 
   // Projects data state
   const [projects, setProjects] = useState<Project[]>([]);
@@ -266,10 +283,12 @@ function StudioApp() {
 
       {/* Main Studio Body with Sidebar & Content Canvas */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Navigation Sidebar */}
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        {/* Navigation Sidebar: displayed on studio modules, hidden on full-width landing page */}
+        {activeTab !== 'landing' && (
+          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        )}
 
-        {/* Dynamic Studio Canvas */}
+        {/* Dynamic Studio Canvas or Full-Width Landing Page */}
         <main className="flex-1 overflow-y-auto bg-[#0B0F17] relative">
           <Suspense
             fallback={
@@ -281,6 +300,16 @@ function StudioApp() {
               </div>
             }
           >
+          {activeTab === 'landing' && (
+            <LandingPageView
+              onEnterStudio={() => setActiveTab('dashboard')}
+              onOpenAuth={() => setIsAuthModalOpen(true)}
+              onOpenSubscriptionModal={(packageId) => {
+                setActiveTab('subscription');
+              }}
+            />
+          )}
+
           {activeTab === 'dashboard' && (
             <DashboardView
               projects={projects}
@@ -525,7 +554,8 @@ function StudioApp() {
             activeTab !== 'subscription' &&
             activeTab !== 'credits_usage' &&
             activeTab !== 'admin_panel' &&
-            activeTab !== 'settings' && (
+            activeTab !== 'settings' &&
+            activeTab !== 'landing' && (
               <ModulePlaceholderView
                 moduleId={activeTab}
                 projects={projects}
@@ -564,7 +594,10 @@ function StudioApp() {
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onSuccess={(msg) => addToast(msg, 'success')}
+        onSuccess={(msg) => {
+          addToast(msg, 'success');
+          setActiveTab('dashboard');
+        }}
       />
 
       {/* Toast Notification Container */}

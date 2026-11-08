@@ -32,25 +32,43 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="h-16 border-b border-slate-800/80 bg-[#0B0F17]/95 backdrop-blur-md sticky top-0 z-40 px-6 flex items-center justify-between gap-8">
-      {/* Zone 1: Single text element wordmark in display face */}
+      {/* Zone 1: Single text element wordmark in display face with AMF Logo */}
       <button 
-        onClick={() => setActiveTab('dashboard')} 
-        className="flex items-center gap-2.5 text-left transition-opacity hover:opacity-90 shrink-0 cursor-pointer"
+        onClick={() => setActiveTab(user ? 'dashboard' : 'landing')} 
+        className="flex items-center gap-2.5 text-left transition-opacity hover:opacity-90 shrink-0 cursor-pointer group"
+        title="AI Movie Factory (AMF) - Home"
       >
-        <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-          <Film className="w-4 h-4" />
+        <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-700/80 flex items-center justify-center overflow-hidden shadow-lg group-hover:border-cyan-400/60 transition-colors">
+          <img
+            src="/assets/branding/amf-emblem.png"
+            alt="AMF Logo"
+            className="w-full h-full object-cover"
+          />
         </div>
-        <span className="text-base font-bold tracking-tight text-white whitespace-nowrap shrink-0">
-          AI MOVIE FACTORY
-        </span>
+        <div className="flex flex-col">
+          <span className="text-sm font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 via-purple-300 to-amber-300 bg-clip-text text-transparent whitespace-nowrap">
+            AI MOVIE FACTORY
+          </span>
+          <span className="text-[9px] font-mono tracking-widest text-slate-400 uppercase">
+            AMF Hollywood AI Studio
+          </span>
+        </div>
       </button>
 
       {/* Zone 2: 4-5 clean single-line navigation links */}
       <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
         <button
+          onClick={() => setActiveTab('landing')}
+          className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
+            activeTab === 'landing' ? 'text-cyan-400 font-semibold' : 'text-slate-400'
+          }`}
+        >
+          Beranda
+        </button>
+        <button
           onClick={() => setActiveTab('dashboard')}
           className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
-            activeTab === 'dashboard' ? 'text-amber-400' : 'text-slate-400'
+            activeTab === 'dashboard' ? 'text-amber-400 font-semibold' : 'text-slate-400'
           }`}
         >
           {t.nav.dashboard}
