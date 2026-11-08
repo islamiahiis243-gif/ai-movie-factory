@@ -28,13 +28,19 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
-  const { t, isConfigured } = useAuth();
+  const { user, profile, t, isConfigured } = useAuth();
+  const isOwnerAdmin =
+    profile?.role === 'admin' ||
+    String(user?.email || profile?.email || '').toLowerCase() === 'islamiahiis243@gmail.com';
 
   const navGroups = [
     {
       group: t.nav.overview,
       items: [
         { id: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard, status: 'active' },
+        ...(isOwnerAdmin
+          ? [{ id: 'admin_panel', label: 'Konsol Pemilik (Admin)', icon: ShieldCheck, status: 'active' }]
+          : []),
       ],
     },
     {
@@ -70,7 +76,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       group: t.nav.system,
       items: [
         { id: 'settings', label: t.nav.settings, icon: Settings, status: 'active' },
-        { id: 'admin_panel', label: t.nav.adminPanel, icon: ShieldCheck, status: 'active' },
+        ...(isOwnerAdmin
+          ? [{ id: 'admin_panel', label: t.nav.adminPanel || 'Admin Panel', icon: ShieldCheck, status: 'active' }]
+          : []),
       ],
     },
   ];

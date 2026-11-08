@@ -26,6 +26,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNewProject,
 }) => {
   const { user, profile, language, setLanguage, currency, setCurrency, t, isConfigured, signOut } = useAuth();
+  const isOwnerAdmin =
+    profile?.role === 'admin' ||
+    String(user?.email || profile?.email || '').toLowerCase() === 'islamiahiis243@gmail.com';
 
   return (
     <header className="h-16 border-b border-slate-800/80 bg-[#0B0F17]/95 backdrop-blur-md sticky top-0 z-40 px-6 flex items-center justify-between gap-8">
@@ -146,6 +149,20 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* User Account / Auth button */}
         {user ? (
           <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
+            {isOwnerAdmin && (
+              <button
+                onClick={() => setActiveTab('admin_panel')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-semibold rounded transition-colors cursor-pointer ${
+                  activeTab === 'admin_panel'
+                    ? 'bg-amber-400 text-slate-950 font-bold'
+                    : 'bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20'
+                }`}
+                title="Buka Konsol Pemilik / Admin"
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>Admin Konsol</span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('settings')}
               className="flex items-center gap-2 text-xs text-slate-300 hover:text-white transition-colors cursor-pointer"

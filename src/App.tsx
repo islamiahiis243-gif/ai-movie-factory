@@ -497,7 +497,7 @@ function StudioApp() {
           {activeTab === 'admin_panel' && (
             <div className="p-6">
               <AdminDashboardView
-                currentUserId={profile?.id || 'demo_user'}
+                currentUserId={user?.id || profile?.id || 'demo_user'}
                 onShowToast={addToast}
                 language={language === 'id' ? 'id' : 'en'}
                 t={t}
