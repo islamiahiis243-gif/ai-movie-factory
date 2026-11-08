@@ -141,79 +141,46 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
           }
         }
 
-        // Initialize default high-fidelity clips based on project assets or demo template
-        const initialClips: TimelineClip[] = [
-          {
-            id: 'clip-vid-1',
-            track: 'video',
-            title: 'Shot 1: Puncak Awan Gunung Tian (Opening Establishing)',
-            start_time: 0,
-            duration: 8,
-            source_url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&q=80',
-            transition_in: 'fade_black',
-            transition_duration: 1.5,
-          },
-          {
-            id: 'clip-vid-2',
-            track: 'video',
-            title: 'Shot 2: Lin Yan Menghunus Pedang Langit (Close-Up)',
-            start_time: 8,
-            duration: 10,
-            source_url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=1200&q=80',
-            transition_in: 'cross_dissolve',
-            transition_duration: 1.0,
-          },
-          {
-            id: 'clip-vid-3',
-            track: 'video',
-            title: 'Shot 3: Duel Aura Spiritual di Jurang Abadi',
-            start_time: 18,
-            duration: 12,
-            source_url: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1200&q=80',
-            transition_in: 'cross_dissolve',
-            transition_duration: 1.0,
-          },
-          // Voice Track
-          {
-            id: 'clip-voice-1',
-            track: 'voice',
-            title: 'Lin Yan: "Langit boleh runtuh, tapi pedangku tak akan gentar!"',
-            start_time: 3,
-            duration: 6,
-            speaker: 'Lin Yan',
-            volume: 1.0,
-            text_overlay: 'Lin Yan: "Langit boleh runtuh, tapi pedangku tak akan gentar!"',
-          },
-          {
-            id: 'clip-voice-2',
-            track: 'voice',
-            title: 'Master Xuan: "Ingat ajaran leluhur, kendalikan Qi dalam jiwamu."',
-            start_time: 11,
-            duration: 5,
-            speaker: 'Master Xuan',
-            volume: 0.95,
-            text_overlay: 'Master Xuan: "Ingat ajaran leluhur, kendalikan Qi dalam jiwamu."',
-          },
-          // Music Track
-          {
-            id: 'clip-bgm-1',
-            track: 'music',
-            title: 'BGM: Xianxia Ethereal Symphony - Guqin & Erhu Surge',
-            start_time: 0,
-            duration: 30,
-            volume: 0.45,
-          },
-          // SFX Track
-          {
-            id: 'clip-sfx-1',
-            track: 'sfx',
-            title: 'SFX: Suara Pedang Berdenting Tajam & Ledakan Energi',
-            start_time: 8.5,
-            duration: 3.5,
-            volume: 0.8,
-          },
-        ];
-        setClips(initialClips);
+        // Build initial timeline clips strictly from actual project assets (0 dummy clips)
+        const realAssets = assetRes.data || [];
+        let cursor = 0;
+        const derivedClips: TimelineClip[] = [];
+        for (const asset of realAssets) {
+          if (asset.asset_type === 'video' || asset.asset_type === 'image') {
+            const dur = asset.generation_params?.duration_seconds || 6;
+            derivedClips.push({
+              id: `clip-${asset.id}`,
+              track: 'video',
+              title: asset.asset_name,
+              start_time: cursor,
+              duration: dur,
+              source_url: asset.file_url,
+              transition_in: cursor === 0 ? 'fade_black' : 'cross_dissolve',
+              transition_duration: 1.0,
+            });
+            cursor += dur;
+          } else if (asset.asset_type === 'voice') {
+            derivedClips.push({
+              id: `clip-${asset.id}`,
+              track: 'voice',
+              title: asset.asset_name,
+              start_time: 0,
+              duration: asset.generation_params?.duration_seconds || 5,
+              volume: 1.0,
+              text_overlay: asset.prompt,
+            });
+          } else if (asset.asset_type === 'audio') {
+            derivedClips.push({
+              id: `clip-${asset.id}`,
+              track: asset.subtype === 'sound_effect' ? 'sfx' : 'music',
+              title: asset.asset_name,
+              start_time: 0,
+              duration: asset.generation_params?.duration_seconds || 15,
+              volume: 0.6,
+            });
+          }
+        }
+        setClips(derivedClips);
       } catch (err) {
         console.warn('Error loading editing post data:', err);
       } finally {

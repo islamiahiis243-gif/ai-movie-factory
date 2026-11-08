@@ -128,6 +128,11 @@ function StudioApp() {
 
   // Project Actions
   const handleOpenCreateModal = () => {
+    if (isConfigured && !user) {
+      addToast('Silakan Masuk atau Daftar Akun untuk membuat dan menyimpan proyek di Cloud Studio.', 'info');
+      setIsAuthModalOpen(true);
+      return;
+    }
     setEditingProject(null);
     setIsProjectModalOpen(true);
   };

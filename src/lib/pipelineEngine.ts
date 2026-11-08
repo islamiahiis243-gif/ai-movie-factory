@@ -203,25 +203,7 @@ export function generateSubtitles(
   const dialogueBlocks = blocks.filter(b => b.type === 'dialogue');
 
   if (dialogueBlocks.length === 0) {
-    // Generate sample dialogue if none exist
-    const defaultLines = [
-      { speaker: 'Xiao Chen', text: 'Sekte Azure Dragon tidak akan pernah tunduk pada tirani Gunung Darah!', start: '00:00:01,200', end: '00:00:05,400', vtStart: '00:00:01.200', vtEnd: '00:00:05.400' },
-      { speaker: 'Tetua Gu', text: 'Anak muda, kau baru saja melangkah ke Alam Inti Emas. Jangan sombong!', start: '00:00:06,100', end: '00:00:10,800', vtStart: '00:00:06.100', vtEnd: '00:00:10.800' },
-      { speaker: 'Xiao Chen', text: 'Pedang Bintang Sembilan akan membuktikannya dalam duel ini!', start: '00:00:11,500', end: '00:00:15,000', vtStart: '00:00:11.500', vtEnd: '00:00:15.000' }
-    ];
-
-    if (format === 'vtt') {
-      return (
-        'WEBVTT\n\n' +
-        defaultLines
-          .map((line, idx) => `${idx + 1}\n${line.vtStart} --> ${line.vtEnd}\n<v ${line.speaker}>${line.speaker}: ${line.text}\n`)
-          .join('\n')
-      );
-    }
-
-    return defaultLines
-      .map((line, idx) => `${idx + 1}\n${line.start} --> ${line.end}\n${line.speaker}: ${line.text}\n`)
-      .join('\n');
+    return format === 'vtt' ? 'WEBVTT\n\n' : '';
   }
 
   // Format blocks
@@ -268,205 +250,15 @@ export function generateSubtitles(
 }
 
 /**
- * Returns initial demo pipeline jobs for a project
+ * Returns initial pipeline jobs for a project (0 dummy jobs in production)
  */
-export function getInitialPipelineJobs(projectId: string): PipelineJob[] {
-  const now = new Date();
-  const pastTime = (minsAgo: number) => new Date(now.getTime() - minsAgo * 60000).toISOString();
-
-  return [
-    {
-      id: 'job_001_puncak',
-      project_id: projectId,
-      job_title: 'Adegan 1: Puncak Tebing Naga (Full Render Pipeline)',
-      current_stage: 'export_ready',
-      status: 'completed',
-      priority: 'high',
-      progress: 100,
-      stages_completed: [
-        'script_prep',
-        'image_gen',
-        'video_gen',
-        'voice_audio',
-        'qc_audit',
-        'user_approval',
-        'final_assembly',
-        'export_ready'
-      ],
-      qc_report: {
-        id: 'qc_001',
-        overall_score: 95,
-        status: 'passed',
-        summary: 'Kualitas cinematic memenuhi standar siaran. Karakter Xiao Chen konsisten dengan variasi seed <2%.',
-        audited_at: pastTime(15),
-        audited_by_agent: 'AI Master QC Supervisor (Agent 10)',
-        checks: [
-          {
-            id: 'c1',
-            check_name: 'Visual Character Consistency',
-            category: 'visual_continuity',
-            status: 'passed',
-            score: 96,
-            details: 'Xiao Chen facial mesh matching 98% across 6 keyframes.'
-          },
-          {
-            id: 'c2',
-            check_name: 'Lip Sync & Audio Timing',
-            category: 'audio_sync',
-            status: 'passed',
-            score: 94,
-            details: 'Voice waveform aligned with visual utterance timestamps.'
-          },
-          {
-            id: 'c3',
-            check_name: 'Cultivation Codex Aura Match',
-            category: 'narrative_lore',
-            status: 'passed',
-            score: 98,
-            details: 'Azure Dragon Qi aura correctly rendered in cyan-blue luminescence.'
-          },
-          {
-            id: 'c4',
-            check_name: 'Audio Loudness Standard (-14 LUFS)',
-            category: 'technical_specs',
-            status: 'passed',
-            score: 93,
-            details: 'Integrated loudness measured at -14.1 LUFS.'
-          }
-        ]
-      },
-      generated_asset_ids: ['asset_scene_1_video', 'asset_scene_1_voice'],
-      credit_cost: 23,
-      is_approved: true,
-      approved_by: 'Director Master',
-      approved_at: pastTime(10),
-      started_at: pastTime(35),
-      completed_at: pastTime(8),
-      created_at: pastTime(40),
-      updated_at: pastTime(8)
-    },
-    {
-      id: 'job_002_perpustakaan',
-      project_id: projectId,
-      job_title: 'Adegan 2: Paviliun Kitab Terlarang (QC Inspection)',
-      current_stage: 'user_approval',
-      status: 'awaiting_approval',
-      priority: 'urgent',
-      progress: 75,
-      stages_completed: ['script_prep', 'image_gen', 'video_gen', 'voice_audio', 'qc_audit'],
-      qc_report: {
-        id: 'qc_002',
-        overall_score: 87,
-        status: 'warning',
-        summary: 'Peringatan: Pencahayaan lilin di sudut rak buku berkedip dengan sedikit deviasi warna pada detik 03:12.',
-        audited_at: pastTime(5),
-        audited_by_agent: 'AI Master QC Supervisor (Agent 10)',
-        checks: [
-          {
-            id: 'c21',
-            check_name: 'Visual Continuity (Library Ambience)',
-            category: 'visual_continuity',
-            status: 'warning',
-            score: 82,
-            details: 'Lentera mistis mengalami pergeseran hue ke arah kuning tua pada potongan frame 48-52.',
-            recommendation: 'Sutradara dapat menyetujui langsung atau meminta regenerasi filter warna.'
-          },
-          {
-            id: 'c22',
-            check_name: 'Dialogue Pacing (Tetua Gu Whisper)',
-            category: 'audio_sync',
-            status: 'passed',
-            score: 91,
-            details: 'Bisikan Tetua Gu terdengar jelas dan sinkron dengan pergerakan bibir silhouette.'
-          },
-          {
-            id: 'c23',
-            check_name: 'Forbidden Scroll Seals (Lore)',
-            category: 'narrative_lore',
-            status: 'passed',
-            score: 95,
-            details: 'Segel Talisman kuno akurat dengan naskah Bab 1.'
-          }
-        ]
-      },
-      generated_asset_ids: ['asset_scene_2_draft'],
-      credit_cost: 20,
-      is_approved: false,
-      started_at: pastTime(18),
-      created_at: pastTime(20),
-      updated_at: pastTime(5)
-    },
-    {
-      id: 'job_003_pertarungan',
-      project_id: projectId,
-      job_title: 'Adegan 3: Duel di Lembah Kabut (In Progress)',
-      current_stage: 'video_gen',
-      status: 'running',
-      priority: 'high',
-      progress: 42,
-      stages_completed: ['script_prep', 'image_gen'],
-      generated_asset_ids: [],
-      credit_cost: 23,
-      is_approved: false,
-      started_at: pastTime(3),
-      created_at: pastTime(4),
-      updated_at: pastTime(1)
-    },
-    {
-      id: 'job_004_aula_utama',
-      project_id: projectId,
-      job_title: 'Adegan 4: Sidang Tetua Sekte (Scheduled)',
-      current_stage: 'script_prep',
-      status: 'queued',
-      priority: 'normal',
-      progress: 0,
-      stages_completed: [],
-      generated_asset_ids: [],
-      credit_cost: 23,
-      is_approved: false,
-      started_at: pastTime(1),
-      created_at: pastTime(1),
-      updated_at: pastTime(1)
-    }
-  ];
+export function getInitialPipelineJobs(_projectId: string): PipelineJob[] {
+  return [];
 }
 
 /**
- * Returns initial export packages for demo
+ * Returns initial export packages (0 dummy export packages in production)
  */
-export function getInitialExportPackages(projectId: string): ExportPackage[] {
-  return [
-    {
-      id: 'pkg_001_mp4',
-      project_id: projectId,
-      package_title: 'Episode 1: Kebangkitan Sang Pengembara - Master 1080p',
-      format: 'mp4',
-      resolution: '1080p',
-      framerate: '24fps',
-      audio_channels: 'Stereo 2.0',
-      include_subtitles: true,
-      subtitle_format: 'srt',
-      subtitles_content:
-        '1\n00:00:01,000 --> 00:00:04,500\nXiao Chen: Sekte Azure Dragon tak akan pernah tunduk!\n\n2\n00:00:05,000 --> 00:00:09,200\nTetua Gu: Bertahanlah sampai gerbang langit terbuka.',
-      file_url: 'https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
-      file_size_mb: 84.5,
-      status: 'ready',
-      created_at: new Date(Date.now() - 3600000).toISOString()
-    },
-    {
-      id: 'pkg_002_prores',
-      project_id: projectId,
-      package_title: 'Episode 1 - Archival ProRes 422 Studio Master',
-      format: 'prores',
-      resolution: '4K',
-      framerate: '24fps',
-      audio_channels: 'Surround 5.1',
-      include_subtitles: true,
-      subtitle_format: 'vtt',
-      file_url: 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-      file_size_mb: 482.0,
-      status: 'ready',
-      created_at: new Date(Date.now() - 7200000).toISOString()
-    }
-  ];
+export function getInitialExportPackages(_projectId: string): ExportPackage[] {
+  return [];
 }

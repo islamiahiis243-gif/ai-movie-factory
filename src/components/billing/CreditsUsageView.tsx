@@ -130,7 +130,7 @@ export const CreditsUsageView: React.FC<CreditsUsageViewProps> = ({
   };
 
   // Metrics
-  const currentBalance = transactions.length > 0 ? transactions[0].balance_after : 4500;
+  const currentBalance = transactions.length > 0 ? transactions[0].balance_after : 150;
   const usageTxs = transactions.filter(t => t.transaction_type === 'usage');
   const totalConsumed = Math.abs(usageTxs.reduce((sum, t) => sum + t.amount, 0));
   const totalRefunded = transactions
@@ -556,9 +556,9 @@ export const CreditsUsageView: React.FC<CreditsUsageViewProps> = ({
           onClose={() => setIsPaymentModalOpen(false)}
           userId={userId}
           item={{
-            type: 'credit_pack',
+            type: 'topup_credits',
             id: selectedPack.id,
-            name: `${selectedPack.name} (${selectedPack.credits.toLocaleString()} Kredit)`,
+            name: selectedPack.name,
             priceIdr: selectedPack.priceIdr,
             credits: selectedPack.credits + selectedPack.bonusCredits
           }}

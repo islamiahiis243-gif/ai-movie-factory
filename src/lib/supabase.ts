@@ -105,11 +105,31 @@ export function isValidUUID(str?: string | null): boolean {
   return uuidRegex.test(str);
 }
 
-// Local fallback storage keys for disconnected preview mode
-const LOCAL_STORAGE_PROJECTS_KEY = 'ai_movie_factory_projects_v1';
-const LOCAL_STORAGE_PROFILE_KEY = 'ai_movie_factory_profile_v1';
-const LOCAL_STORAGE_WORLD_BIBLES_KEY = 'ai_movie_factory_world_bibles_v1';
-const LOCAL_STORAGE_CHARACTERS_KEY = 'ai_movie_factory_characters_v1';
+// Clean up any legacy v1 demo localStorage keys on startup so production always starts with 0 dummy data
+if (typeof window !== 'undefined') {
+  try {
+    const legacyCleanupDone = localStorage.getItem('ai_movie_factory_v2_prod_cleaned');
+    if (!legacyCleanupDone) {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('ai_movie_factory_') && !k.includes('_v2_prod')) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem('ai_movie_factory_v2_prod_cleaned', 'true');
+    }
+  } catch {
+    // ignore storage access issues
+  }
+}
+
+// Local storage keys (v2_prod: 0 pre-seeded dummy items)
+const LOCAL_STORAGE_PROJECTS_KEY = 'ai_movie_factory_projects_v2_prod';
+const LOCAL_STORAGE_PROFILE_KEY = 'ai_movie_factory_profile_v2_prod';
+const LOCAL_STORAGE_WORLD_BIBLES_KEY = 'ai_movie_factory_world_bibles_v2_prod';
+const LOCAL_STORAGE_CHARACTERS_KEY = 'ai_movie_factory_characters_v2_prod';
 
 export function getLocalProjects(): Project[] {
   try {
@@ -214,11 +234,11 @@ export function saveLocalCharacters(characters: Character[]) {
   }
 }
 
-const LOCAL_STORAGE_STORY_CONCEPTS_KEY = 'ai_movie_factory_story_concepts_v1';
-const LOCAL_STORAGE_SEASONS_KEY = 'ai_movie_factory_seasons_v1';
-const LOCAL_STORAGE_EPISODES_KEY = 'ai_movie_factory_episodes_v1';
-const LOCAL_STORAGE_SCENES_KEY = 'ai_movie_factory_scenes_v1';
-const LOCAL_STORAGE_SCRIPT_VERSIONS_KEY = 'ai_movie_factory_script_versions_v1';
+const LOCAL_STORAGE_STORY_CONCEPTS_KEY = 'ai_movie_factory_story_concepts_v2_prod';
+const LOCAL_STORAGE_SEASONS_KEY = 'ai_movie_factory_seasons_v2_prod';
+const LOCAL_STORAGE_EPISODES_KEY = 'ai_movie_factory_episodes_v2_prod';
+const LOCAL_STORAGE_SCENES_KEY = 'ai_movie_factory_scenes_v2_prod';
+const LOCAL_STORAGE_SCRIPT_VERSIONS_KEY = 'ai_movie_factory_script_versions_v2_prod';
 
 export function getLocalStoryConcepts(): Record<string, StoryConcept> {
   try {
@@ -322,9 +342,9 @@ export function saveLocalScriptVersions(versions: Record<string, ScriptVersion[]
   }
 }
 
-const LOCAL_STORAGE_AGENT_CONFIGS_KEY = 'ai_movie_factory_agent_configs_v1';
-const LOCAL_STORAGE_AGENT_TASKS_KEY = 'ai_movie_factory_agent_tasks_v1';
-const LOCAL_STORAGE_AGENT_LOGS_KEY = 'ai_movie_factory_agent_logs_v1';
+const LOCAL_STORAGE_AGENT_CONFIGS_KEY = 'ai_movie_factory_agent_configs_v2_prod';
+const LOCAL_STORAGE_AGENT_TASKS_KEY = 'ai_movie_factory_agent_tasks_v2_prod';
+const LOCAL_STORAGE_AGENT_LOGS_KEY = 'ai_movie_factory_agent_logs_v2_prod';
 
 export function getLocalAgentConfigs(projectId: string): AgentProjectConfig[] {
   try {
@@ -425,27 +445,18 @@ export function saveLocalAgentLogs(projectId: string, logs: AgentExecutionLog[])
   }
 }
 
-const LOCAL_STORAGE_ASSETS_KEY = 'ai_movie_factory_media_assets_v1';
+const LOCAL_STORAGE_ASSETS_KEY = 'ai_movie_factory_media_assets_v2_prod';
 
 export function getLocalAssets(projectId: string): MediaAsset[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_ASSETS_KEY);
     if (!raw) {
-      const initial = projectId === 'demo-proj-001' ? INITIAL_DEMO_MEDIA_ASSETS : [];
-      const map: Record<string, MediaAsset[]> = { [projectId]: initial };
-      localStorage.setItem(LOCAL_STORAGE_ASSETS_KEY, JSON.stringify(map));
-      return initial;
+      return [];
     }
     const map: Record<string, MediaAsset[]> = JSON.parse(raw);
-    if (!map[projectId]) {
-      const initial = projectId === 'demo-proj-001' ? INITIAL_DEMO_MEDIA_ASSETS : [];
-      map[projectId] = initial;
-      localStorage.setItem(LOCAL_STORAGE_ASSETS_KEY, JSON.stringify(map));
-      return initial;
-    }
-    return map[projectId];
+    return map[projectId] || [];
   } catch {
-    return projectId === 'demo-proj-001' ? INITIAL_DEMO_MEDIA_ASSETS : [];
+    return [];
   }
 }
 
@@ -463,7 +474,7 @@ export function saveLocalAssets(projectId: string, assets: MediaAsset[]) {
 /**
  * Service Layer for Projects & Settings
  */
-export async function fetchProjects(userId: string): Promise<{ data: Project[]; isDemo: boolean; error: string | null }> {
+export async function fetchProjects(_userId: string): Promise<{ data: Project[]; isDemo: boolean; error: string | null }> {
   // If connected to Supabase and an active authenticated session exists
   if (isSupabaseConfigured && supabase) {
     try {
@@ -510,17 +521,8 @@ export async function fetchProjects(userId: string): Promise<{ data: Project[]; 
             is_demo: false,
           }));
 
-          // Merge local projects so any projects created in guest mode are also visible
-          const localList = getLocalProjects();
-          const combined = [...formatted];
-          for (const lp of localList) {
-            if (!combined.some(p => p.id === lp.id)) {
-              combined.push(lp);
-            }
-          }
-          return { data: combined, isDemo: combined.length === 0, error: null };
+          return { data: formatted, isDemo: false, error: null };
         } else if (projError) {
-          // Resilient fallback: direct select without joined project_settings
           console.warn('Supabase projects joined query notice, using direct select fallback:', projError.message);
           const { data: rawProjects, error: rawError } = await supabase
             .from('projects')
@@ -546,25 +548,20 @@ export async function fetchProjects(userId: string): Promise<{ data: Project[]; 
               is_demo: false,
             }));
 
-            const localList = getLocalProjects();
-            const combined = [...formatted];
-            for (const lp of localList) {
-              if (!combined.some(p => p.id === lp.id)) {
-                combined.push(lp);
-              }
-            }
-            return { data: combined, isDemo: combined.length === 0, error: null };
+            return { data: formatted, isDemo: false, error: null };
           }
         }
+      } else {
+        // Supabase is configured, but user is not signed in yet -> return 0 projects (no fake demo data)
+        return { data: [], isDemo: false, error: null };
       }
     } catch (err: any) {
       console.warn('Supabase fetchProjects exception:', err);
     }
   }
 
-  // Preview Mode or Unauthenticated Guest Mode (Local Storage)
   const localList = getLocalProjects();
-  return { data: localList, isDemo: true, error: null };
+  return { data: localList, isDemo: false, error: null };
 }
 
 export async function createProjectRecord(
@@ -1179,25 +1176,8 @@ export async function fetchSeasons(projectId: string): Promise<{ data: Season[];
     }
   }
 
-  // Local fallback
+  // Local fallback (0 auto-seeded dummy seasons)
   const all = getLocalSeasons().filter(s => s.project_id === projectId);
-  if (all.length === 0) {
-    // Check if initial demo project has default season
-    const fallbackSeason: Season = {
-      id: `season-${projectId}-s1`,
-      project_id: projectId,
-      season_number: 1,
-      title: 'Musim 1: Awal Perjalanan',
-      synopsis: 'Prolog dan babak pembuka perjalanan pahlawan.',
-      target_episodes: 12,
-      status: 'in_development',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    const updatedList = [...getLocalSeasons(), fallbackSeason];
-    saveLocalSeasons(updatedList);
-    return { data: [fallbackSeason], error: null };
-  }
   return { data: all.sort((a, b) => a.season_number - b.season_number), error: null };
 }
 
@@ -1321,28 +1301,8 @@ export async function fetchEpisodes(
     }
   }
 
-  // Local fallback
+  // Local fallback (0 auto-seeded dummy episodes)
   const all = getLocalEpisodes().filter(e => e.season_id === seasonId);
-  if (all.length === 0 && seasonId.includes('s1')) {
-    // If empty for first season, return default first episode
-    const defaultEp: Episode = {
-      id: `ep-${seasonId}-1`,
-      project_id: projectId,
-      season_id: seasonId,
-      episode_number: 1,
-      title: 'Episode 1: Titik Temu Takdir',
-      logline: 'Peristiwa awal yang memicu konflik tak terhindarkan.',
-      synopsis: 'Pengenalan tokoh dan insiden penggerak babak pertama.',
-      target_runtime_minutes: 15,
-      scene_count_target: 6,
-      status: 'draft',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    const updatedList = [...getLocalEpisodes(), defaultEp];
-    saveLocalEpisodes(updatedList);
-    return { data: [defaultEp], error: null };
-  }
   return { data: all.sort((a, b) => a.episode_number - b.episode_number), error: null };
 }
 
@@ -1364,26 +1324,8 @@ export async function fetchProjectEpisodes(
     }
   }
 
-  // Local fallback
-  const all = getLocalEpisodes().filter(e => e.project_id === projectId || !e.project_id);
-  if (all.length === 0) {
-    const defaultEp: Episode = {
-      id: `ep-${projectId}-1`,
-      project_id: projectId,
-      season_id: `season-${projectId}-1`,
-      episode_number: 1,
-      title: 'Episode 1: Kebangkitan Sang Pengembara',
-      logline: 'Peristiwa awal yang memicu konflik sekte tak terhindarkan.',
-      synopsis: 'Xiao Chen mendapati gerbang sekte hancur oleh kekuatan misterius.',
-      target_runtime_minutes: 15,
-      scene_count_target: 6,
-      status: 'in_production',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    saveLocalEpisodes([...getLocalEpisodes(), defaultEp]);
-    return { data: [defaultEp], error: null };
-  }
+  // Local fallback (0 auto-seeded dummy episodes)
+  const all = getLocalEpisodes().filter(e => e.project_id === projectId);
   return { data: all.sort((a, b) => a.episode_number - b.episode_number), error: null };
 }
 
@@ -2188,9 +2130,9 @@ export async function rejectMediaAsset(
 // PHASE 5: PRODUCTION PIPELINE, AUTONOMOUS QUEUE & EXPORT (SSOT Sections 14, 15, 40)
 // ============================================================================
 
-const LOCAL_STORAGE_PIPELINE_JOBS_PREFIX = 'ai_movie_factory_pipeline_jobs_';
-const LOCAL_STORAGE_JOB_LOGS_PREFIX = 'ai_movie_factory_pipeline_logs_';
-const LOCAL_STORAGE_EXPORT_PACKAGES_PREFIX = 'ai_movie_factory_export_packages_';
+const LOCAL_STORAGE_PIPELINE_JOBS_PREFIX = 'ai_movie_factory_pipeline_jobs_v2_prod_';
+const LOCAL_STORAGE_JOB_LOGS_PREFIX = 'ai_movie_factory_pipeline_logs_v2_prod_';
+const LOCAL_STORAGE_EXPORT_PACKAGES_PREFIX = 'ai_movie_factory_export_packages_v2_prod_';
 
 export function getLocalPipelineJobs(projectId: string): PipelineJob[] {
   try {
@@ -2487,9 +2429,33 @@ export async function createExportPackage(
 // PHASE 6: COMMERCIAL SAAS & MONETIZATION (SSOT Sections 21, 22, 23, 41)
 // ============================================================================
 
-const LOCAL_STORAGE_SUBSCRIPTION_PREFIX = 'ai_movie_factory_subscription_';
-const LOCAL_STORAGE_CREDIT_TX_PREFIX = 'ai_movie_factory_credit_tx_';
-const LOCAL_STORAGE_PAYMENT_ORDERS_PREFIX = 'ai_movie_factory_payment_orders_';
+const LOCAL_STORAGE_SUBSCRIPTION_PREFIX = 'ai_movie_factory_subscription_v2_prod_';
+const LOCAL_STORAGE_CREDIT_TX_PREFIX = 'ai_movie_factory_credit_tx_v2_prod_';
+const LOCAL_STORAGE_PAYMENT_ORDERS_PREFIX = 'ai_movie_factory_payment_orders_v2_prod_';
+
+async function callBillingServerApi(payload: Record<string, any>): Promise<any> {
+  if (!isSupabaseConfigured || !supabase) return null;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return null;
+    const response = await fetch('/api/payment-webhook', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(errBody?.error || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  } catch (err) {
+    console.warn('Server billing API notice:', err);
+    return null;
+  }
+}
 
 // Local storage helpers
 export function getLocalSubscription(userId: string): UserSubscription {
@@ -2574,7 +2540,10 @@ export async function fetchUserSubscription(
         .maybeSingle();
 
       if (error) throw error;
-      if (data) return { data, error: null };
+      if (data) {
+        saveLocalSubscription(userId, data);
+        return { data, error: null };
+      }
     } catch (err: any) {
       console.warn('Supabase fetchUserSubscription error, using local fallback:', err);
     }
@@ -2590,19 +2559,11 @@ export async function updateUserSubscription(
 ): Promise<{ success: boolean; data?: UserSubscription; error: string | null }> {
   const now = new Date().toISOString();
 
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('subscriptions')
-        .update({ ...updates, updated_at: now })
-        .eq('user_id', userId)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return { success: true, data, error: null };
-    } catch (err: any) {
-      console.warn('Supabase updateUserSubscription error, using local fallback:', err);
+  if (updates.tier === 'free') {
+    const apiRes = await callBillingServerApi({ action: 'switch_free_plan' });
+    if (apiRes?.subscription) {
+      saveLocalSubscription(userId, apiRes.subscription);
+      return { success: true, data: apiRes.subscription, error: null };
     }
   }
 
@@ -2625,7 +2586,10 @@ export async function fetchCreditTransactions(
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return { data: data || [], error: null };
+      if (data && data.length > 0) {
+        saveLocalCreditTransactions(userId, data);
+        return { data, error: null };
+      }
     } catch (err: any) {
       console.warn('Supabase fetchCreditTransactions error, using local fallback:', err);
     }
@@ -2639,9 +2603,30 @@ export async function recordCreditTransaction(
   userId: string,
   txData: Omit<CreditTransaction, 'id' | 'user_id' | 'created_at' | 'balance_after'>
 ): Promise<{ data: CreditTransaction | null; error: string | null }> {
+  if (txData.transaction_type === 'usage') {
+    const apiRes = await callBillingServerApi({
+      action: 'record_usage',
+      amount: Math.abs(txData.amount),
+      project_id: txData.project_id,
+      job_id: txData.job_id,
+      provider: txData.provider,
+      model: txData.model,
+      operation: txData.operation,
+      estimated_cost_usd: txData.estimated_cost_usd,
+      actual_cost_usd: txData.actual_cost_usd,
+      description: txData.description,
+      idempotency_key: txData.idempotency_key
+    });
+    if (apiRes?.transaction) {
+      const currentTxs = getLocalCreditTransactions(userId);
+      saveLocalCreditTransactions(userId, [apiRes.transaction, ...currentTxs]);
+      return { data: apiRes.transaction, error: null };
+    }
+  }
+
   const currentTxs = getLocalCreditTransactions(userId);
-  const latestBalance = currentTxs.length > 0 ? currentTxs[0].balance_after : 1000;
-  const newBalance = latestBalance + txData.amount;
+  const latestBalance = currentTxs.length > 0 ? currentTxs[0].balance_after : 150;
+  const newBalance = Math.max(0, latestBalance + txData.amount);
 
   const newTx: CreditTransaction = {
     ...txData,
@@ -2650,21 +2635,6 @@ export async function recordCreditTransaction(
     balance_after: newBalance,
     created_at: new Date().toISOString()
   };
-
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('credit_transactions')
-        .insert(newTx)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return { data, error: null };
-    } catch (err: any) {
-      console.warn('Supabase recordCreditTransaction error, using local fallback:', err);
-    }
-  }
 
   const updated = [newTx, ...currentTxs];
   saveLocalCreditTransactions(userId, updated);
@@ -2676,6 +2646,17 @@ export async function refundCreditTransaction(
   txId: string,
   reason: string = 'Kompensasi audit teknis / kegagalan render'
 ): Promise<{ success: boolean; error: string | null }> {
+  const apiRes = await callBillingServerApi({
+    action: 'refund_tx',
+    tx_id: txId,
+    reason
+  });
+  if (apiRes?.transaction) {
+    const currentTxs = getLocalCreditTransactions(userId);
+    saveLocalCreditTransactions(userId, [apiRes.transaction, ...currentTxs]);
+    return { success: true, error: null };
+  }
+
   const txs = getLocalCreditTransactions(userId);
   const target = txs.find(t => t.id === txId);
   if (!target || target.transaction_type !== 'usage') {
@@ -2717,7 +2698,10 @@ export async function fetchPaymentOrders(
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return { data: data || [], error: null };
+      if (data) {
+        saveLocalPaymentOrders(userId, data);
+        return { data, error: null };
+      }
     } catch (err: any) {
       console.warn('Supabase fetchPaymentOrders error, using local fallback:', err);
     }
@@ -2733,27 +2717,47 @@ export async function createPaymentOrder(
 ): Promise<{ data: PaymentOrder | null; error: string | null }> {
   const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ord-${Date.now()}`;
   const now = new Date().toISOString();
+  const canonicalPackageType =
+    orderData.package_type === 'credit_pack' ? 'topup_credits' : orderData.package_type;
 
   const newOrder: PaymentOrder = {
     ...orderData,
+    package_type: canonicalPackageType,
     id: newId,
     user_id: userId,
     status: 'pending',
     created_at: now
   };
 
-  if (isSupabaseConfigured && supabase) {
+  if (isSupabaseConfigured && supabase && isValidUUID(userId)) {
     try {
       const { data, error } = await supabase
         .from('payment_orders')
-        .insert(newOrder)
+        .insert({
+          id: newId,
+          user_id: userId,
+          order_number: newOrder.order_number,
+          package_type: canonicalPackageType,
+          package_id: newOrder.package_id,
+          package_name: newOrder.package_name,
+          amount: newOrder.amount,
+          currency: newOrder.currency || 'IDR',
+          payment_gateway: newOrder.payment_gateway || 'midtrans',
+          payment_method: newOrder.payment_method,
+          status: 'pending',
+          credits_granted: newOrder.credits_granted
+        })
         .select()
         .single();
 
       if (error) throw error;
-      return { data, error: null };
+      if (data) {
+        const list = getLocalPaymentOrders(userId);
+        saveLocalPaymentOrders(userId, [data, ...list]);
+        return { data, error: null };
+      }
     } catch (err: any) {
-      console.warn('Supabase createPaymentOrder error, using local fallback:', err);
+      console.warn('Supabase createPaymentOrder notice, using local pending order:', err?.message || err);
     }
   }
 
@@ -2772,19 +2776,45 @@ export async function simulateSettlePayment(
   if (idx === -1) return { success: false, error: 'Order tidak ditemukan' };
 
   const target = orders[idx];
+  const canonicalPackageType =
+    target.package_type === 'credit_pack' ? 'topup_credits' : target.package_type;
+
+  // Attempt real server-side settlement via /api/payment-webhook using SUPABASE_SECRET_KEY
+  const apiRes = await callBillingServerApi({
+    action: 'settle_order',
+    order: {
+      ...target,
+      package_type: canonicalPackageType
+    }
+  });
+
+  if (apiRes?.order) {
+    orders[idx] = apiRes.order;
+    saveLocalPaymentOrders(userId, orders);
+    if (apiRes.subscription) {
+      saveLocalSubscription(userId, apiRes.subscription);
+    }
+    if (apiRes.transaction) {
+      const currentTxs = getLocalCreditTransactions(userId);
+      saveLocalCreditTransactions(userId, [apiRes.transaction, ...currentTxs]);
+    }
+    return { success: true, order: apiRes.order, error: null };
+  }
+
+  // Offline / guest fallback
   const now = new Date().toISOString();
   const updatedOrder: PaymentOrder = {
     ...target,
+    package_type: canonicalPackageType,
     status: 'settlement',
     paid_at: now,
-    external_reference: `midtrans-settle-${Date.now()}`
+    external_reference: `MIDTRANS-ID-${target.payment_method.toUpperCase()}-${Date.now().toString().slice(-7)}`
   };
 
   orders[idx] = updatedOrder;
   saveLocalPaymentOrders(userId, orders);
 
-  // If credit pack, credit the account
-  if (target.package_type === 'credit_pack') {
+  if (canonicalPackageType === 'topup_credits') {
     await recordCreditTransaction(userId, {
       transaction_type: 'purchase',
       amount: target.credits_granted,
@@ -2793,30 +2823,38 @@ export async function simulateSettlePayment(
       operation: 'credit_pack_purchase',
       estimated_cost_usd: 0,
       actual_cost_usd: 0,
-      description: `Pembelian ${target.package_name}`,
+      description: `Pembelian ${target.package_name} via ${target.payment_method.toUpperCase()}`,
       status: 'completed',
       idempotency_key: `pay_${orderId}`
     });
-  } else if (target.package_type === 'subscription') {
-    // If subscription, upgrade user plan
-    const tier = target.package_id.replace('plan_', '') as SubscriptionTier;
+  } else if (canonicalPackageType === 'subscription') {
+    const tier: SubscriptionTier =
+      target.package_id === 'creator_indie' || target.package_id === 'plan_creator'
+        ? 'creator'
+        : target.package_id === 'pro_studio' || target.package_id === 'plan_pro_studio'
+        ? 'pro_studio'
+        : target.package_id === 'production_house' || target.package_id === 'plan_production_house'
+        ? 'production_house'
+        : 'free';
+
     await updateUserSubscription(userId, {
       tier,
       status: 'active',
+      price_paid: target.amount,
       credits_allotted: target.credits_granted,
+      payment_method: target.payment_method,
       current_period_start: now,
       current_period_end: new Date(Date.now() + 30 * 86400000).toISOString()
     });
-    // Add allotment transaction
     await recordCreditTransaction(userId, {
       transaction_type: 'monthly_allotment',
       amount: target.credits_granted,
-      provider: 'system',
+      provider: 'midtrans',
       model: target.package_id,
       operation: 'subscription_upgrade_allotment',
       estimated_cost_usd: 0,
       actual_cost_usd: 0,
-      description: `Alokasi kuota paket ${target.package_name}`,
+      description: `Aktivasi Langganan ${target.package_name} via ${target.payment_method.toUpperCase()}`,
       status: 'completed',
       idempotency_key: `sub_allot_${orderId}`
     });
@@ -2830,6 +2868,17 @@ export async function adminAdjustCredits(
   amount: number,
   reason: string
 ): Promise<{ success: boolean; error: string | null }> {
+  const apiRes = await callBillingServerApi({
+    action: 'admin_adjust',
+    amount,
+    reason
+  });
+  if (apiRes?.transaction) {
+    const currentTxs = getLocalCreditTransactions(userId);
+    saveLocalCreditTransactions(userId, [apiRes.transaction, ...currentTxs]);
+    return { success: true, error: null };
+  }
+
   const result = await recordCreditTransaction(userId, {
     transaction_type: 'admin_adjustment',
     amount,
@@ -2850,9 +2899,9 @@ export async function adminAdjustCredits(
 // Phase 7: Team Collaboration Workspaces (SSOT Section 42)
 // ==========================================
 
-const WORKSPACES_KEY = 'ai_movie_factory_workspaces';
-const WORKSPACE_MEMBERS_KEY_PREFIX = 'ai_movie_factory_ws_members_';
-const MARKETPLACE_TEMPLATES_KEY = 'ai_movie_factory_marketplace_templates';
+const WORKSPACES_KEY = 'ai_movie_factory_workspaces_v2_prod';
+const WORKSPACE_MEMBERS_KEY_PREFIX = 'ai_movie_factory_ws_members_v2_prod_';
+const MARKETPLACE_TEMPLATES_KEY = 'ai_movie_factory_marketplace_templates_v2_prod';
 
 function getLocalWorkspaces(userId: string): Workspace[] {
   if (typeof window === 'undefined') return [];
@@ -2865,12 +2914,12 @@ function getLocalWorkspaces(userId: string): Workspace[] {
     }
   }
 
-  // Initial default personal workspace
+  // Initial default personal workspace (1 seat for owner, 0 dummy collaborators)
   const defaultWorkspace: Workspace = {
     id: `ws-${userId}-default`,
     name: 'Primary Studio Workspace',
     owner_id: userId,
-    seat_limit: 5,
+    seat_limit: 1,
     active_seats_count: 1,
     settings: {
       default_language: 'id',
@@ -2902,35 +2951,17 @@ function getLocalWorkspaceMembers(workspaceId: string, ownerId: string): Workspa
     }
   }
 
-  // Default owner member + initial demo collaborators
+  // Only the workspace owner — 0 fake dummy members
   const defaultMembers: WorkspaceMember[] = [
     {
       id: `member-${ownerId}`,
       workspace_id: workspaceId,
       user_id: ownerId,
       role: 'owner',
-      invited_email: 'creator@aimoviefactory.com',
+      invited_email: 'owner@aimoviefactory.id',
       status: 'active',
       joined_at: new Date().toISOString(),
       created_at: new Date().toISOString()
-    },
-    {
-      id: `member-director-${workspaceId}`,
-      workspace_id: workspaceId,
-      role: 'director',
-      invited_email: 'director.kenji@tokyocine.ai',
-      status: 'active',
-      joined_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-      created_at: new Date(Date.now() - 3 * 86400000).toISOString()
-    },
-    {
-      id: `member-writer-${workspaceId}`,
-      workspace_id: workspaceId,
-      role: 'writer',
-      invited_email: 'sarah.screenplay@hollywoodwriters.org',
-      status: 'active',
-      joined_at: new Date(Date.now() - 2 * 86400000).toISOString(),
-      created_at: new Date(Date.now() - 2 * 86400000).toISOString()
     }
   ];
 

@@ -978,20 +978,29 @@ BEGIN
     -- Subscription Catalog Validation
     ELSIF NEW.package_type = 'subscription' THEN
       IF NEW.package_id = 'creator_indie' THEN
-        IF NEW.amount IS DISTINCT FROM 149000 OR NEW.credits_granted IS DISTINCT FROM 1500 OR NEW.currency IS DISTINCT FROM 'IDR' THEN
-          RAISE EXCEPTION 'Catalog Tamper Error: creator_indie subscription must be exactly Rp 149.000 IDR for 1500 monthly credits';
+        IF NEW.amount = 149000 AND NEW.credits_granted = 1500 AND NEW.currency = 'IDR' THEN
+          NEW.package_name := 'Creator Indie Monthly';
+        ELSIF NEW.amount = 1430000 AND NEW.credits_granted = 18000 AND NEW.currency = 'IDR' THEN
+          NEW.package_name := 'Creator Indie Yearly';
+        ELSE
+          RAISE EXCEPTION 'Catalog Tamper Error: creator_indie subscription must be Rp 149.000 (1500 cr) monthly or Rp 1.430.000 (18000 cr) yearly';
         END IF;
-        NEW.package_name := 'Creator Indie Monthly';
       ELSIF NEW.package_id = 'pro_studio' THEN
-        IF NEW.amount IS DISTINCT FROM 499000 OR NEW.credits_granted IS DISTINCT FROM 6000 OR NEW.currency IS DISTINCT FROM 'IDR' THEN
-          RAISE EXCEPTION 'Catalog Tamper Error: pro_studio subscription must be exactly Rp 499.000 IDR for 6000 monthly credits';
+        IF NEW.amount = 499000 AND NEW.credits_granted = 6000 AND NEW.currency = 'IDR' THEN
+          NEW.package_name := 'Pro Studio Monthly';
+        ELSIF NEW.amount = 4790000 AND NEW.credits_granted = 72000 AND NEW.currency = 'IDR' THEN
+          NEW.package_name := 'Pro Studio Yearly';
+        ELSE
+          RAISE EXCEPTION 'Catalog Tamper Error: pro_studio subscription must be Rp 499.000 (6000 cr) monthly or Rp 4.790.000 (72000 cr) yearly';
         END IF;
-        NEW.package_name := 'Pro Studio Monthly';
       ELSIF NEW.package_id = 'production_house' THEN
-        IF NEW.amount IS DISTINCT FROM 1499000 OR NEW.credits_granted IS DISTINCT FROM 20000 OR NEW.currency IS DISTINCT FROM 'IDR' THEN
-          RAISE EXCEPTION 'Catalog Tamper Error: production_house subscription must be exactly Rp 1.499.000 IDR for 20000 monthly credits';
+        IF NEW.amount = 1499000 AND NEW.credits_granted = 20000 AND NEW.currency = 'IDR' THEN
+          NEW.package_name := 'Production House Monthly';
+        ELSIF NEW.amount = 14390000 AND NEW.credits_granted = 240000 AND NEW.currency = 'IDR' THEN
+          NEW.package_name := 'Production House Yearly';
+        ELSE
+          RAISE EXCEPTION 'Catalog Tamper Error: production_house subscription must be Rp 1.499.000 (20000 cr) monthly or Rp 14.390.000 (240000 cr) yearly';
         END IF;
-        NEW.package_name := 'Production House Monthly';
       ELSE
         RAISE EXCEPTION 'Catalog Tamper Error: Unknown or unauthorized subscription package_id %', NEW.package_id;
       END IF;

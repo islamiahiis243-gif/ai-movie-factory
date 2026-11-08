@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Project, ProductionActivity, ProductionJob } from '../../types/database';
 import { useAuth } from '../../context/AuthContext';
+import { fetchCreditTransactions } from '../../lib/supabase';
 import {
   Film,
   Plus,
@@ -34,17 +35,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onSelectProject,
   onViewAllProjects,
 }) => {
-  const { t, profile } = useAuth();
+  const { t, profile, user } = useAuth();
+  const [ledgerBalance, setLedgerBalance] = useState<number>(150);
 
-  // Metrics computation from real data
+  useEffect(() => {
+    let active = true;
+    const targetId = user?.id || profile.id;
+    fetchCreditTransactions(targetId).then((res) => {
+      if (!active) return;
+      if (res.data && res.data.length > 0) {
+        setLedgerBalance(res.data[0].balance_after);
+      } else {
+        setLedgerBalance(user ? 150 : 0);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [user?.id, profile.id]);
+
+  // Metrics computation from real data (0 dummy fallback)
   const totalProjects = projects.length;
-  const totalEpisodes = projects.reduce((acc, p) => acc + (p.settings?.episodes_count || 1), 0);
-  const totalScenes = projects.reduce((acc, p) => acc + (p.settings?.scene_count_target || 10), 0);
+  const totalEpisodes = projects.reduce((acc, p) => acc + (p.settings?.episodes_count || 0), 0);
+  const totalScenes = projects.reduce((acc, p) => acc + (p.settings?.scene_count_target || 0), 0);
   const activeJobs = jobs.filter((j) => j.status === 'running' || j.status === 'queued').length;
   const failedJobs = jobs.filter((j) => j.status === 'failed').length;
-  const totalBudget = projects.reduce((acc, p) => acc + (p.settings?.credit_budget || 0), 0);
-  const creditConsumption = Math.round(totalBudget * 0.28); // 28% estimated usage
-  const availableCredits = Math.max(0, totalBudget - creditConsumption);
+  const availableCredits = ledgerBalance;
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">

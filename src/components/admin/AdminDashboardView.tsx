@@ -256,92 +256,131 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       </div>
 
       {/* TAB 1: OVERVIEW & GROSS MARGIN ANALYTICS */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Revenue vs Cost Analysis */}
-            <div className="p-5 bg-slate-950/60 border border-slate-800 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-emerald-400" />
-                Analisis Margin Kotor AI SaaS (Gross Margin Breakdown)
-              </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Memastikan biaya API model AI (Gemini, Veo, ElevenLabs) selalu di bawah 20% dari total pendapatan kredit (SSOT Bagian 22: &quot;Calculate actual provider costs before setting subscription limits&quot;).
-              </p>
+      {activeTab === 'overview' && (() => {
+        const settledOrders = orders.filter(
+          o => o.status === 'settlement' || o.status === 'completed' || o.status === 'paid'
+        );
+        const totalRevenueIdr = settledOrders.reduce((s, o) => s + Number(o.amount || 0), 0);
+        const usageTxs = transactions.filter(tx => tx.transaction_type === 'usage' && tx.status !== 'refunded');
+        const totalApiUsd = usageTxs.reduce((s, tx) => s + Number(tx.actual_cost_usd || 0), 0);
+        const totalApiIdr = Math.round(totalApiUsd * 16000);
+        const netGrossProfitIdr = Math.max(0, totalRevenueIdr - totalApiIdr);
+        const marginPct = totalRevenueIdr > 0 ? ((netGrossProfitIdr / totalRevenueIdr) * 100).toFixed(1) : '0.0';
 
-              <div className="space-y-3 pt-2">
-                <div className="p-3 bg-slate-900/80 border border-slate-800 flex justify-between items-center text-xs">
-                  <span className="text-slate-300">Total Pendapatan Terkumpul (Midtrans Settlement):</span>
-                  <span className="font-mono font-bold text-emerald-400">{formatIdr(428000)}</span>
-                </div>
+        const sumByModelKeyword = (kw: string) => {
+          const matching = usageTxs.filter(tx => (tx.model || '').toLowerCase().includes(kw));
+          const credits = Math.abs(matching.reduce((s, tx) => s + Number(tx.amount || 0), 0));
+          const costUsd = matching.reduce((s, tx) => s + Number(tx.actual_cost_usd || 0), 0);
+          const pct = metrics && metrics.totalCreditsConsumed > 0
+            ? Math.min(100, Math.round((credits / metrics.totalCreditsConsumed) * 100))
+            : 0;
+          return { credits, costUsd: costUsd.toFixed(4), pct };
+        };
 
-                <div className="p-3 bg-slate-900/80 border border-slate-800 flex justify-between items-center text-xs">
-                  <span className="text-slate-300">Biaya Token & Render API AI ($0.238 USD @ Rp16.000):</span>
-                  <span className="font-mono text-rose-400">- {formatIdr(3808)}</span>
-                </div>
+        const imgStats = sumByModelKeyword('image');
+        const vidStats = sumByModelKeyword('omni');
+        const ttsStats = sumByModelKeyword('tts');
+        const proStats = sumByModelKeyword('pro');
 
-                <div className="p-3 bg-slate-900/80 border border-slate-800 flex justify-between items-center text-xs">
-                  <span className="text-slate-300">Gross Profit Bersih Platform:</span>
-                  <span className="font-mono font-bold text-cyan-400">{formatIdr(424192)} (99.1%)</span>
+        return (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Revenue vs Cost Analysis */}
+              <div className="p-5 bg-slate-950/60 border border-slate-800 space-y-4">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-emerald-400" />
+                  Analisis Margin Kotor AI SaaS (Real-Time Ledger)
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Kalkulasi langsung dari transaksi settlement dan pemakaian token AI aktual di database produksi (0 data dummy).
+                </p>
+
+                <div className="space-y-3 pt-2">
+                  <div className="p-3 bg-slate-900/80 border border-slate-800 flex justify-between items-center text-xs">
+                    <span className="text-slate-300">Total Pendapatan Terkumpul (Settlement):</span>
+                    <span className="font-mono font-bold text-emerald-400">{formatIdr(totalRevenueIdr)}</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/80 border border-slate-800 flex justify-between items-center text-xs">
+                    <span className="text-slate-300">
+                      Biaya Token & Render API AI (${totalApiUsd.toFixed(4)} USD @ Rp16.000):
+                    </span>
+                    <span className="font-mono text-rose-400">- {formatIdr(totalApiIdr)}</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/80 border border-slate-800 flex justify-between items-center text-xs">
+                    <span className="text-slate-300">Gross Profit Bersih Platform:</span>
+                    <span className="font-mono font-bold text-cyan-400">
+                      {formatIdr(netGrossProfitIdr)} ({marginPct}%)
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Provider Model Utilization */}
-            <div className="p-5 bg-slate-950/60 border border-slate-800 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-cyan-400" />
-                Distribusi Konsumsi API Model AI
-              </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Pemantauan kuota token dan durasi per detik video yang diproses oleh AI adapters.
-              </p>
+              {/* Provider Model Utilization */}
+              <div className="p-5 bg-slate-950/60 border border-slate-800 space-y-4">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-cyan-400" />
+                  Distribusi Konsumsi API Model AI (Real-Time)
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Pemantauan kuota kredit dan biaya aktual per model AI dari buku besar transaksi.
+                </p>
 
-              <div className="space-y-3 text-xs">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-slate-300">
-                    <span>Google Gemini 3.1 Flash Lite (Keyframes):</span>
-                    <span className="font-mono text-slate-400">25 Kredit · $0.021 USD</span>
+                <div className="space-y-3 text-xs">
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-slate-300">
+                      <span>Google Gemini Flash Image (Keyframes):</span>
+                      <span className="font-mono text-slate-400">
+                        {imgStats.credits} Kredit · ${imgStats.costUsd} USD
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-900 h-1.5 overflow-hidden">
+                      <div className="h-full bg-cyan-400" style={{ width: `${imgStats.pct}%` }} />
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-900 h-1.5 overflow-hidden">
-                    <div className="h-full bg-cyan-400" style={{ width: '22%' }} />
-                  </div>
-                </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between text-slate-300">
-                    <span>Google Gemini Omni 1.1 Flash / Veo (Motion Video):</span>
-                    <span className="font-mono text-slate-400">87 Kredit · $0.178 USD</span>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-slate-300">
+                      <span>Google Gemini Omni / Veo (Motion Video):</span>
+                      <span className="font-mono text-slate-400">
+                        {vidStats.credits} Kredit · ${vidStats.costUsd} USD
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-900 h-1.5 overflow-hidden">
+                      <div className="h-full bg-amber-400" style={{ width: `${vidStats.pct}%` }} />
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-900 h-1.5 overflow-hidden">
-                    <div className="h-full bg-amber-400" style={{ width: '62%' }} />
-                  </div>
-                </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between text-slate-300">
-                    <span>Google Gemini 3.8 Flash TTS (Character Voice):</span>
-                    <span className="font-mono text-slate-400">16 Kredit · $0.011 USD</span>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-slate-300">
+                      <span>Google Gemini Flash TTS (Character Voice):</span>
+                      <span className="font-mono text-slate-400">
+                        {ttsStats.credits} Kredit · ${ttsStats.costUsd} USD
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-900 h-1.5 overflow-hidden">
+                      <div className="h-full bg-violet-400" style={{ width: `${ttsStats.pct}%` }} />
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-900 h-1.5 overflow-hidden">
-                    <div className="h-full bg-violet-400" style={{ width: '12%' }} />
-                  </div>
-                </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between text-slate-300">
-                    <span>Google Gemini 2.5 Pro (Screenplay & Lore Reasoning):</span>
-                    <span className="font-mono text-slate-400">12 Kredit · $0.007 USD</span>
-                  </div>
-                  <div className="w-full bg-slate-900 h-1.5 overflow-hidden">
-                    <div className="h-full bg-emerald-400" style={{ width: '4%' }} />
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-slate-300">
+                      <span>Google Gemini 2.5 Pro (Screenplay & Lore Reasoning):</span>
+                      <span className="font-mono text-slate-400">
+                        {proStats.credits} Kredit · ${proStats.costUsd} USD
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-900 h-1.5 overflow-hidden">
+                      <div className="h-full bg-emerald-400" style={{ width: `${proStats.pct}%` }} />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* TAB 2: GLOBAL TRANSACTION AUDIT */}
       {activeTab === 'ledgerAudit' && (

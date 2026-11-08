@@ -17,6 +17,8 @@ interface AuthContextType {
   isLoading: boolean;
   signIn: (email: string, pass: string) => Promise<{ error: string | null }>;
   signUp: (email: string, pass: string, name: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
+  resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   updateProfileData: (updates: Partial<UserProfile>) => Promise<{ error: string | null }>;
 }
@@ -31,6 +33,26 @@ function getDefaultCurrencyForLang(lang: LanguageCode): CurrencyCode {
     case 'es': return 'EUR';
     default: return 'USD';
   }
+}
+
+function translateAuthError(msg: string): string {
+  const lower = (msg || '').toLowerCase();
+  if (lower.includes('invalid login credentials')) {
+    return 'Email atau kata sandi tidak sesuai. Silakan periksa kembali atau daftar akun baru.';
+  }
+  if (lower.includes('user already registered') || lower.includes('already been registered')) {
+    return 'Alamat email ini sudah terdaftar. Silakan gunakan menu Masuk (Sign In).';
+  }
+  if (lower.includes('password should be at least')) {
+    return 'Kata sandi harus terdiri dari minimal 6 karakter.';
+  }
+  if (lower.includes('email not confirmed')) {
+    return 'Email Anda belum dikonfirmasi. Silakan cek kotak masuk email Anda.';
+  }
+  if (lower.includes('rate limit') || lower.includes('too many requests')) {
+    return 'Terlalu banyak percobaan dalam waktu singkat. Silakan tunggu beberapa saat lagi.';
+  }
+  return msg;
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -60,7 +82,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const setLanguage = (lang: LanguageCode) => {
     setLanguageState(lang);
     localStorage.setItem('ai_movie_factory_lang', lang);
-    // Auto-detect matching currency if user hasn't explicitly customized
     const suggestedCurr = getDefaultCurrencyForLang(lang);
     setCurrency(suggestedCurr);
     if (profile) {
@@ -81,12 +102,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           if (session?.user) {
             setUser(session.user);
-            // Fetch profile
             const { data: profileRow } = await supabase
               .from('profiles')
               .select('*')
               .eq('id', session.user.id)
-              .single();
+              .maybeSingle();
 
             if (profileRow) {
               setProfile(profileRow);
@@ -94,18 +114,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setLanguageState(profileRow.preferred_language);
               }
             } else {
-              // Create default profile for the user
               const newProf: UserProfile = {
                 id: session.user.id,
-                display_name: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'Studio Director',
+                display_name: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'Studio Creator',
                 avatar_url: null,
                 preferred_language: language,
                 email: session.user.email,
-                role: 'Studio Owner',
+                role: 'creator',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               };
-              await supabase.from('profiles').insert(newProf);
+              await supabase.from('profiles').upsert(newProf, { onConflict: 'id' });
               setProfile(newProf);
             }
           }
@@ -129,7 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .from('profiles')
             .select('*')
             .eq('id', session.user.id)
-            .single();
+            .maybeSingle();
 
           if (profileRow) {
             setProfile(profileRow);
@@ -150,68 +169,104 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signIn = async (email: string, pass: string): Promise<{ error: string | null }> => {
+    const cleanEmail = email.trim().toLowerCase();
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-        if (error) return { error: error.message };
+        const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password: pass });
+        if (error) return { error: translateAuthError(error.message) };
         return { error: null };
       } catch (err: any) {
-        return { error: err.message || 'Login failed' };
+        return { error: translateAuthError(err.message || 'Gagal masuk ke akun.') };
       }
     }
-    // Disconnected mode simulation
     const simulatedProfile: UserProfile = {
       ...profile,
-      email,
-      display_name: email.split('@')[0] || 'Creator',
+      email: cleanEmail,
+      display_name: cleanEmail.split('@')[0] || 'Creator',
       updated_at: new Date().toISOString(),
     };
     setProfile(simulatedProfile);
     saveLocalProfile(simulatedProfile);
-    setUser({ id: simulatedProfile.id, email });
+    setUser({ id: simulatedProfile.id, email: cleanEmail });
     return { error: null };
   };
 
   const signUp = async (email: string, pass: string, name: string): Promise<{ error: string | null }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = name.trim() || cleanEmail.split('@')[0] || 'Studio Creator';
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password: pass,
           options: {
-            data: { display_name: name }
+            data: { display_name: cleanName }
           }
         });
-        if (error) return { error: error.message };
+        if (error) return { error: translateAuthError(error.message) };
         if (data.user) {
           const newProf: UserProfile = {
             id: data.user.id,
-            display_name: name || 'Studio Director',
+            display_name: cleanName,
             avatar_url: null,
             preferred_language: language,
-            email: email,
-            role: 'Studio Owner',
+            email: cleanEmail,
+            role: 'creator',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
-          await supabase.from('profiles').insert(newProf);
+          await supabase.from('profiles').upsert(newProf, { onConflict: 'id' });
           setProfile(newProf);
+          setUser(data.user);
         }
         return { error: null };
       } catch (err: any) {
-        return { error: err.message || 'Sign up failed' };
+        return { error: translateAuthError(err.message || 'Pendaftaran akun gagal.') };
       }
     }
-    // Disconnected mode
     const simulatedProfile: UserProfile = {
       ...profile,
-      email,
-      display_name: name || email.split('@')[0],
+      email: cleanEmail,
+      display_name: cleanName,
       updated_at: new Date().toISOString(),
     };
     setProfile(simulatedProfile);
     saveLocalProfile(simulatedProfile);
-    setUser({ id: simulatedProfile.id, email });
+    setUser({ id: simulatedProfile.id, email: cleanEmail });
+    return { error: null };
+  };
+
+  const signInWithGoogle = async (): Promise<{ error: string | null }> => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined
+          }
+        });
+        if (error) return { error: translateAuthError(error.message) };
+        return { error: null };
+      } catch (err: any) {
+        return { error: translateAuthError(err.message || 'Gagal menghubungkan Google OAuth.') };
+      }
+    }
+    return { error: 'Layanan OAuth memerlukan koneksi cloud Supabase.' };
+  };
+
+  const resetPasswordForEmail = async (email: string): Promise<{ error: string | null }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+          redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/?reset=1` : undefined
+        });
+        if (error) return { error: translateAuthError(error.message) };
+        return { error: null };
+      } catch (err: any) {
+        return { error: translateAuthError(err.message || 'Gagal mengirim tautan pemulihan kata sandi.') };
+      }
+    }
     return { error: null };
   };
 
@@ -261,6 +316,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         signIn,
         signUp,
+        signInWithGoogle,
+        resetPasswordForEmail,
         signOut,
         updateProfileData,
       }}

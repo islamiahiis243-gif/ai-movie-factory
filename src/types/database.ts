@@ -776,18 +776,30 @@ export interface CreditTopUpPack {
   popular?: boolean;
 }
 
+export type IndonesianPaymentMethod =
+  | 'qris'
+  | 'bca_va'
+  | 'mandiri_va'
+  | 'bni_va'
+  | 'bri_va'
+  | 'gopay'
+  | 'shopeepay'
+  | 'dana'
+  | 'ovo'
+  | 'credit_card';
+
 export interface PaymentOrder {
   id: string;
   user_id: string;
   order_number: string;
-  package_type: 'subscription' | 'credit_pack';
+  package_type: 'subscription' | 'topup_credits' | 'credit_pack';
   package_id: string;
   package_name: string;
   amount: number;
   currency: string;
   payment_gateway: 'midtrans' | 'stripe';
-  payment_method: 'qris' | 'bca_va' | 'mandiri_va' | 'credit_card';
-  status: 'pending' | 'settlement' | 'expire' | 'cancel';
+  payment_method: IndonesianPaymentMethod;
+  status: 'pending' | 'processing' | 'completed' | 'settlement' | 'paid' | 'expire' | 'failed' | 'cancel' | 'cancelled';
   credits_granted: number;
   external_reference?: string;
   paid_at?: string;
