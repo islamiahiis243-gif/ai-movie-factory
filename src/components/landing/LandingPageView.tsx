@@ -401,7 +401,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       </section>
 
       {/* 10 Production Modules Ecosystem */}
-      <section className="py-20 px-6 sm:px-8 max-w-7xl mx-auto border-t border-slate-800/80">
+      <section id="features" className="py-20 px-6 sm:px-8 max-w-7xl mx-auto border-t border-slate-800/80">
         <div className="text-center max-w-3xl mx-auto mb-16">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 text-xs font-semibold uppercase tracking-wider mb-4">
             <Layers className="w-3.5 h-3.5" />
@@ -522,7 +522,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       </section>
 
       {/* Comparison: Traditional vs AI Movie Factory */}
-      <section className="py-20 px-6 sm:px-8 max-w-7xl mx-auto border-t border-slate-800/80">
+      <section id="comparison" className="py-20 px-6 sm:px-8 max-w-7xl mx-auto border-t border-slate-800/80">
         <div className="text-center max-w-3xl mx-auto mb-16">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold uppercase tracking-wider mb-4">
             <Zap className="w-3.5 h-3.5" />
@@ -599,7 +599,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       </section>
 
       {/* Pricing Showcase with Indonesian Gateway Badges */}
-      <section className="py-20 px-6 sm:px-8 max-w-7xl mx-auto border-t border-slate-800/80">
+      <section id="pricing" className="py-20 px-6 sm:px-8 max-w-7xl mx-auto border-t border-slate-800/80">
         <div className="text-center max-w-3xl mx-auto mb-16">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-4">
             <DollarSign className="w-3.5 h-3.5" />
@@ -719,7 +719,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       </section>
 
       {/* FAQ Section */}
-      <section className="py-20 px-6 sm:px-8 max-w-4xl mx-auto border-t border-slate-800/80">
+      <section id="faq" className="py-20 px-6 sm:px-8 max-w-4xl mx-auto border-t border-slate-800/80">
         <div className="text-center mb-12">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-300 text-xs font-semibold uppercase tracking-wider mb-4">
             <HelpCircle className="w-3.5 h-3.5 text-amber-400" />

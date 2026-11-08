@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Film, User, Globe, LogIn, LogOut, Database, ShieldAlert } from 'lucide-react';
+import { Film, User, Globe, LogIn, LogOut, Database, ShieldAlert, Sparkles, ArrowRight } from 'lucide-react';
 import { LanguageCode, CurrencyCode } from '../../types/database';
 import { REGIONAL_CURRENCIES } from '../../lib/multilingualAdapters';
 
@@ -29,14 +29,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isOwnerAdmin =
     profile?.role === 'admin' ||
     String(user?.email || profile?.email || '').toLowerCase() === 'islamiahiis243@gmail.com';
+  const isLandingPage = activeTab === 'landing';
 
   return (
-    <header className="h-16 border-b border-slate-800/80 bg-[#0B0F17]/95 backdrop-blur-md sticky top-0 z-40 px-6 flex items-center justify-between gap-8">
-      {/* Zone 1: Single text element wordmark in display face with AMF Logo */}
+    <header className="h-16 border-b border-slate-800/80 bg-[#070A0F]/95 backdrop-blur-md sticky top-0 z-50 px-6 flex items-center justify-between gap-6">
+      {/* Brand Logo & Wordmark (Shared) */}
       <button 
-        onClick={() => setActiveTab(user ? 'dashboard' : 'landing')} 
+        onClick={() => setActiveTab(isLandingPage && user ? 'dashboard' : 'landing')} 
         className="flex items-center gap-2.5 text-left transition-opacity hover:opacity-90 shrink-0 cursor-pointer group"
-        title="AI Movie Factory (AMF) - Home"
+        title="AI Movie Factory (AMF)"
       >
         <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-700/80 flex items-center justify-center overflow-hidden shadow-lg group-hover:border-cyan-400/60 transition-colors">
           <img
@@ -55,59 +56,95 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </button>
 
-      {/* Zone 2: 4-5 clean single-line navigation links */}
-      <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
-        <button
-          onClick={() => setActiveTab('landing')}
-          className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
-            activeTab === 'landing' ? 'text-cyan-400 font-semibold' : 'text-slate-400'
-          }`}
-        >
-          Beranda
-        </button>
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
-            activeTab === 'dashboard' ? 'text-amber-400 font-semibold' : 'text-slate-400'
-          }`}
-        >
-          {t.nav.dashboard}
-        </button>
-        <button
-          onClick={() => setActiveTab('projects')}
-          className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
-            activeTab === 'projects' ? 'text-amber-400' : 'text-slate-400'
-          }`}
-        >
-          {t.nav.myProjects}
-        </button>
-        <button
-          onClick={() => setActiveTab('workspaces')}
-          className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
-            activeTab === 'workspaces' ? 'text-indigo-400' : 'text-slate-400'
-          }`}
-        >
-          {t.nav.workspaces || 'Workspaces'}
-        </button>
-        <button
-          onClick={() => setActiveTab('marketplace')}
-          className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
-            activeTab === 'marketplace' ? 'text-purple-400' : 'text-slate-400'
-          }`}
-        >
-          {t.nav.marketplace || 'Marketplace'}
-        </button>
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
-            activeTab === 'settings' ? 'text-amber-400' : 'text-slate-400'
-          }`}
-        >
-          {t.nav.settings}
-        </button>
-      </nav>
+      {/* Middle Navigation Zone */}
+      {isLandingPage ? (
+        /* Landing Page: Marketing Conversion Navigation */
+        <nav className="hidden lg:flex items-center gap-7 text-sm font-medium text-slate-300">
+          <a
+            href="#features"
+            className="transition-colors hover:text-cyan-400 text-slate-300"
+          >
+            Fitur Studio
+          </a>
+          <a
+            href="#interactive-demo"
+            className="transition-colors hover:text-cyan-400 text-slate-300"
+          >
+            14 Agen AI
+          </a>
+          <a
+            href="#comparison"
+            className="transition-colors hover:text-cyan-400 text-slate-300"
+          >
+            Alur Kerja
+          </a>
+          <a
+            href="#pricing"
+            className="transition-colors hover:text-amber-400 text-slate-300 font-semibold"
+          >
+            Harga & Paket
+          </a>
+          <a
+            href="#faq"
+            className="transition-colors hover:text-slate-200 text-slate-400"
+          >
+            FAQ
+          </a>
+        </nav>
+      ) : (
+        /* Studio Cockpit: Internal Creator Navigation */
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
+          <button
+            onClick={() => setActiveTab('landing')}
+            className="transition-colors whitespace-nowrap shrink-0 cursor-pointer text-slate-400 hover:text-cyan-400"
+            title="Kunjungi Beranda & Showcase Publik"
+          >
+            Beranda
+          </button>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
+              activeTab === 'dashboard' ? 'text-amber-400 font-semibold' : 'text-slate-400'
+            }`}
+          >
+            {t.nav.dashboard}
+          </button>
+          <button
+            onClick={() => setActiveTab('projects')}
+            className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
+              activeTab === 'projects' ? 'text-amber-400 font-semibold' : 'text-slate-400'
+            }`}
+          >
+            {t.nav.myProjects}
+          </button>
+          <button
+            onClick={() => setActiveTab('workspaces')}
+            className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
+              activeTab === 'workspaces' ? 'text-indigo-400 font-semibold' : 'text-slate-400'
+            }`}
+          >
+            {t.nav.workspaces || 'Ruang Kerja'}
+          </button>
+          <button
+            onClick={() => setActiveTab('marketplace')}
+            className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
+              activeTab === 'marketplace' ? 'text-purple-400 font-semibold' : 'text-slate-400'
+            }`}
+          >
+            {t.nav.marketplace || 'Pasar Template'}
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer hover:text-white ${
+              activeTab === 'settings' ? 'text-amber-400 font-semibold' : 'text-slate-400'
+            }`}
+          >
+            {t.nav.settings}
+          </button>
+        </nav>
+      )}
 
-      {/* Zone 3: Single primary action cluster with Language & Currency switchers & Profile */}
+      {/* Right Controls & Action Cluster */}
       <div className="flex items-center gap-2.5 shrink-0">
         {/* Currency Switcher */}
         <div className="relative">
@@ -125,7 +162,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </select>
         </div>
 
-        {/* 5-Language Switcher */}
+        {/* Language Switcher */}
         <div className="relative">
           <select
             value={language}
@@ -141,33 +178,48 @@ export const Navbar: React.FC<NavbarProps> = ({
           </select>
         </div>
 
-        {/* Supabase Status Indicator (Quiet unboxed badge) */}
-        <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 px-2 py-1 rounded bg-slate-900/60 border border-slate-800/80">
-          {isConfigured ? (
-            <>
-              <Database className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-emerald-400 font-mono text-[11px]">Supabase OK</span>
-            </>
-          ) : (
-            <>
-              <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-amber-300 text-[11px]">Preview Sandbox</span>
-            </>
-          )}
-        </div>
+        {/* When in Studio: Show Database Status & + Proyek Baru */}
+        {!isLandingPage && (
+          <>
+            <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 px-2 py-1 rounded bg-slate-900/60 border border-slate-800/80">
+              {isConfigured ? (
+                <>
+                  <Database className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Supabase OK</span>
+                </>
+              ) : (
+                <>
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-amber-300 text-[11px]">Preview Sandbox</span>
+                </>
+              )}
+            </div>
 
-        {/* Primary Action Button */}
-        <button
-          onClick={onOpenNewProject}
-          className="px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-sm shadow-amber-400/20"
-        >
-          + {t.projects.createNew}
-        </button>
+            <button
+              onClick={onOpenNewProject}
+              className="px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-sm shadow-amber-400/20"
+            >
+              + {t.projects.createNew}
+            </button>
+          </>
+        )}
 
-        {/* User Account / Auth button */}
+        {/* Auth & Profile Actions */}
         {user ? (
           <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-            {isOwnerAdmin && (
+            {/* If on landing page and logged in: prominent button to go into studio */}
+            {isLandingPage && (
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-400 to-amber-300 hover:from-amber-300 hover:to-amber-200 rounded-md transition-all shadow-md shadow-amber-400/20 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+                <span>Masuk Studio Cockpit</span>
+                <ArrowRight className="w-3.5 h-3.5 text-slate-950" />
+              </button>
+            )}
+
+            {!isLandingPage && isOwnerAdmin && (
               <button
                 onClick={() => setActiveTab('admin_panel')}
                 className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-semibold rounded transition-colors cursor-pointer ${
@@ -181,6 +233,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>Admin Konsol</span>
               </button>
             )}
+
             <button
               onClick={() => setActiveTab('settings')}
               className="flex items-center gap-2 text-xs text-slate-300 hover:text-white transition-colors cursor-pointer"
@@ -191,6 +244,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <span className="hidden xl:inline max-w-[100px] truncate">{profile.display_name}</span>
             </button>
+
             <button
               onClick={() => signOut()}
               className="p-1.5 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
@@ -200,13 +254,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           </div>
         ) : (
-          <button
-            onClick={onOpenAuth}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-200 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded-md transition-colors cursor-pointer"
-          >
-            <LogIn className="w-3.5 h-3.5 text-slate-400" />
-            <span>{t.auth.signIn}</span>
-          </button>
+          /* Visitor on Landing Page: "Masuk" + "Coba Gratis (150 Kredit)" */
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onOpenAuth}
+              className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white transition-colors cursor-pointer"
+            >
+              {t.auth.signIn}
+            </button>
+            <button
+              onClick={onOpenAuth}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 hover:from-amber-300 hover:to-amber-200 rounded-md transition-all shadow-md shadow-amber-400/20 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+              <span>Coba Gratis (150 Kredit)</span>
+            </button>
+          </div>
         )}
       </div>
     </header>
