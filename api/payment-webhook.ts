@@ -459,20 +459,33 @@ export default async function handler(req: any, res: any) {
         });
       }
 
-      if (action === 'admin_reject_order') {
+      if (action === 'admin_reject_order' || action === 'admin_rollback_order') {
         const isAdmin = await isUserPlatformAdmin(adminSupabase, userId, userEmail);
         if (!isAdmin) {
-          return res.status(403).json({ error: 'Akses ditolak: Hanya Admin Platform yang dapat menolak pembayaran.' });
+          return res.status(403).json({ error: 'Akses ditolak: Hanya Admin Platform yang dapat membatalkan pembayaran.' });
         }
 
         const orderId = String(body.order_id || '');
-        const reason = String(body.reason || 'Transfer tidak ditemukan di mutasi rekening');
+        const reason = String(body.reason || 'Pembatalan transaksi oleh Admin Platform');
 
+        const { data: targetOrder } = await adminSupabase
+          .from('payment_orders')
+          .select('*')
+          .eq('id', orderId)
+          .maybeSingle();
+
+        if (!targetOrder) {
+          return res.status(404).json({ error: 'Pesanan tidak ditemukan.' });
+        }
+
+        const wasSettled = targetOrder.status === 'settlement' || targetOrder.status === 'completed' || targetOrder.status === 'paid';
+
+        // 1. Mark order as cancelled
         const { data: rejectedOrder, error: rejErr } = await adminSupabase
           .from('payment_orders')
           .update({
             status: 'cancelled',
-            external_reference: `DITOLAK_ADMIN | ${reason}`.slice(0, 240),
+            external_reference: `BATAL_ADMIN | ${reason}`.slice(0, 240),
           })
           .eq('id', orderId)
           .select()
@@ -480,6 +493,51 @@ export default async function handler(req: any, res: any) {
 
         if (rejErr) {
           return res.status(400).json({ error: rejErr.message });
+        }
+
+        // 2. If it was already settled, rollback the credited amount from the ledger
+        if (wasSettled && targetOrder.credits_granted > 0) {
+          const currentBal = await getCurrentBalance(adminSupabase, targetOrder.user_id);
+          const rollbackAmount = -Math.abs(Number(targetOrder.credits_granted));
+          const newBal = Math.max(0, currentBal + rollbackAmount);
+
+          await adminSupabase.from('credit_transactions').insert({
+            user_id: targetOrder.user_id,
+            transaction_type: 'admin_adjustment',
+            amount: rollbackAmount,
+            balance_after: newBal,
+            provider: 'admin_console',
+            model: 'emergency_order_rollback',
+            operation: 'order_settlement_reversal',
+            estimated_cost_usd: 0,
+            actual_cost_usd: 0,
+            description: `Pembatalan & Penarikan Kredit: Order #${targetOrder.order_number} (${reason})`,
+            status: 'completed',
+            idempotency_key: `rollback_${targetOrder.order_number}_${Date.now()}`,
+          });
+
+          // Reset subscription to free if this was a subscription order
+          if (targetOrder.package_type === 'subscription') {
+            await adminSupabase
+              .from('subscriptions')
+              .update({
+                tier: 'free',
+                status: 'active',
+                credits_allotted: 150,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('user_id', targetOrder.user_id);
+
+            await adminSupabase
+              .from('workspaces')
+              .update({
+                tier: 'free',
+                max_seats: 1,
+                seat_limit: 1,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('owner_id', targetOrder.user_id);
+          }
         }
 
         return res.status(200).json({

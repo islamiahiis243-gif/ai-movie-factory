@@ -136,14 +136,20 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState<boolean>(false);
   const [createdOrder, setCreatedOrder] = useState<PaymentOrder | null>(null);
+  const [orderDraft, setOrderDraft] = useState<{
+    order_number: string;
+    billing_id: string;
+  } | null>(null);
   const [copiedAccount, setCopiedAccount] = useState<boolean>(false);
   const [copiedAmount, setCopiedAmount] = useState<boolean>(false);
   const [timeLeft, setTimeLeft] = useState<number>(1800);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [senderNote, setSenderNote] = useState<string>('');
 
+  // Initialize in-memory checkout draft once per modal opening (0 database spam on method switching)
   useEffect(() => {
     if (!isOpen || !item) {
+      setOrderDraft(null);
       setCreatedOrder(null);
       setIsProcessing(false);
       setIsCheckingStatus(false);
@@ -152,30 +158,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       return;
     }
 
-    const initOrder = async () => {
-      setErrorMessage(null);
-      const canonicalType = item.type === 'credit_pack' ? 'topup_credits' : item.type;
-      const orderNumber = `AMF-${canonicalType === 'subscription' ? 'SUB' : 'TOP'}-${Date.now().toString().slice(-6)}`;
-      const res = await createPaymentOrder(userId, {
-        order_number: orderNumber,
-        package_type: canonicalType,
-        package_id: item.id,
-        package_name: item.name,
-        amount: item.priceIdr,
-        currency: 'IDR',
-        payment_gateway: 'midtrans',
-        payment_method: paymentMethod,
-        credits_granted: item.credits
-      });
-      if (res.data) {
-        setCreatedOrder(res.data);
-      } else if (res.error) {
-        setErrorMessage(res.error);
-      }
-    };
-
-    initOrder();
-  }, [isOpen, item, paymentMethod, userId]);
+    const canonicalType = item.type === 'credit_pack' ? 'topup_credits' : item.type;
+    const orderNum = `AMF-${canonicalType === 'subscription' ? 'SUB' : 'TOP'}-${Date.now().toString().slice(-6)}`;
+    const billId = `88008-15900-${orderNum.replace(/\D/g, '').slice(-6).padStart(6, '0')}`;
+    setOrderDraft({
+      order_number: orderNum,
+      billing_id: billId
+    });
+  }, [isOpen, item?.id]);
 
   useEffect(() => {
     if (!createdOrder || createdOrder.status === 'settlement' || createdOrder.status === 'completed') return;
@@ -218,24 +208,39 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const selectedChannel =
     INDONESIAN_PAYMENT_CHANNELS.find(c => c.id === paymentMethod) || INDONESIAN_PAYMENT_CHANNELS[0];
 
-  const billingId = `88008-15900-${(createdOrder?.order_number || '881920').replace(/\D/g, '').slice(-6).padStart(6, '0')}`;
+  const currentOrderNumber = createdOrder?.order_number || orderDraft?.order_number || 'AMF-INIT';
+  const billingId = orderDraft?.billing_id || `88008-15900-${currentOrderNumber.replace(/\D/g, '').slice(-6).padStart(6, '0')}`;
 
   const handleConfirmTransfer = async () => {
-    if (!createdOrder) return;
+    if (!orderDraft || !item) return;
     setIsProcessing(true);
     setErrorMessage(null);
     try {
+      const canonicalType = item.type === 'credit_pack' ? 'topup_credits' : item.type;
       const note = senderNote.trim() || `ID Billing ${billingId} (${selectedChannel.shortLabel})`;
-      const res = await submitDirectPaymentProof(userId, createdOrder.id, note, billingId);
+      const payload: Partial<PaymentOrder> = {
+        order_number: orderDraft.order_number,
+        package_type: canonicalType,
+        package_id: item.id,
+        package_name: item.name,
+        amount: item.priceIdr,
+        currency: 'IDR',
+        payment_gateway: 'midtrans',
+        payment_method: paymentMethod,
+        credits_granted: item.credits
+      };
+
+      const res = await submitDirectPaymentProof(
+        userId,
+        orderDraft.order_number,
+        note,
+        billingId,
+        payload
+      );
+
       if (res.success && res.order) {
         setCreatedOrder(res.order);
-        if (
-          res.order.status === 'settlement' ||
-          res.order.status === 'completed' ||
-          res.order.status === 'paid'
-        ) {
-          onPaymentSuccess(res.order);
-        }
+        onPaymentSuccess(res.order);
       } else {
         setErrorMessage(res.error || 'Gagal memverifikasi ID Billing pembayaran.');
       }
@@ -277,7 +282,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const getWhatsAppConfirmationUrl = () => {
     const msg = `Halo Admin AI Movie Factory (${OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}), saya sudah melakukan pembayaran:\n\n` +
-      `• No. Invoice: ${createdOrder?.order_number}\n` +
+      `• No. Invoice: ${currentOrderNumber}\n` +
+      `• ID Billing: ${billingId}\n` +
       `• Paket: ${item.name} (+${item.credits.toLocaleString('id-ID')} Kredit)\n` +
       `• Nominal: ${formatIdr(totalAmount)}\n` +
       `• Metode Tujuan: ${selectedChannel.bankName} (${selectedChannel.accountNumber} a/n ${selectedChannel.accountHolder})\n` +
@@ -306,7 +312,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 Pembayaran Resmi Studio (Bank Mandiri · GoPay · OVO · DANA)
               </h2>
               <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2">
-                <span>No. Tagihan: {createdOrder?.order_number || 'AMF-INIT'}</span>
+                <span>No. Tagihan: {currentOrderNumber}</span>
                 <span>·</span>
                 <span className="text-emerald-400 flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3" /> Penerima Resmi: {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}

@@ -99,36 +99,24 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  const handleApproveOrder = async (order: EnrichedOrder) => {
+  const handleRollbackOrder = async (order: EnrichedOrder) => {
+    const reason = window.prompt(
+      `Konfirmasi Tindakan Darurat:\nApakah Anda yakin ingin membatalkan transaksi #${order.order_number} (${formatIdr(Number(order.amount || 0))}) untuk pengguna ${order.user_display_name || order.user_email}?\n\nKredit yang telah diberikan (+${order.credits_granted}) akan ditarik kembali dari akun pengguna secara otomatis.\n\nMasukkan alasan pembatalan:`,
+      'Pembatalan transaksi atas permintaan pengguna / mutasi tidak valid'
+    );
+    if (!reason) return;
+
     setProcessingOrderId(order.id);
     try {
-      const res = await adminApprovePaymentOrder(order.id);
+      const res = await adminRejectPaymentOrder(order.id, reason);
       if (res.success) {
         onShowToast(
-          `Pembayaran ${order.order_number} (${order.user_display_name || order.user_email}) disetujui! Paket & +${order.credits_granted} kredit telah aktif.`,
-          'success'
+          `Transaksi #${order.order_number} telah dibatalkan & kredit berhasil ditarik dari akun.`,
+          'info'
         );
         await loadAdminData();
       } else {
-        onShowToast(res.error || 'Gagal menyetujui pembayaran.', 'error');
-      }
-    } finally {
-      setProcessingOrderId(null);
-    }
-  };
-
-  const handleRejectOrder = async (order: EnrichedOrder) => {
-    setProcessingOrderId(order.id);
-    try {
-      const res = await adminRejectPaymentOrder(
-        order.id,
-        'Mutasi pembayaran belum ditemukan di rekening Bank Mandiri / E-Wallet SUMARLIN'
-      );
-      if (res.success) {
-        onShowToast(`Pesanan ${order.order_number} telah ditolak / dibatalkan.`, 'info');
-        await loadAdminData();
-      } else {
-        onShowToast(res.error || 'Gagal menolak pesanan.', 'error');
+        onShowToast(res.error || 'Gagal membatalkan transaksi.', 'error');
       }
     } finally {
       setProcessingOrderId(null);
@@ -158,27 +146,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
   };
 
-  const pendingVerificationOrders = orders.filter(
-    o => o.status === 'processing' || o.status === 'pending'
+  const settledOrders = orders.filter(
+    o => o.status === 'settlement' || o.status === 'completed' || o.status === 'paid'
   );
 
   const renderPaymentVerificationTable = () => (
     <div className="space-y-4">
       <div className="p-4 bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-amber-400" />
-            Verifikasi Pembayaran Masuk — Rekening Resmi a/n {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}
-          </h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Bank Mandiri: <strong className="text-cyan-300 font-mono">{OFFICIAL_MERCHANT_BANK_ACCOUNT.accountNumber}</strong> ·
-            OVO / GoPay / DANA: <strong className="text-emerald-300 font-mono">{OFFICIAL_MERCHANT_BANK_ACCOUNT.ewalletNumber}</strong>.
-            Klik <strong>Setujui & Aktifkan</strong> setelah dana masuk ke rekening Anda.
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-bold text-white">
+              Buku Besar Pendapatan & Aktivasi Otomatis (Coretax Mode)
+            </h3>
+            <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-mono text-[10px] uppercase">
+              100% Otomatis
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Seluruh transaksi dengan ID Billing valid langsung aktif secara otomatis (LUNAS / AKTIF) tanpa antrean manual.
+            Rekening Tujuan: <strong className="text-cyan-300 font-mono">Bank Mandiri {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountNumber}</strong> &amp; E-Wallet{' '}
+            <strong className="text-emerald-300 font-mono">{OFFICIAL_MERCHANT_BANK_ACCOUNT.ewalletNumber}</strong> a/n{' '}
+            <strong className="text-white">{OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}</strong>.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="px-2.5 py-1 bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono text-xs">
-            {pendingVerificationOrders.length} Menunggu Verifikasi
+          <span className="px-2.5 py-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono text-xs">
+            {settledOrders.length} Transaksi Lunas / Aktif
           </span>
         </div>
       </div>
@@ -187,27 +181,28 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         <table className="w-full text-left text-xs text-slate-300">
           <thead className="bg-slate-900/80 text-slate-400 font-mono text-[11px] uppercase tracking-wider border-b border-slate-800">
             <tr>
-              <th className="p-3">No. Invoice / Waktu</th>
+              <th className="p-3">No. Invoice &amp; Waktu</th>
               <th className="p-3">Pengguna</th>
-              <th className="p-3">Paket & Kuota</th>
+              <th className="p-3">Paket &amp; Kuota</th>
               <th className="p-3 text-right">Nominal (IDR)</th>
-              <th className="p-3">Saluran & Catatan Pengirim</th>
+              <th className="p-3">Saluran &amp; Catatan ID Billing</th>
               <th className="p-3 text-center">Status</th>
-              <th className="p-3 text-right">Tindakan Admin (1-Klik)</th>
+              <th className="p-3 text-right">Tindakan Darurat Admin</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/80 text-xs">
             {orders.length === 0 ? (
               <tr>
                 <td colSpan={7} className="p-8 text-center text-slate-500">
-                  Belum ada tagihan atau transaksi pembayaran yang masuk.
+                  Belum ada transaksi pembayaran lunas yang tercatat. Transaksi baru akan muncul otomatis begitu pembayaran dilakukan.
                 </td>
               </tr>
             ) : (
               orders.map(ord => {
                 const isSettled =
                   ord.status === 'settlement' || ord.status === 'completed' || ord.status === 'paid';
-                const isCancelled = ord.status === 'cancelled' || ord.status === 'cancel' || ord.status === 'failed';
+                const isCancelled =
+                  ord.status === 'cancelled' || ord.status === 'cancel' || ord.status === 'failed';
                 const isBusy = processingOrderId === ord.id;
 
                 return (
@@ -215,7 +210,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <td className="p-3 font-mono whitespace-nowrap">
                       <div className="text-white font-bold">{ord.order_number}</div>
                       <div className="text-[11px] text-slate-500">
-                        {new Date(ord.created_at).toLocaleString('id-ID')}
+                        {new Date(ord.paid_at || ord.created_at).toLocaleString('id-ID')}
                       </div>
                     </td>
                     <td className="p-3">
@@ -235,54 +230,44 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <div className="font-mono text-cyan-300 uppercase text-[11px]">
                         {ord.payment_method}
                       </div>
-                      <div className="text-[11px] text-slate-300 mt-0.5">
-                        {ord.external_reference || 'Belum konfirmasi pengirim'}
+                      <div className="text-[11px] text-slate-300 mt-0.5 max-w-xs truncate" title={ord.external_reference || ''}>
+                        {ord.external_reference || 'Aktivasi Otomatis ID Billing'}
                       </div>
                     </td>
                     <td className="p-3 text-center whitespace-nowrap">
                       {isSettled ? (
                         <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-mono text-[10px] uppercase">
-                          LUNAS / AKTIF
+                          LUNAS / AKTIF (OTOMATIS)
                         </span>
                       ) : isCancelled ? (
                         <span className="px-2 py-0.5 bg-rose-500/15 border border-rose-500/40 text-rose-300 font-mono text-[10px] uppercase">
-                          DITOLAK
-                        </span>
-                      ) : ord.status === 'processing' ? (
-                        <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/50 text-amber-300 font-mono text-[10px] uppercase">
-                          SUDAH TRANSFER (VERIFIKASI)
+                          DIBATALKAN / REFUND
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-400 font-mono text-[10px] uppercase">
-                          PENDING
+                        <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/50 text-amber-300 font-mono text-[10px] uppercase">
+                          MEMPROSES
                         </span>
                       )}
                     </td>
                     <td className="p-3 text-right whitespace-nowrap">
-                      {!isSettled && !isCancelled ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => handleApproveOrder(ord)}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-[11px] flex items-center gap-1 transition-colors"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{isBusy ? 'Memproses...' : 'Setujui & Aktifkan'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => handleRejectOrder(ord)}
-                            className="px-2.5 py-1.5 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 disabled:opacity-50 text-rose-200 text-[11px] flex items-center gap-1 transition-colors"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Tolak</span>
-                          </button>
-                        </div>
+                      {isSettled ? (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleRollbackOrder(ord)}
+                          className="px-2.5 py-1.5 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 disabled:opacity-50 text-rose-200 text-[11px] flex items-center gap-1 transition-colors ml-auto"
+                          title="Batalkan pesanan dan tarik kembali kredit yang diberikan"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>{isBusy ? 'Memproses...' : 'Batalkan & Tarik Kredit'}</span>
+                        </button>
+                      ) : isCancelled ? (
+                        <span className="text-[11px] font-mono text-rose-400">
+                          Telah Dibatalkan
+                        </span>
                       ) : (
                         <span className="text-[11px] font-mono text-slate-500">
-                          {ord.paid_at ? new Date(ord.paid_at).toLocaleDateString('id-ID') : 'Selesai'}
+                          -
                         </span>
                       )}
                     </td>
@@ -338,19 +323,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
 
           <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
-            <span className="text-[11px] font-mono text-amber-400 uppercase tracking-wider">
-              Antrean Verifikasi
+            <span className="text-[11px] font-mono text-emerald-400 uppercase tracking-wider">
+              Transaksi Lunas / Aktif
             </span>
-            <div className="text-xl font-mono font-bold text-amber-400 tabular-nums mt-1">
-              {pendingVerificationOrders.length} Order
+            <div className="text-xl font-mono font-bold text-emerald-400 tabular-nums mt-1">
+              {settledOrders.length} Lunas
             </div>
           </div>
 
           <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
-            <span className="text-[11px] font-mono text-emerald-400 uppercase tracking-wider">
+            <span className="text-[11px] font-mono text-amber-400 uppercase tracking-wider">
               {t?.adminPanel?.metrics?.totalCreditsSold || 'Kredit Terjual'}
             </span>
-            <div className="text-xl font-mono font-bold text-emerald-400 tabular-nums mt-1">
+            <div className="text-xl font-mono font-bold text-amber-400 tabular-nums mt-1">
               {metrics.totalCreditsSold.toLocaleString()}
             </div>
           </div>
@@ -395,7 +380,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           }`}
         >
           <Activity className="w-4 h-4 text-indigo-400" />
-          Ringkasan & Verifikasi Pembayaran
+          Ringkasan &amp; Mutasi Coretax
         </button>
 
         <button
@@ -406,8 +391,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Clock className="w-4 h-4 text-amber-400" />
-          Daftar Tagihan & Approval ({orders.length})
+          <Coins className="w-4 h-4 text-amber-400" />
+          Buku Besar Tagihan &amp; ID Billing ({settledOrders.length})
         </button>
 
         <button

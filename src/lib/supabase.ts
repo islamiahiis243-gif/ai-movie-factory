@@ -2865,15 +2865,19 @@ export async function simulateSettlePayment(
 
 export async function submitDirectPaymentProof(
   userId: string,
-  orderId: string,
+  orderIdOrNumber: string,
   senderNote: string,
-  billingId?: string
+  billingId?: string,
+  orderPayload?: Partial<PaymentOrder>
 ): Promise<{ success: boolean; order?: PaymentOrder; error: string | null }> {
-  const orders = getLocalPaymentOrders(userId);
-  const idx = orders.findIndex(o => o.id === orderId);
-  if (idx === -1) return { success: false, error: 'Order tidak ditemukan' };
+  let target: any = orderPayload;
+  if (!target) {
+    const orders = getLocalPaymentOrders(userId);
+    target = orders.find(o => o.id === orderIdOrNumber || o.order_number === orderIdOrNumber);
+  }
 
-  const target = orders[idx];
+  if (!target) return { success: false, error: 'Data tagihan tidak ditemukan' };
+
   const canonicalPackageType =
     target.package_type === 'credit_pack' ? 'topup_credits' : target.package_type;
 
@@ -2888,8 +2892,20 @@ export async function submitDirectPaymentProof(
   });
 
   if (apiRes?.order) {
-    orders[idx] = apiRes.order;
-    saveLocalPaymentOrders(userId, orders);
+    const orders = getLocalPaymentOrders(userId);
+    const existingIdx = orders.findIndex(
+      o => o.order_number === apiRes.order.order_number || o.id === apiRes.order.id
+    );
+    const updatedList =
+      existingIdx !== -1
+        ? orders.map(o =>
+            o.order_number === apiRes.order.order_number || o.id === apiRes.order.id
+              ? apiRes.order
+              : o
+          )
+        : [apiRes.order, ...orders];
+    saveLocalPaymentOrders(userId, updatedList);
+
     if (apiRes.subscription) {
       saveLocalSubscription(userId, apiRes.subscription);
     }
@@ -2900,7 +2916,7 @@ export async function submitDirectPaymentProof(
     return { success: true, order: apiRes.order, error: null };
   }
 
-  return simulateSettlePayment(userId, orderId);
+  return simulateSettlePayment(userId, orderIdOrNumber);
 }
 
 export async function checkPaymentOrderStatus(
