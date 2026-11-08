@@ -146,11 +146,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       <div className="absolute top-60 -right-48 w-96 h-96 bg-amber-500/10 rounded-full blur-[128px] pointer-events-none -z-10" />
 
       {/* Top Floating Promo Bar */}
-      <div className="bg-gradient-to-r from-amber-500/10 via-purple-600/10 to-cyan-500/10 border-b border-slate-800/60 py-2 px-4 text-center">
-        <div className="max-w-7xl mx-auto flex items-center justify-center gap-3 text-xs font-medium text-slate-300">
-          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold uppercase tracking-wider text-[10px]">
-            <Sparkles className="w-3 h-3" /> Flagship V3.3
-          </span>
+      <div className="bg-gradient-to-r from-amber-500/10 via-purple-600/10 to-cyan-500/10 border-b border-slate-800/60 py-2.5 px-4 text-center">
+        <div className="max-w-7xl mx-auto flex items-center justify-center gap-2.5 text-xs font-medium text-slate-300">
+          <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0 inline" />
           <span>
             Studio Produksi Film AI Generasi Baru — Didukung 14 Agen Mandiri & Output Resolusi 4K Sinematik.
           </span>
