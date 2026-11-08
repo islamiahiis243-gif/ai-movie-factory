@@ -1041,3 +1041,49 @@ export interface StorageUploadResult {
   objectRecord?: StorageBucketObject;
   error: string | null;
 }
+
+// ============================================================================
+// PHASE 15: CREATOR BUSINESS & GROWTH INTELLIGENCE TYPES
+// ============================================================================
+
+export type PublishingPlatformKey = 'youtube' | 'tiktok' | 'reels' | 'x_twitter' | 'web_drama';
+
+export interface CreatorMilestone {
+  id: string;
+  user_id: string;
+  project_id?: string;
+  project_name: string;
+  platform: PublishingPlatformKey;
+  video_url: string;
+  views_count: number;
+  likes_count: number;
+  comments_count: number;
+  revenue_earned: number;
+  currency: string;
+  release_date: string;
+  notes?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface RetentionHookAnalysis {
+  overallScore: number;
+  firstThreeSeconds: {
+    status: 'optimal' | 'warning' | 'critical';
+    score: number;
+    description: string;
+    actionableTip: string;
+  };
+  dialogPacing: {
+    status: 'optimal' | 'warning' | 'critical';
+    score: number;
+    description: string;
+    actionableTip: string;
+  };
+  soundDesignPacing: {
+    status: 'optimal' | 'warning' | 'critical';
+    score: number;
+    description: string;
+    actionableTip: string;
+  };
+}

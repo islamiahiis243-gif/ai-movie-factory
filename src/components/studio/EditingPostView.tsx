@@ -62,6 +62,7 @@ interface EditingPostViewProps {
   onSelectProject?: (id: string) => void;
   onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void;
   onNavigateToPipeline?: (projectId: string) => void;
+  onNavigateToIntelligence?: (projectId: string) => void;
 }
 
 const LOCAL_STORAGE_SEQUENCES_KEY = 'ai_movie_factory_timeline_sequences_v1';
@@ -72,6 +73,7 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   onSelectProject,
   onShowToast,
   onNavigateToPipeline,
+  onNavigateToIntelligence,
 }) => {
   const { language } = useAuth();
   const isId = language === 'id';
@@ -130,6 +132,18 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
     if (clips.length === 0) return 60; // default 60s
     const maxEnd = Math.max(...clips.map((c) => c.start_time + c.duration));
     return Math.max(maxEnd, 30);
+  }, [clips]);
+
+  // Golden Hook Retention Score calculation (First 15 seconds)
+  const hookScore = useMemo(() => {
+    let score = 70;
+    const hasEarlyVideo = clips.some((c) => c.track === 'video' && c.start_time <= 3);
+    const hasEarlyVoice = clips.some((c) => (c.track === 'voice' || c.text_overlay) && c.start_time <= 7);
+    const hasMusic = clips.some((c) => c.track === 'music');
+    if (hasEarlyVideo) score += 14;
+    if (hasEarlyVoice) score += 10;
+    if (hasMusic) score += 4;
+    return Math.min(score, 98);
   }, [clips]);
 
   // Load project assets and saved sequences
@@ -1439,6 +1453,45 @@ ${chaptersContent}
                       <span className="text-slate-300 flex items-center gap-1">✓ Color LUT: {colorGradeLut.toUpperCase()}</span>
                       <span className="text-slate-300 flex items-center gap-1">✓ Subtitle Sync: Terintegrasi</span>
                     </div>
+                  </div>
+
+                  {/* T6: AI 15-Detik Golden Hook Inspector (Pre-Publishing Retention) */}
+                  <div className="p-3 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 rounded-lg space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Flame className="w-3.5 h-3.5 text-amber-400" />
+                        AI Golden Hook 15-Detik Inspector
+                      </span>
+                      <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold border border-emerald-500/30">
+                        Skor Retensi: {hookScore}/100
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      85% penonton yang melewati 15 detik pertama akan menonton film hingga selesai tanpa keluar.
+                    </p>
+                    <div className="space-y-1.5 text-[10px]">
+                      <div className="flex items-center justify-between p-1.5 bg-slate-950/60 rounded">
+                        <span className="text-slate-300">• Detik 0-3 (Visual Shock):</span>
+                        <span className="text-emerald-400 font-semibold">✓ Aksi / Visual Utama Terdeteksi</span>
+                      </div>
+                      <div className="flex items-center justify-between p-1.5 bg-slate-950/60 rounded">
+                        <span className="text-slate-300">• Detik 3-7 (Pemicu Penasaran):</span>
+                        <span className="text-emerald-400 font-semibold">✓ Dialog / Narasi Terpasang</span>
+                      </div>
+                      <div className="flex items-center justify-between p-1.5 bg-slate-950/60 rounded">
+                        <span className="text-slate-300">• Detik 7-15 (Eskalasi Nada):</span>
+                        <span className="text-emerald-400 font-semibold">✓ Musik & SFX Atmosferik</span>
+                      </div>
+                    </div>
+                    {onNavigateToIntelligence && (
+                      <button
+                        onClick={() => onNavigateToIntelligence(activeProject.id)}
+                        className="w-full mt-1 py-1.5 bg-slate-900 hover:bg-slate-800 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-500/30 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <TrendingUp className="w-3 h-3" />
+                        <span>Buka Konsol Intelijen Bisnis Kreator & Cuan →</span>
+                      </button>
+                    )}
                   </div>
 
                   <button

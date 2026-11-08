@@ -1490,6 +1490,53 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
+-- ==============================================================================
+-- PHASE 15: CREATOR MILESTONES & GROWTH INTELLIGENCE
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.creator_milestones (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
+    project_name TEXT NOT NULL,
+    platform TEXT NOT NULL CHECK (platform IN ('youtube', 'tiktok', 'reels', 'x_twitter', 'web_drama')),
+    video_url TEXT,
+    views_count BIGINT DEFAULT 0,
+    likes_count BIGINT DEFAULT 0,
+    comments_count BIGINT DEFAULT 0,
+    revenue_earned NUMERIC DEFAULT 0,
+    currency TEXT DEFAULT 'IDR',
+    release_date TIMESTAMPTZ DEFAULT NOW(),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_creator_milestones_user_id ON public.creator_milestones(user_id);
+CREATE INDEX IF NOT EXISTS idx_creator_milestones_project_id ON public.creator_milestones(project_id);
+
+ALTER TABLE public.creator_milestones ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own creator milestones" ON public.creator_milestones;
+CREATE POLICY "Users can view own creator milestones"
+    ON public.creator_milestones FOR SELECT
+    USING (auth.uid() = user_id OR public.is_platform_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "Users can create own creator milestones" ON public.creator_milestones;
+CREATE POLICY "Users can create own creator milestones"
+    ON public.creator_milestones FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own creator milestones" ON public.creator_milestones;
+CREATE POLICY "Users can update own creator milestones"
+    ON public.creator_milestones FOR UPDATE
+    USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete own creator milestones" ON public.creator_milestones;
+CREATE POLICY "Users can delete own creator milestones"
+    ON public.creator_milestones FOR DELETE
+    USING (auth.uid() = user_id);
+
 COMMIT;
 -- ==============================================================================
 -- END OF MASTER DATABASE MIGRATION SCRIPT (V3.2 ENTERPRISE MASTER)

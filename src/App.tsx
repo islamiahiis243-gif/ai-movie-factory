@@ -60,6 +60,11 @@ const QualityControlView = lazy(() =>
 const EditingPostView = lazy(() =>
   import('./components/studio/EditingPostView').then((m) => ({ default: m.EditingPostView }))
 );
+const CreatorIntelligenceView = lazy(() =>
+  import('./components/studio/CreatorIntelligenceView').then((m) => ({
+    default: m.CreatorIntelligenceView,
+  }))
+);
 const SubscriptionView = lazy(() =>
   import('./components/billing/SubscriptionView').then((m) => ({ default: m.SubscriptionView }))
 );
@@ -467,6 +472,30 @@ function StudioApp() {
                   const target = projects.find((p) => p.id === projectId);
                   if (target) setInspectProject(target);
                   setActiveTab('production_pipeline');
+                }}
+                onNavigateToIntelligence={(projectId) => {
+                  const target = projects.find((p) => p.id === projectId);
+                  if (target) setInspectProject(target);
+                  setActiveTab('creator_intelligence');
+                }}
+              />
+            </div>
+          )}
+
+          {activeTab === 'creator_intelligence' && (
+            <div className="p-6">
+              <CreatorIntelligenceView
+                projects={projects}
+                selectedProjectId={inspectProject?.id || projects[0]?.id}
+                onSelectProject={(id) => {
+                  const target = projects.find((p) => p.id === id);
+                  if (target) setInspectProject(target);
+                }}
+                onShowToast={addToast}
+                onNavigateToEditing={(projectId) => {
+                  const target = projects.find((p) => p.id === projectId);
+                  if (target) setInspectProject(target);
+                  setActiveTab('editing_post');
                 }}
               />
             </div>

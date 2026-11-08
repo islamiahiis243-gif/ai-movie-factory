@@ -22,6 +22,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     - Companion asset download triggers for Subtitle `.SRT`, Subtitle `.VTT`, and YouTube Chapter Timestamps `.TXT`.
     - 1-Click Master Kit Copy formatting title, synopsis, chapters, and hashtags for instant paste into YouTube Studio or TikTok Creator Center.
     - Interactive Creator Revenue & Net Profit Simulator (calculates YouTube AdSense RPM, TikTok Rewards, sponsorship valuations, and deducts AI production costs to reveal net profit margins up to 95%).
+- **Creator Business & Growth Intelligence Hub (Phase 15 Sprint 2 - Zona 2):**
+  - **Dedicated Business Console (`src/components/studio/CreatorIntelligenceView.tsx`):**
+    - High-impact creator KPI dashboard displaying cumulative video views, verified revenue earnings, engagement rate, and production ROI multiple.
+    - **Milestone Growth Logger (T7):** Interface for recording real-world published releases across YouTube, TikTok, Reels, X, and Web Drama, tracking live views, likes, comments, and earned revenue.
+    - **Multi-Channel Profitability Simulator (T5):** Dynamic financial calculator with customizable target views (10K to 2M+), genre-calibrated YouTube RPMs (Sci-Fi, Mystery, Action, Drama), TikTok Creator Rewards, tiered brand sponsorship valuations, and web-drama pay-per-view estimates, subtracting AI credit costs to highlight net profit margins up to 95%.
+    - **AI Growth Advisor Engine:** Evaluates milestone history and generates 4 tactical recommendations (Next Film Topic & High-Demand Niche, Optimal Publishing Window / Golden Hours, 15-Second Pacing & Drop-Off Mitigation, and Commercial Sponsorship Rate Cards).
+  - **Pre-Publishing Hook Analyzer (T6 - `src/components/studio/EditingPostView.tsx`):**
+    - Integrated real-time 15-second opening audit evaluating 0-3s visual shock, 3-7s voice/dialog hook, and 7-15s sound escalation to maximize audience retention before export.
+  - **Database Persistence (`supabase/upgrade_v3_4_creator_intelligence.sql` & `src/lib/supabase.ts`):**
+    - Provisioned `public.creator_milestones` table with Row Level Security (RLS) policies allowing creators to manage their milestones and super admins to audit platform-wide creator success, supported by automatic offline fallback.
 
 ## [1.14.0] - Phase 14: Hybrid RBAC+ABAC Security, Coretax Automated Billing & Master Flagship Landing Page - 2026-11-08
 

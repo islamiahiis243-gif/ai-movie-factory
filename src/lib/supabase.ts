@@ -32,6 +32,7 @@ import {
   StorageBucketName,
   StorageBucketObject,
   StorageUploadResult,
+  CreatorMilestone,
 } from '../types/database';
 import {
   INITIAL_DEMO_PROJECTS,
@@ -3863,4 +3864,104 @@ export async function listStudioBucketObjects(
     all = all.filter((o) => o.project_id === projectId);
   }
   return { data: all, error: null };
+}
+
+// ============================================================================
+// PHASE 15: CREATOR MILESTONES & BUSINESS INTELLIGENCE PERSISTENCE
+// ============================================================================
+
+const LOCAL_STORAGE_CREATOR_MILESTONES_KEY = 'amf_creator_milestones_v1';
+
+export function getLocalCreatorMilestones(userId?: string): CreatorMilestone[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_CREATOR_MILESTONES_KEY);
+    if (!raw) return [];
+    const list: CreatorMilestone[] = JSON.parse(raw);
+    if (userId) {
+      return list.filter((m) => m.user_id === userId);
+    }
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalCreatorMilestones(milestones: CreatorMilestone[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_STORAGE_CREATOR_MILESTONES_KEY, JSON.stringify(milestones));
+  } catch (err) {
+    console.warn('Failed to save local creator milestones:', err);
+  }
+}
+
+export async function fetchCreatorMilestones(userId: string): Promise<{ data: CreatorMilestone[]; error: string | null }> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('creator_milestones')
+        .select('*')
+        .eq('user_id', userId)
+        .order('release_date', { ascending: false });
+
+      if (!error && data) {
+        return { data: data as CreatorMilestone[], error: null };
+      }
+    } catch (err: any) {
+      console.warn('Supabase fetchCreatorMilestones failed, using local cache:', err);
+    }
+  }
+
+  const localList = getLocalCreatorMilestones(userId);
+  return { data: localList, error: null };
+}
+
+export async function createCreatorMilestone(
+  milestone: Omit<CreatorMilestone, 'id' | 'created_at'>
+): Promise<{ data: CreatorMilestone | null; error: string | null }> {
+  const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `milestone-${Date.now()}`;
+  const now = new Date().toISOString();
+  const newRecord: CreatorMilestone = {
+    ...milestone,
+    id: newId,
+    created_at: now,
+    updated_at: now,
+  };
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('creator_milestones')
+        .insert(newRecord)
+        .select()
+        .single();
+
+      if (!error && data) {
+        return { data: data as CreatorMilestone, error: null };
+      }
+    } catch (err: any) {
+      console.warn('Supabase createCreatorMilestone failed, saving to local:', err);
+    }
+  }
+
+  const all = getLocalCreatorMilestones();
+  const updated = [newRecord, ...all];
+  saveLocalCreatorMilestones(updated);
+  return { data: newRecord, error: null };
+}
+
+export async function deleteCreatorMilestone(milestoneId: string): Promise<boolean> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase.from('creator_milestones').delete().eq('id', milestoneId);
+    } catch (err) {
+      console.warn('Supabase deleteCreatorMilestone failed:', err);
+    }
+  }
+
+  const all = getLocalCreatorMilestones();
+  const filtered = all.filter((m) => m.id !== milestoneId);
+  saveLocalCreatorMilestones(filtered);
+  return true;
 }
