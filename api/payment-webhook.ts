@@ -72,6 +72,172 @@ async function getCurrentBalance(adminSupabase: any, userId: string): Promise<nu
   return sub?.credits_allotted ?? 150;
 }
 
+async function isUserPlatformAdmin(adminSupabase: any, userId: string, email?: string): Promise<boolean> {
+  if (email && email.toLowerCase() === 'islamiahiis243@gmail.com') {
+    return true;
+  }
+  const { data: profile } = await adminSupabase
+    .from('profiles')
+    .select('role, email')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (!profile) return false;
+  return profile.role === 'admin' || String(profile.email || '').toLowerCase() === 'islamiahiis243@gmail.com';
+}
+
+async function settleOrderForUser(
+  adminSupabase: any,
+  targetOrder: any,
+  billingCycleInput?: string,
+  adminApproverEmail?: string
+) {
+  const targetUserId = targetOrder.user_id;
+  const packageType =
+    targetOrder.package_type === 'credit_pack' ? 'topup_credits' : String(targetOrder.package_type || 'subscription');
+  const packageId = String(targetOrder.package_id || '');
+  const amount = Number(targetOrder.amount || 0);
+  const creditsGranted = Number(targetOrder.credits_granted || 0);
+  const paymentMethod = String(targetOrder.payment_method || 'mandiri_va');
+  const billingCycle =
+    billingCycleInput === 'yearly' || String(targetOrder.package_name || '').toLowerCase().includes('year')
+      ? 'yearly'
+      : 'monthly';
+
+  if (targetOrder.status === 'settlement' || targetOrder.status === 'completed' || targetOrder.status === 'paid') {
+    const currentBalance = await getCurrentBalance(adminSupabase, targetUserId);
+    return {
+      order: targetOrder,
+      transaction: null,
+      subscription: null,
+      balance_after: currentBalance,
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  const prevRef = targetOrder.external_reference ? `${targetOrder.external_reference} | ` : '';
+  const extRef = `${prevRef}VERIFIED-SUMARLIN-${paymentMethod.toUpperCase()}-${Date.now().toString().slice(-6)}`;
+
+  const { data: settledOrder, error: settleErr } = await adminSupabase
+    .from('payment_orders')
+    .update({
+      status: 'settlement',
+      paid_at: nowIso,
+      external_reference: extRef.slice(0, 240),
+    })
+    .eq('id', targetOrder.id)
+    .select()
+    .single();
+
+  if (settleErr) {
+    throw new Error(settleErr.message);
+  }
+
+  const currentBalance = await getCurrentBalance(adminSupabase, targetUserId);
+  const newBalance = currentBalance + creditsGranted;
+
+  const { data: newTx, error: txErr } = await adminSupabase
+    .from('credit_transactions')
+    .insert({
+      user_id: targetUserId,
+      transaction_type: packageType === 'subscription' ? 'monthly_allotment' : 'purchase',
+      amount: creditsGranted,
+      balance_after: newBalance,
+      provider: 'direct_merchant',
+      model: `${paymentMethod}_settlement`,
+      operation: packageType === 'subscription' ? 'subscription_activation' : 'credit_pack_purchase',
+      estimated_cost_usd: 0,
+      actual_cost_usd: 0,
+      description:
+        packageType === 'subscription'
+          ? `Aktivasi Langganan ${settledOrder.package_name} via ${paymentMethod.toUpperCase()} (${settledOrder.order_number})${adminApproverEmail ? ` [Disetujui Admin]` : ''}`
+          : `Top-Up ${settledOrder.package_name} (+${creditsGranted.toLocaleString('id-ID')} Kredit) via ${paymentMethod.toUpperCase()} (${settledOrder.order_number})${adminApproverEmail ? ` [Disetujui Admin]` : ''}`,
+      status: 'completed',
+      idempotency_key: `settle_${settledOrder.order_number}`,
+    })
+    .select()
+    .single();
+
+  if (txErr) {
+    throw new Error(txErr.message);
+  }
+
+  let updatedSubscription = null;
+  if (packageType === 'subscription') {
+    const targetTier = mapPackageIdToTier(packageId);
+    const periodDays = billingCycle === 'yearly' ? 365 : 30;
+    const periodEnd = new Date(Date.now() + periodDays * 86400000).toISOString();
+
+    const { data: existingSub } = await adminSupabase
+      .from('subscriptions')
+      .select('id')
+      .eq('user_id', targetUserId)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingSub?.id) {
+      const { data: subRow } = await adminSupabase
+        .from('subscriptions')
+        .update({
+          tier: targetTier,
+          status: 'active',
+          billing_cycle: billingCycle,
+          price_paid: amount,
+          currency: 'IDR',
+          credits_allotted: creditsGranted,
+          current_period_start: nowIso,
+          current_period_end: periodEnd,
+          cancel_at_period_end: false,
+          payment_provider: 'midtrans',
+          payment_method: paymentMethod,
+          updated_at: nowIso,
+        })
+        .eq('id', existingSub.id)
+        .select()
+        .single();
+      updatedSubscription = subRow;
+    } else {
+      const { data: subRow } = await adminSupabase
+        .from('subscriptions')
+        .insert({
+          user_id: targetUserId,
+          tier: targetTier,
+          status: 'active',
+          billing_cycle: billingCycle,
+          price_paid: amount,
+          currency: 'IDR',
+          credits_allotted: creditsGranted,
+          current_period_start: nowIso,
+          current_period_end: periodEnd,
+          cancel_at_period_end: false,
+          payment_provider: 'midtrans',
+          payment_method: paymentMethod,
+        })
+        .select()
+        .single();
+      updatedSubscription = subRow;
+    }
+
+    const seatLimit = mapTierSeatLimit(targetTier);
+    await adminSupabase
+      .from('workspaces')
+      .update({
+        tier: targetTier,
+        max_seats: seatLimit,
+        seat_limit: seatLimit,
+        updated_at: nowIso,
+      })
+      .eq('owner_id', targetUserId);
+  }
+
+  return {
+    order: settledOrder,
+    transaction: newTx,
+    subscription: updatedSubscription,
+    balance_after: newBalance,
+  };
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -112,10 +278,11 @@ export default async function handler(req: any, res: any) {
     }
 
     const userId = authData.user.id;
+    const userEmail = authData.user.email || '';
     const action = String(body.action);
 
     try {
-      if (action === 'settle_order') {
+      if (action === 'submit_payment_proof') {
         const orderInput = body.order || {};
         const orderNumber = String(orderInput.order_number || `AMF-${Date.now()}`);
         const packageType =
@@ -123,10 +290,9 @@ export default async function handler(req: any, res: any) {
         const packageId = String(orderInput.package_id || '');
         const amount = Number(orderInput.amount || 0);
         const creditsGranted = Number(orderInput.credits_granted || 0);
-        const paymentMethod = String(orderInput.payment_method || 'qris');
-        const billingCycle = orderInput.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
+        const paymentMethod = String(orderInput.payment_method || 'mandiri_va');
+        const senderNote = String(body.sender_note || '').trim();
 
-        // 1. Check if order already exists in payment_orders, else insert as pending first (triggers catalog validation)
         let { data: existingOrder } = await adminSupabase
           .from('payment_orders')
           .select('*')
@@ -159,131 +325,249 @@ export default async function handler(req: any, res: any) {
           existingOrder = insertedOrder;
         }
 
-        // 2. Transition order from pending -> settlement using service_role
-        const nowIso = new Date().toISOString();
-        const extRef = `MIDTRANS-ID-${paymentMethod.toUpperCase()}-${Date.now().toString().slice(-7)}`;
+        const extRef = senderNote
+          ? `MENUNGGU_VERIFIKASI | Pengirim: ${senderNote}`.slice(0, 240)
+          : `MENUNGGU_VERIFIKASI | ${paymentMethod.toUpperCase()} -> SUMARLIN`;
 
-        const { data: settledOrder, error: settleErr } = await adminSupabase
+        const { data: processingOrder, error: updErr } = await adminSupabase
           .from('payment_orders')
           .update({
-            status: 'settlement',
-            paid_at: nowIso,
+            status: 'processing',
             external_reference: extRef,
           })
           .eq('id', existingOrder.id)
           .select()
           .single();
 
-        if (settleErr) {
-          return res.status(400).json({ error: settleErr.message });
-        }
-
-        // 3. Calculate new balance & append to immutable credit_transactions
-        const currentBalance = await getCurrentBalance(adminSupabase, userId);
-        const newBalance =
-          packageType === 'subscription' ? currentBalance + creditsGranted : currentBalance + creditsGranted;
-
-        const { data: newTx, error: txErr } = await adminSupabase
-          .from('credit_transactions')
-          .insert({
-            user_id: userId,
-            transaction_type: packageType === 'subscription' ? 'monthly_allotment' : 'purchase',
-            amount: creditsGranted,
-            balance_after: newBalance,
-            provider: 'midtrans',
-            model: `${paymentMethod}_settlement`,
-            operation: packageType === 'subscription' ? 'subscription_activation' : 'credit_pack_purchase',
-            estimated_cost_usd: 0,
-            actual_cost_usd: 0,
-            description:
-              packageType === 'subscription'
-                ? `Aktivasi Langganan ${settledOrder.package_name} via ${paymentMethod.toUpperCase()} (${settledOrder.order_number})`
-                : `Top-Up ${settledOrder.package_name} (+${creditsGranted.toLocaleString('id-ID')} Kredit) via ${paymentMethod.toUpperCase()} (${settledOrder.order_number})`,
-            status: 'completed',
-            idempotency_key: `settle_${settledOrder.order_number}`,
-          })
-          .select()
-          .single();
-
-        if (txErr) {
-          return res.status(400).json({ error: txErr.message });
-        }
-
-        // 4. If subscription package, update user's subscription & workspace tier
-        let updatedSubscription = null;
-        if (packageType === 'subscription') {
-          const targetTier = mapPackageIdToTier(packageId);
-          const periodDays = billingCycle === 'yearly' ? 365 : 30;
-          const periodEnd = new Date(Date.now() + periodDays * 86400000).toISOString();
-
-          const { data: existingSub } = await adminSupabase
-            .from('subscriptions')
-            .select('id')
-            .eq('user_id', userId)
-            .limit(1)
-            .maybeSingle();
-
-          if (existingSub?.id) {
-            const { data: subRow } = await adminSupabase
-              .from('subscriptions')
-              .update({
-                tier: targetTier,
-                status: 'active',
-                billing_cycle: billingCycle,
-                price_paid: amount,
-                currency: 'IDR',
-                credits_allotted: creditsGranted,
-                current_period_start: nowIso,
-                current_period_end: periodEnd,
-                cancel_at_period_end: false,
-                payment_provider: 'midtrans',
-                payment_method: paymentMethod,
-                updated_at: nowIso,
-              })
-              .eq('id', existingSub.id)
-              .select()
-              .single();
-            updatedSubscription = subRow;
-          } else {
-            const { data: subRow } = await adminSupabase
-              .from('subscriptions')
-              .insert({
-                user_id: userId,
-                tier: targetTier,
-                status: 'active',
-                billing_cycle: billingCycle,
-                price_paid: amount,
-                currency: 'IDR',
-                credits_allotted: creditsGranted,
-                current_period_start: nowIso,
-                current_period_end: periodEnd,
-                cancel_at_period_end: false,
-                payment_provider: 'midtrans',
-                payment_method: paymentMethod,
-              })
-              .select()
-              .single();
-            updatedSubscription = subRow;
-          }
-
-          const seatLimit = mapTierSeatLimit(targetTier);
-          await adminSupabase
-            .from('workspaces')
-            .update({
-              tier: targetTier,
-              max_seats: seatLimit,
-              seat_limit: seatLimit,
-              updated_at: nowIso,
-            })
-            .eq('owner_id', userId);
+        if (updErr) {
+          return res.status(400).json({ error: updErr.message });
         }
 
         return res.status(200).json({
+          status: 'processing',
+          order: processingOrder,
+        });
+      }
+
+      if (action === 'check_order_status') {
+        const orderId = String(body.order_id || '');
+        const orderNumber = String(body.order_number || '');
+        let query = adminSupabase.from('payment_orders').select('*').eq('user_id', userId);
+        if (orderId) {
+          query = query.eq('id', orderId);
+        } else if (orderNumber) {
+          query = query.eq('order_number', orderNumber);
+        }
+
+        const { data: ord } = await query.maybeSingle();
+        if (!ord) {
+          return res.status(404).json({ error: 'Tagihan tidak ditemukan.' });
+        }
+
+        let sub = null;
+        if (ord.status === 'settlement' || ord.status === 'completed' || ord.status === 'paid') {
+          const { data: subData } = await adminSupabase
+            .from('subscriptions')
+            .select('*')
+            .eq('user_id', userId)
+            .maybeSingle();
+          sub = subData;
+        }
+        const currentBalance = await getCurrentBalance(adminSupabase, userId);
+
+        return res.status(200).json({
+          status: ord.status,
+          order: ord,
+          subscription: sub,
+          balance_after: currentBalance,
+        });
+      }
+
+      if (action === 'admin_list_data') {
+        const isAdmin = await isUserPlatformAdmin(adminSupabase, userId, userEmail);
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Akses ditolak: Hanya Admin Platform yang diizinkan.' });
+        }
+
+        const [ordersRes, txsRes, profilesRes, subsRes] = await Promise.all([
+          adminSupabase
+            .from('payment_orders')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(100),
+          adminSupabase
+            .from('credit_transactions')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(150),
+          adminSupabase
+            .from('profiles')
+            .select('id, display_name, email, role, created_at'),
+          adminSupabase
+            .from('subscriptions')
+            .select('*')
+            .eq('status', 'active'),
+        ]);
+
+        const profileMap = new Map<string, { display_name: string; email: string }>();
+        for (const p of profilesRes.data || []) {
+          profileMap.set(p.id, { display_name: p.display_name, email: p.email });
+        }
+
+        const enrichedOrders = (ordersRes.data || []).map((o: any) => ({
+          ...o,
+          user_display_name: profileMap.get(o.user_id)?.display_name || 'Creator',
+          user_email: profileMap.get(o.user_id)?.email || o.user_id,
+        }));
+
+        const enrichedTxs = (txsRes.data || []).map((tx: any) => ({
+          ...tx,
+          user_display_name: profileMap.get(tx.user_id)?.display_name || 'Creator',
+          user_email: profileMap.get(tx.user_id)?.email || tx.user_id,
+        }));
+
+        return res.status(200).json({
+          orders: enrichedOrders,
+          transactions: enrichedTxs,
+          profiles: profilesRes.data || [],
+          active_subscriptions_count: (subsRes.data || []).filter((s: any) => s.tier !== 'free').length,
+        });
+      }
+
+      if (action === 'admin_approve_order') {
+        const isAdmin = await isUserPlatformAdmin(adminSupabase, userId, userEmail);
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Akses ditolak: Hanya Admin Platform yang dapat menyetujui pembayaran.' });
+        }
+
+        const orderId = String(body.order_id || '');
+        const { data: targetOrder } = await adminSupabase
+          .from('payment_orders')
+          .select('*')
+          .eq('id', orderId)
+          .maybeSingle();
+
+        if (!targetOrder) {
+          return res.status(404).json({ error: 'Pesanan pembayaran tidak ditemukan.' });
+        }
+
+        const settledResult = await settleOrderForUser(
+          adminSupabase,
+          targetOrder,
+          body.billing_cycle,
+          userEmail
+        );
+
+        return res.status(200).json({
           status: 'settled',
-          order: settledOrder,
-          transaction: newTx,
-          subscription: updatedSubscription,
-          balance_after: newBalance,
+          ...settledResult,
+        });
+      }
+
+      if (action === 'admin_reject_order') {
+        const isAdmin = await isUserPlatformAdmin(adminSupabase, userId, userEmail);
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Akses ditolak: Hanya Admin Platform yang dapat menolak pembayaran.' });
+        }
+
+        const orderId = String(body.order_id || '');
+        const reason = String(body.reason || 'Transfer tidak ditemukan di mutasi rekening');
+
+        const { data: rejectedOrder, error: rejErr } = await adminSupabase
+          .from('payment_orders')
+          .update({
+            status: 'cancelled',
+            external_reference: `DITOLAK_ADMIN | ${reason}`.slice(0, 240),
+          })
+          .eq('id', orderId)
+          .select()
+          .single();
+
+        if (rejErr) {
+          return res.status(400).json({ error: rejErr.message });
+        }
+
+        return res.status(200).json({
+          status: 'cancelled',
+          order: rejectedOrder,
+        });
+      }
+
+      if (action === 'settle_order') {
+        const isAdmin = await isUserPlatformAdmin(adminSupabase, userId, userEmail);
+        const orderInput = body.order || {};
+        const orderNumber = String(orderInput.order_number || `AMF-${Date.now()}`);
+        const packageType =
+          orderInput.package_type === 'credit_pack' ? 'topup_credits' : String(orderInput.package_type || 'subscription');
+        const packageId = String(orderInput.package_id || '');
+        const amount = Number(orderInput.amount || 0);
+        const creditsGranted = Number(orderInput.credits_granted || 0);
+        const paymentMethod = String(orderInput.payment_method || 'mandiri_va');
+        const billingCycle = orderInput.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
+
+        let { data: existingOrder } = await adminSupabase
+          .from('payment_orders')
+          .select('*')
+          .eq('order_number', orderNumber)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!existingOrder) {
+          const { data: insertedOrder, error: insertErr } = await adminSupabase
+            .from('payment_orders')
+            .insert({
+              user_id: userId,
+              order_number: orderNumber,
+              package_type: packageType,
+              package_id: packageId,
+              package_name: String(orderInput.package_name || packageId),
+              amount,
+              currency: 'IDR',
+              payment_gateway: 'midtrans',
+              payment_method: paymentMethod,
+              status: 'pending',
+              credits_granted: creditsGranted,
+            })
+            .select()
+            .single();
+
+          if (insertErr) {
+            return res.status(400).json({ error: insertErr.message });
+          }
+          existingOrder = insertedOrder;
+        }
+
+        if (!isAdmin) {
+          const { data: processingOrder, error: updErr } = await adminSupabase
+            .from('payment_orders')
+            .update({
+              status: 'processing',
+              external_reference: `MENUNGGU_VERIFIKASI | ${paymentMethod.toUpperCase()} -> SUMARLIN`,
+            })
+            .eq('id', existingOrder.id)
+            .select()
+            .single();
+
+          if (updErr) {
+            return res.status(400).json({ error: updErr.message });
+          }
+
+          return res.status(200).json({
+            status: 'processing',
+            order: processingOrder,
+          });
+        }
+
+        const settledResult = await settleOrderForUser(
+          adminSupabase,
+          existingOrder,
+          billingCycle,
+          userEmail
+        );
+
+        return res.status(200).json({
+          status: 'settled',
+          ...settledResult,
         });
       }
 
@@ -410,15 +694,20 @@ export default async function handler(req: any, res: any) {
       }
 
       if (action === 'admin_adjust') {
+        const isAdmin = await isUserPlatformAdmin(adminSupabase, userId, userEmail);
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Akses ditolak: Hanya Admin Platform yang diizinkan.' });
+        }
+        const targetUid = String(body.target_user_id || userId);
         const delta = Number(body.amount || 0);
         const reason = String(body.reason || 'Penyesuaian Kredit Konsol Admin');
-        const currentBalance = await getCurrentBalance(adminSupabase, userId);
+        const currentBalance = await getCurrentBalance(adminSupabase, targetUid);
         const newBalance = Math.max(0, currentBalance + delta);
 
         const { data: adjTx, error: adjErr } = await adminSupabase
           .from('credit_transactions')
           .insert({
-            user_id: userId,
+            user_id: targetUid,
             transaction_type: 'admin_adjustment',
             amount: delta,
             balance_after: newBalance,
@@ -429,7 +718,7 @@ export default async function handler(req: any, res: any) {
             actual_cost_usd: 0,
             description: `Admin Override: ${reason}`,
             status: 'completed',
-            idempotency_key: `admin_adj_${userId}_${Date.now()}`,
+            idempotency_key: `admin_adj_${targetUid}_${Date.now()}`,
           })
           .select()
           .single();

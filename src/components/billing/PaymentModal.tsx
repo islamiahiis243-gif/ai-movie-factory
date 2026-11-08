@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  CreditCard,
-  QrCode,
   Building2,
   Wallet,
   CheckCircle2,
@@ -12,11 +10,21 @@ import {
   Check,
   FileText,
   Printer,
-  Zap
+  Zap,
+  RefreshCw,
+  MessageCircle,
+  UserCheck
 } from 'lucide-react';
 import { PaymentOrder, IndonesianPaymentMethod } from '../../types/database';
-import { createPaymentOrder, simulateSettlePayment } from '../../lib/supabase';
-import { INDONESIAN_PAYMENT_CHANNELS } from '../../lib/billingEngine';
+import {
+  createPaymentOrder,
+  submitDirectPaymentProof,
+  checkPaymentOrderStatus
+} from '../../lib/supabase';
+import {
+  INDONESIAN_PAYMENT_CHANNELS,
+  OFFICIAL_MERCHANT_BANK_ACCOUNT
+} from '../../lib/billingEngine';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -63,9 +71,9 @@ export function printIndonesianTaxInvoice(order: PaymentOrder) {
 <body>
   <div class="header">
     <div>
-      <div class="brand">PT AI MOVIE FACTORY INDONESIA</div>
-      <div style="font-size:12px;color:#475569;">Gedung Cyber 2 Tower Lt. 18, Jl. H.R. Rasuna Said Blok X-5, Jakarta Selatan 12950</div>
-      <div style="font-size:12px;color:#475569;">NPWP: 01.884.920.4-091.000 · PKP Resmi Direktorat Jenderal Pajak RI</div>
+      <div class="brand">AI MOVIE FACTORY INDONESIA</div>
+      <div style="font-size:12px;color:#475569;">Merchant Resmi: ${OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder} · Bank Mandiri (${OFFICIAL_MERCHANT_BANK_ACCOUNT.accountNumber})</div>
+      <div style="font-size:12px;color:#475569;">Layanan Produksi Film & Animasi AI Terpadu</div>
     </div>
     <div style="text-align:right;">
       <div class="badge">LUNAS / SETTLED</div>
@@ -74,7 +82,8 @@ export function printIndonesianTaxInvoice(order: PaymentOrder) {
     </div>
   </div>
   <div style="font-size:13px;margin-bottom:12px;">
-    <strong>Metode Pembayaran:</strong> ${String(order.payment_method || 'qris').toUpperCase()} (${order.payment_gateway.toUpperCase()})<br/>
+    <strong>Metode Pembayaran:</strong> ${String(order.payment_method || 'mandiri_va').toUpperCase()}<br/>
+    <strong>Penerima Resmi:</strong> ${OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}<br/>
     <strong>Referensi Settlement:</strong> ${order.external_reference || order.id}
   </div>
   <table>
@@ -98,11 +107,11 @@ export function printIndonesianTaxInvoice(order: PaymentOrder) {
   <div class="totals">
     <div><span>Dasar Pengenaan Pajak (DPP):</span><span>${formatIdr(dpp)}</span></div>
     <div><span>PPN 11% (Termasuk):</span><span>${formatIdr(ppn)}</span></div>
-    <div><span>Biaya Layanan Gateway:</span><span>Rp 0</span></div>
+    <div><span>Biaya Layanan Transfer:</span><span>Rp 0</span></div>
     <div class="grand"><span>Total Dibayar:</span><span>${formatIdr(subtotal)}</span></div>
   </div>
   <div class="footer">
-    Dokumen ini adalah Bukti Pembayaran dan Faktur Pajak Elektronik yang sah serta diterbitkan secara otomatis oleh sistem Billing PT AI Movie Factory Indonesia.
+    Dokumen ini adalah Bukti Pembayaran dan Faktur Elektronik yang sah serta diterbitkan secara otomatis oleh sistem Billing AI Movie Factory.
   </div>
   <script>window.onload = () => { window.print(); };</script>
 </body>
@@ -122,23 +131,24 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   item,
   onPaymentSuccess,
 }) => {
-  const [activeCategory, setActiveCategory] = useState<'qris' | 'virtual_account' | 'ewallet' | 'card'>('qris');
-  const [paymentMethod, setPaymentMethod] = useState<IndonesianPaymentMethod>('qris');
+  const [activeCategory, setActiveCategory] = useState<'virtual_account' | 'ewallet'>('virtual_account');
+  const [paymentMethod, setPaymentMethod] = useState<IndonesianPaymentMethod>('mandiri_va');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState<boolean>(false);
   const [createdOrder, setCreatedOrder] = useState<PaymentOrder | null>(null);
-  const [copied, setCopied] = useState<boolean>(false);
-  const [timeLeft, setTimeLeft] = useState<number>(900);
+  const [copiedAccount, setCopiedAccount] = useState<boolean>(false);
+  const [copiedAmount, setCopiedAmount] = useState<boolean>(false);
+  const [timeLeft, setTimeLeft] = useState<number>(1800);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [cardNumber, setCardNumber] = useState<string>('4532 •••• •••• 8891');
-  const [cardExpiry, setCardExpiry] = useState<string>('08/29');
-  const [cardCvv, setCardCvv] = useState<string>('889');
+  const [senderNote, setSenderNote] = useState<string>('');
 
   useEffect(() => {
     if (!isOpen || !item) {
       setCreatedOrder(null);
       setIsProcessing(false);
+      setIsCheckingStatus(false);
       setErrorMessage(null);
-      setTimeLeft(900);
+      setTimeLeft(1800);
       return;
     }
 
@@ -168,12 +178,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   }, [isOpen, item, paymentMethod, userId]);
 
   useEffect(() => {
-    if (!createdOrder || createdOrder.status === 'settlement') return;
+    if (!createdOrder || createdOrder.status === 'settlement' || createdOrder.status === 'completed') return;
     const interval = setInterval(() => {
       setTimeLeft(prev => (prev > 0 ? prev - 1 : 0));
     }, 1000);
     return () => clearInterval(interval);
   }, [createdOrder]);
+
+  // Poll order status automatically while in 'processing' (waiting for Admin approval)
+  useEffect(() => {
+    if (!createdOrder || createdOrder.status !== 'processing') return;
+    const poll = setInterval(async () => {
+      const checkRes = await checkPaymentOrderStatus(userId, createdOrder.id);
+      if (checkRes.success && checkRes.order) {
+        setCreatedOrder(checkRes.order);
+        if (checkRes.settled) {
+          onPaymentSuccess(checkRes.order);
+        }
+      }
+    }, 8000);
+    return () => clearInterval(poll);
+  }, [createdOrder, userId, onPaymentSuccess]);
 
   if (!isOpen || !item) return null;
 
@@ -193,41 +218,76 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const selectedChannel =
     INDONESIAN_PAYMENT_CHANNELS.find(c => c.id === paymentMethod) || INDONESIAN_PAYMENT_CHANNELS[0];
 
-  const getVirtualAccountNumber = (method: IndonesianPaymentMethod) => {
-    const suffix = (createdOrder?.order_number || '881920').replace(/\D/g, '').padEnd(6, '8').slice(-6);
-    if (method === 'bca_va') return `3901 0812 ${suffix}`;
-    if (method === 'mandiri_va') return `7001 2088 ${suffix}`;
-    if (method === 'bni_va') return `8808 0091 ${suffix}`;
-    if (method === 'bri_va') return `2621 5004 ${suffix}`;
-    return `8801 2994 ${suffix}`;
-  };
-
-  const handleConfirmPayment = async () => {
+  const handleConfirmTransfer = async () => {
     if (!createdOrder) return;
+    if (!senderNote.trim()) {
+      setErrorMessage('Mohon isi Nama Pengirim / Nomor Rekening atau E-Wallet Anda untuk mempercepat verifikasi mutasi.');
+      return;
+    }
     setIsProcessing(true);
     setErrorMessage(null);
     try {
-      const res = await simulateSettlePayment(userId, createdOrder.id);
+      const res = await submitDirectPaymentProof(userId, createdOrder.id, senderNote.trim());
       if (res.success && res.order) {
         setCreatedOrder(res.order);
-        onPaymentSuccess(res.order);
+        if (res.order.status === 'settlement' || res.order.status === 'completed') {
+          onPaymentSuccess(res.order);
+        }
       } else {
-        setErrorMessage(res.error || 'Gagal memverifikasi pembayaran.');
+        setErrorMessage(res.error || 'Gagal mengirim konfirmasi pembayaran.');
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Terjadi kesalahan saat konfirmasi pembayaran.');
+      setErrorMessage(err?.message || 'Terjadi kesalahan saat mengirim konfirmasi pembayaran.');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text.replace(/\s+/g, ''));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleManualCheckStatus = async () => {
+    if (!createdOrder) return;
+    setIsCheckingStatus(true);
+    setErrorMessage(null);
+    try {
+      const res = await checkPaymentOrderStatus(userId, createdOrder.id);
+      if (res.success && res.order) {
+        setCreatedOrder(res.order);
+        if (res.settled) {
+          onPaymentSuccess(res.order);
+        }
+      }
+    } finally {
+      setIsCheckingStatus(false);
+    }
   };
 
-  const isSettled = createdOrder?.status === 'settlement' || createdOrder?.status === 'completed';
+  const handleCopyAccount = (text: string) => {
+    navigator.clipboard.writeText(text.replace(/\s+/g, ''));
+    setCopiedAccount(true);
+    setTimeout(() => setCopiedAccount(false), 2000);
+  };
+
+  const handleCopyAmount = (amount: number) => {
+    navigator.clipboard.writeText(String(amount));
+    setCopiedAmount(true);
+    setTimeout(() => setCopiedAmount(false), 2000);
+  };
+
+  const getWhatsAppConfirmationUrl = () => {
+    const msg = `Halo Admin AI Movie Factory (${OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}), saya sudah melakukan pembayaran:\n\n` +
+      `• No. Invoice: ${createdOrder?.order_number}\n` +
+      `• Paket: ${item.name} (+${item.credits.toLocaleString('id-ID')} Kredit)\n` +
+      `• Nominal: ${formatIdr(totalAmount)}\n` +
+      `• Metode Tujuan: ${selectedChannel.bankName} (${selectedChannel.accountNumber} a/n ${selectedChannel.accountHolder})\n` +
+      `• Pengirim: ${senderNote || '-'}\n\n` +
+      `Mohon bantuannya untuk verifikasi dan aktivasi paket saya. Terima kasih!`;
+    return `https://wa.me/${OFFICIAL_MERCHANT_BANK_ACCOUNT.whatsappAdmin}?text=${encodeURIComponent(msg)}`;
+  };
+
+  const isSettled =
+    createdOrder?.status === 'settlement' ||
+    createdOrder?.status === 'completed' ||
+    createdOrder?.status === 'paid';
+  const isWaitingVerification = createdOrder?.status === 'processing';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -240,13 +300,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </div>
             <div>
               <h2 className="text-sm font-semibold text-white tracking-wide">
-                Gerbang Pembayaran Nasional (QRIS · Virtual Account · E-Wallet · Kartu)
+                Pembayaran Resmi Studio (Bank Mandiri · GoPay · OVO · DANA)
               </h2>
               <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2">
                 <span>No. Tagihan: {createdOrder?.order_number || 'AMF-INIT'}</span>
                 <span>·</span>
                 <span className="text-emerald-400 flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3" /> Terenkripsi Standar Bank Indonesia (BI-FAST / GPN)
+                  <ShieldCheck className="w-3 h-3" /> Penerima Resmi: {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}
                 </span>
               </div>
             </div>
@@ -272,7 +332,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <div>
                 <h3 className="text-lg font-bold text-white">Pembayaran Lunas & Terverifikasi!</h3>
                 <p className="text-xs text-slate-300 mt-1">
-                  Transaksi Anda telah diselesaikan secara real-time. Kuota kredit dan status layanan telah ditambahkan ke akun Anda.
+                  Pembayaran Anda telah diverifikasi. Kuota kredit dan status layanan telah aktif di akun studio Anda.
                 </p>
               </div>
 
@@ -300,7 +360,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                   <span className="text-white font-mono font-bold">{formatIdr(totalAmount)}</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>Referensi Settlement:</span>
+                  <span>Referensi Verifikasi:</span>
                   <span className="font-mono text-slate-400 text-[11px]">{createdOrder.external_reference}</span>
                 </div>
               </div>
@@ -321,46 +381,118 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 </button>
               </div>
             </div>
+          ) : isWaitingVerification && createdOrder ? (
+            <div className="py-4 space-y-5">
+              <div className="p-4 bg-amber-500/10 border border-amber-500/30 flex items-start gap-3.5">
+                <Clock className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-white">
+                    Konfirmasi Transfer Diterima — Menunggu Verifikasi Mutasi
+                  </h3>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Permintaan aktivasi Anda telah tercatat di sistem. Tim Admin sedang mencocokkan mutasi pembayaran ke rekening{' '}
+                    <span className="text-amber-300 font-semibold">
+                      {selectedChannel.bankName} ({selectedChannel.accountNumber} a/n {selectedChannel.accountHolder})
+                    </span>
+                    . Halaman ini akan otomatis memperbarui status begitu pembayaran disetujui.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-950/90 border border-slate-800 space-y-2.5 text-xs">
+                <div className="flex justify-between text-slate-400">
+                  <span>Nomor Tagihan / Invoice:</span>
+                  <span className="text-white font-mono font-bold">{createdOrder.order_number}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Paket / Kuota Kredit:</span>
+                  <span className="text-emerald-400 font-semibold">
+                    {item.name} (+{item.credits.toLocaleString('id-ID')} Kredit)
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Rekening / E-Wallet Tujuan:</span>
+                  <span className="text-amber-400 font-mono font-bold">
+                    {selectedChannel.bankName} · {selectedChannel.accountNumber} (a/n {selectedChannel.accountHolder})
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Total Nominal Transfer:</span>
+                  <span className="text-white font-mono font-bold">{formatIdr(totalAmount)}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Data Pengirim:</span>
+                  <span className="text-cyan-300 font-mono">{senderNote}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Status Saat Ini:</span>
+                  <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono text-[11px] uppercase">
+                    Menunggu Verifikasi Admin
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <a
+                  href={getWhatsAppConfirmationUrl()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 transition-colors"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Kirim Bukti Transfer via WhatsApp Admin (081352006569)</span>
+                </a>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleManualCheckStatus}
+                    disabled={isCheckingStatus}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition-colors"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCheckingStatus ? 'animate-spin text-amber-400' : ''}`} />
+                    <span>{isCheckingStatus ? 'Memeriksa...' : 'Cek Status Verifikasi'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2.5 border border-slate-700 text-xs text-slate-300 hover:text-white transition-colors"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : (
             <>
               {/* Category Tabs */}
               <div className="space-y-2.5">
                 <span className="text-xs font-mono uppercase tracking-wider text-slate-400">
-                  1. Pilih Kategori & Metode Pembayaran Indonesia
+                  1. Pilih Metode Pembayaran Resmi (Atas Nama: {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder})
                 </span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveCategory('qris');
-                      setPaymentMethod('qris');
-                    }}
-                    className={`p-2.5 border text-left transition-colors ${
-                      activeCategory === 'qris'
-                        ? 'border-amber-400 bg-amber-950/20 text-white'
-                        : 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <QrCode className="w-4 h-4 text-amber-400 mb-1" />
-                    <div className="text-xs font-semibold">QRIS Nasional</div>
-                    <div className="text-[10px] text-slate-500">Semua Bank & E-Wallet</div>
-                  </button>
-
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <button
                     type="button"
                     onClick={() => {
                       setActiveCategory('virtual_account');
-                      setPaymentMethod('bca_va');
+                      setPaymentMethod('mandiri_va');
                     }}
-                    className={`p-2.5 border text-left transition-colors ${
+                    className={`p-3 border text-left transition-colors ${
                       activeCategory === 'virtual_account'
                         ? 'border-cyan-400 bg-cyan-950/20 text-white'
                         : 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700'
                     }`}
                   >
-                    <Building2 className="w-4 h-4 text-cyan-400 mb-1" />
-                    <div className="text-xs font-semibold">Virtual Account</div>
-                    <div className="text-[10px] text-slate-500">BCA, Mandiri, BNI, BRI</div>
+                    <div className="flex items-center justify-between mb-1">
+                      <Building2 className="w-4 h-4 text-cyan-400" />
+                      <span className="text-[10px] font-mono text-cyan-400 border border-cyan-500/30 px-1.5 py-0.5">
+                        REKENING UTAMA
+                      </span>
+                    </div>
+                    <div className="text-xs font-semibold">Transfer Bank Mandiri / Antar-Bank (BI-FAST)</div>
+                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                      Bank Mandiri · 1590011997714 · a/n SUMARLIN
+                    </div>
                   </button>
 
                   <button
@@ -369,39 +501,29 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       setActiveCategory('ewallet');
                       setPaymentMethod('gopay');
                     }}
-                    className={`p-2.5 border text-left transition-colors ${
+                    className={`p-3 border text-left transition-colors ${
                       activeCategory === 'ewallet'
                         ? 'border-emerald-400 bg-emerald-950/20 text-white'
                         : 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700'
                     }`}
                   >
-                    <Wallet className="w-4 h-4 text-emerald-400 mb-1" />
-                    <div className="text-xs font-semibold">E-Wallet Instan</div>
-                    <div className="text-[10px] text-slate-500">GoPay, ShopeePay, DANA, OVO</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveCategory('card');
-                      setPaymentMethod('credit_card');
-                    }}
-                    className={`p-2.5 border text-left transition-colors ${
-                      activeCategory === 'card'
-                        ? 'border-violet-400 bg-violet-950/20 text-white'
-                        : 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <CreditCard className="w-4 h-4 text-violet-400 mb-1" />
-                    <div className="text-xs font-semibold">Kartu Kredit/Debit</div>
-                    <div className="text-[10px] text-slate-500">Visa, Mastercard, JCB</div>
+                    <div className="flex items-center justify-between mb-1">
+                      <Wallet className="w-4 h-4 text-emerald-400" />
+                      <span className="text-[10px] font-mono text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5">
+                        E-WALLET RESMI
+                      </span>
+                    </div>
+                    <div className="text-xs font-semibold">Dompet Digital (GoPay · OVO · DANA)</div>
+                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                      081352006569 · a/n SUMARLIN
+                    </div>
                   </button>
                 </div>
 
-                {/* Sub-channel selector for Virtual Account or E-Wallet */}
+                {/* Sub-channel selector */}
                 {activeCategory === 'virtual_account' && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                    {(['bca_va', 'mandiri_va', 'bni_va', 'bri_va'] as IndonesianPaymentMethod[]).map(methodId => {
+                    {(['mandiri_va', 'bca_va', 'bri_va', 'bni_va'] as IndonesianPaymentMethod[]).map(methodId => {
                       const ch = INDONESIAN_PAYMENT_CHANNELS.find(c => c.id === methodId)!;
                       return (
                         <button
@@ -423,7 +545,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
                 {activeCategory === 'ewallet' && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                    {(['gopay', 'shopeepay', 'dana', 'ovo'] as IndonesianPaymentMethod[]).map(methodId => {
+                    {(['gopay', 'ovo', 'dana', 'shopeepay'] as IndonesianPaymentMethod[]).map(methodId => {
                       const ch = INDONESIAN_PAYMENT_CHANNELS.find(c => c.id === methodId)!;
                       return (
                         <button
@@ -444,105 +566,97 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 )}
               </div>
 
-              {/* Payment Channel Instructions & Details */}
-              {(activeCategory === 'qris' || activeCategory === 'ewallet') && (
-                <div className="p-4 bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row items-center gap-5">
-                  <div className="bg-white p-3 border border-slate-700 shrink-0 text-center">
-                    <div className="text-[9px] font-bold text-slate-900 tracking-wider uppercase mb-1">
-                      QRIS Standar Pembayaran Nasional
-                    </div>
-                    <div className="w-36 h-36 bg-slate-950 flex flex-col items-center justify-center p-2 text-white mx-auto">
-                      <QrCode className="w-28 h-28 text-white" />
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-700 mt-1">
-                      NMID: ID1026008829104
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 text-center sm:text-left flex-1">
-                    <div className="flex items-center justify-center sm:justify-start gap-2 text-xs text-amber-400 font-mono">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>Batas Waktu Pembayaran: {formatTimer(timeLeft)}</span>
-                    </div>
-                    <h4 className="text-sm font-semibold text-white">{selectedChannel.name}</h4>
-                    <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
-                      {selectedChannel.instructions.map((step, i) => (
-                        <li key={i}>{step}</li>
-                      ))}
-                    </ul>
-                  </div>
+              {/* Official Destination Account Box */}
+              <div className="p-4 bg-slate-950/90 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-300 font-semibold">{selectedChannel.name}</span>
+                  <span className="text-amber-400 font-mono flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" /> Batas Waktu: {formatTimer(timeLeft)}
+                  </span>
                 </div>
-              )}
 
-              {activeCategory === 'virtual_account' && (
-                <div className="p-4 bg-slate-950/80 border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-300 font-semibold">{selectedChannel.name}</span>
-                    <span className="text-amber-400 font-mono flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5" /> Batas Waktu: {formatTimer(timeLeft)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-700 font-mono text-sm text-cyan-300">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-700 font-mono">
                     <div>
-                      <div className="text-[10px] text-slate-400 uppercase">Nomor Virtual Account</div>
-                      <span className="tracking-wider font-bold text-base">
-                        {getVirtualAccountNumber(paymentMethod)}
-                      </span>
+                      <div className="text-[10px] text-slate-400 uppercase">
+                        {activeCategory === 'virtual_account'
+                          ? 'Nomor Rekening Bank Mandiri (Kode 008)'
+                          : `Nomor Tujuan ${selectedChannel.shortLabel}`}
+                      </div>
+                      <div className="tracking-wider font-bold text-base text-cyan-300 mt-0.5">
+                        {selectedChannel.accountNumber}
+                      </div>
+                      <div className="text-[11px] text-emerald-400 font-sans font-semibold mt-0.5">
+                        a/n {selectedChannel.accountHolder}
+                      </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleCopy(getVirtualAccountNumber(paymentMethod))}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 flex items-center gap-1.5 transition-colors"
+                      onClick={() => handleCopyAccount(selectedChannel.accountNumber)}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 flex items-center gap-1.5 transition-colors shrink-0"
                     >
-                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copied ? 'Tersalin' : 'Salin Nomor VA'}</span>
+                      {copiedAccount ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span>{copiedAccount ? 'Tersalin' : 'Salin Nomor'}</span>
                     </button>
                   </div>
 
-                  <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
-                    {selectedChannel.instructions.map((step, i) => (
-                      <li key={i}>{step}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {activeCategory === 'card' && (
-                <div className="p-4 bg-slate-950/80 border border-slate-800 space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-slate-300">Nomor Kartu Kredit / Debit Visa / Mastercard / JCB</label>
-                    <input
-                      type="text"
-                      value={cardNumber}
-                      onChange={e => setCardNumber(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-xs text-white px-3 py-2 font-mono focus:border-amber-400 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs text-slate-300">Masa Berlaku (MM/YY)</label>
-                      <input
-                        type="text"
-                        value={cardExpiry}
-                        onChange={e => setCardExpiry(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-xs text-white px-3 py-2 font-mono focus:border-amber-400 focus:outline-none"
-                      />
+                  <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-700 font-mono">
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase">Total Nominal Transfer</div>
+                      <div className="tracking-wider font-bold text-base text-amber-400 mt-0.5">
+                        {formatIdr(totalAmount)}
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-sans mt-0.5">
+                        Termasuk PPN 11% · Bebas Biaya Admin
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-slate-300">CVV / CVC</label>
-                      <input
-                        type="password"
-                        maxLength={4}
-                        value={cardCvv}
-                        onChange={e => setCardCvv(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-xs text-white px-3 py-2 font-mono focus:border-amber-400 focus:outline-none"
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyAmount(totalAmount)}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 flex items-center gap-1.5 transition-colors shrink-0"
+                    >
+                      {copiedAmount ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span>{copiedAmount ? 'Tersalin' : 'Salin Nominal'}</span>
+                    </button>
                   </div>
                 </div>
-              )}
+
+                <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside pt-1">
+                  {selectedChannel.instructions.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Sender Verification Input */}
+              <div className="p-4 bg-slate-950/70 border border-slate-800 space-y-2">
+                <label className="text-xs font-semibold text-white flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-amber-400" />
+                  <span>2. Nama Pengirim & Bank / E-Wallet Anda (Wajib Diisi Setelah Transfer)</span>
+                </label>
+                <input
+                  type="text"
+                  value={senderNote}
+                  onChange={e => setSenderNote(e.target.value)}
+                  placeholder="Contoh: Budi Santoso - Livin Mandiri / Siti - DANA 0812xxxxxxx"
+                  className="w-full bg-slate-900 border border-slate-700 text-xs text-white px-3 py-2.5 focus:border-amber-400 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Data ini digunakan Admin untuk mencocokkan mutasi pembayaran yang masuk ke rekening{' '}
+                  <strong className="text-slate-200">
+                    {selectedChannel.bankName} ({selectedChannel.accountNumber} a/n {selectedChannel.accountHolder})
+                  </strong>
+                  .
+                </p>
+              </div>
 
               {/* Tax & Order Summary */}
               <div className="p-4 bg-slate-950/50 border border-slate-800 space-y-2 text-xs">
@@ -564,10 +678,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                   <span>PPN 11% (Termasuk dalam Harga Paket):</span>
                   <span className="font-mono text-slate-300">{formatIdr(ppnAmount)}</span>
                 </div>
-                <div className="flex items-center justify-between text-slate-400">
-                  <span>Biaya Layanan Pembayaran ({selectedChannel.shortLabel}):</span>
-                  <span className="font-mono text-emerald-400">Rp 0 (Gratis)</span>
-                </div>
                 <div className="border-t border-slate-800 pt-2 flex items-center justify-between text-sm font-bold text-white">
                   <span>Total Tagihan Dibayar:</span>
                   <span className="font-mono text-amber-400">{formatIdr(totalAmount)}</span>
@@ -578,7 +688,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
                 <div className="flex items-center gap-2 text-[11px] text-slate-400">
                   <FileText className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Faktur Pajak PPN 11% diterbitkan otomatis setelah pembayaran terverifikasi.</span>
+                  <span>Faktur Pajak PPN 11% diterbitkan otomatis setelah mutasi diverifikasi.</span>
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
@@ -591,12 +701,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={handleConfirmPayment}
+                    onClick={handleConfirmTransfer}
                     disabled={isProcessing}
-                    className="px-5 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs tracking-wide transition-colors flex items-center gap-1.5"
+                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs tracking-wide transition-colors flex items-center gap-1.5"
                   >
                     <ShieldCheck className="w-4 h-4" />
-                    <span>{isProcessing ? 'Memverifikasi Settlement...' : 'Konfirmasi & Selesaikan Pembayaran'}</span>
+                    <span>{isProcessing ? 'Mengirim Konfirmasi...' : 'Saya Sudah Transfer — Konfirmasi Pembayaran'}</span>
                   </button>
                 </div>
               </div>

@@ -1,36 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
-  TrendingUp,
   Coins,
   DollarSign,
   Activity,
   Users,
-  Search,
-  Filter,
   RefreshCw,
   Plus,
-  AlertCircle,
   CheckCircle2,
+  XCircle,
   Cpu,
   Server,
-  Layers,
-  Zap,
-  ArrowUpRight
+  Clock,
+  Building2
 } from 'lucide-react';
 import {
   CreditTransaction,
   PaymentOrder,
-  PlatformRevenueMetrics,
-  UserProfile
+  PlatformRevenueMetrics
 } from '../../types/database';
-import { computePlatformMetrics } from '../../lib/billingEngine';
+import {
+  computePlatformMetrics,
+  OFFICIAL_MERCHANT_BANK_ACCOUNT
+} from '../../lib/billingEngine';
 import {
   fetchCreditTransactions,
   fetchPaymentOrders,
-  adminAdjustCredits,
-  refundCreditTransaction,
-  getLocalProfile
+  adminFetchAllBillingData,
+  adminApprovePaymentOrder,
+  adminRejectPaymentOrder,
+  adminAdjustCredits
 } from '../../lib/supabase';
 
 interface AdminDashboardViewProps {
@@ -40,17 +39,29 @@ interface AdminDashboardViewProps {
   t: any;
 }
 
+type EnrichedOrder = PaymentOrder & {
+  user_display_name?: string;
+  user_email?: string;
+};
+
+type EnrichedTransaction = CreditTransaction & {
+  user_display_name?: string;
+  user_email?: string;
+};
+
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   currentUserId,
   onShowToast,
-  language,
   t
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'ledgerAudit' | 'userGovernance' | 'systemHealth'>('overview');
-  const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
-  const [orders, setOrders] = useState<PaymentOrder[]>([]);
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'paymentVerification' | 'ledgerAudit' | 'userGovernance' | 'systemHealth'
+  >('overview');
+  const [transactions, setTransactions] = useState<EnrichedTransaction[]>([]);
+  const [orders, setOrders] = useState<EnrichedOrder[]>([]);
+  const [profiles, setProfiles] = useState<Array<{ id: string; display_name: string; email: string; role: string }>>([]);
   const [metrics, setMetrics] = useState<PlatformRevenueMetrics | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
 
   // Manual Credit Adjustment Form
   const [targetUserId, setTargetUserId] = useState<string>(currentUserId);
@@ -63,8 +74,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   }, [currentUserId]);
 
   const loadAdminData = async () => {
-    setLoading(true);
     try {
+      const globalData = await adminFetchAllBillingData();
+      if (globalData) {
+        setOrders(globalData.orders);
+        setTransactions(globalData.transactions);
+        setProfiles(globalData.profiles);
+        setMetrics(computePlatformMetrics(globalData.transactions, globalData.orders));
+        return;
+      }
+
       const [txRes, ordRes] = await Promise.all([
         fetchCreditTransactions(currentUserId),
         fetchPaymentOrders(currentUserId)
@@ -77,8 +96,42 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setMetrics(computePlatformMetrics(txList, ordList));
     } catch (err) {
       console.error('Failed to load admin data:', err);
+    }
+  };
+
+  const handleApproveOrder = async (order: EnrichedOrder) => {
+    setProcessingOrderId(order.id);
+    try {
+      const res = await adminApprovePaymentOrder(order.id);
+      if (res.success) {
+        onShowToast(
+          `Pembayaran ${order.order_number} (${order.user_display_name || order.user_email}) disetujui! Paket & +${order.credits_granted} kredit telah aktif.`,
+          'success'
+        );
+        await loadAdminData();
+      } else {
+        onShowToast(res.error || 'Gagal menyetujui pembayaran.', 'error');
+      }
     } finally {
-      setLoading(false);
+      setProcessingOrderId(null);
+    }
+  };
+
+  const handleRejectOrder = async (order: EnrichedOrder) => {
+    setProcessingOrderId(order.id);
+    try {
+      const res = await adminRejectPaymentOrder(
+        order.id,
+        'Mutasi pembayaran belum ditemukan di rekening Bank Mandiri / E-Wallet SUMARLIN'
+      );
+      if (res.success) {
+        onShowToast(`Pesanan ${order.order_number} telah ditolak / dibatalkan.`, 'info');
+        await loadAdminData();
+      } else {
+        onShowToast(res.error || 'Gagal menolak pesanan.', 'error');
+      }
+    } finally {
+      setProcessingOrderId(null);
     }
   };
 
@@ -101,19 +154,147 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  const handleRefundTransaction = async (txId: string) => {
-    const res = await refundCreditTransaction(targetUserId, txId, 'Audit Intervensi Admin');
-    if (res.success) {
-      onShowToast('Transaksi berhasil di-refund ke saldo akun.', 'success');
-      loadAdminData();
-    } else {
-      onShowToast(res.error || 'Gagal refund transaksi.', 'error');
-    }
-  };
-
   const formatIdr = (val: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
   };
+
+  const pendingVerificationOrders = orders.filter(
+    o => o.status === 'processing' || o.status === 'pending'
+  );
+
+  const renderPaymentVerificationTable = () => (
+    <div className="space-y-4">
+      <div className="p-4 bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-amber-400" />
+            Verifikasi Pembayaran Masuk — Rekening Resmi a/n {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}
+          </h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Bank Mandiri: <strong className="text-cyan-300 font-mono">{OFFICIAL_MERCHANT_BANK_ACCOUNT.accountNumber}</strong> ·
+            OVO / GoPay / DANA: <strong className="text-emerald-300 font-mono">{OFFICIAL_MERCHANT_BANK_ACCOUNT.ewalletNumber}</strong>.
+            Klik <strong>Setujui & Aktifkan</strong> setelah dana masuk ke rekening Anda.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="px-2.5 py-1 bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono text-xs">
+            {pendingVerificationOrders.length} Menunggu Verifikasi
+          </span>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto border border-slate-800 bg-slate-950/40">
+        <table className="w-full text-left text-xs text-slate-300">
+          <thead className="bg-slate-900/80 text-slate-400 font-mono text-[11px] uppercase tracking-wider border-b border-slate-800">
+            <tr>
+              <th className="p-3">No. Invoice / Waktu</th>
+              <th className="p-3">Pengguna</th>
+              <th className="p-3">Paket & Kuota</th>
+              <th className="p-3 text-right">Nominal (IDR)</th>
+              <th className="p-3">Saluran & Catatan Pengirim</th>
+              <th className="p-3 text-center">Status</th>
+              <th className="p-3 text-right">Tindakan Admin (1-Klik)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/80 text-xs">
+            {orders.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="p-8 text-center text-slate-500">
+                  Belum ada tagihan atau transaksi pembayaran yang masuk.
+                </td>
+              </tr>
+            ) : (
+              orders.map(ord => {
+                const isSettled =
+                  ord.status === 'settlement' || ord.status === 'completed' || ord.status === 'paid';
+                const isCancelled = ord.status === 'cancelled' || ord.status === 'cancel' || ord.status === 'failed';
+                const isBusy = processingOrderId === ord.id;
+
+                return (
+                  <tr key={ord.id} className="hover:bg-slate-900/40 transition-colors">
+                    <td className="p-3 font-mono whitespace-nowrap">
+                      <div className="text-white font-bold">{ord.order_number}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {new Date(ord.created_at).toLocaleString('id-ID')}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <div className="font-semibold text-white">{ord.user_display_name || 'Creator'}</div>
+                      <div className="text-[11px] font-mono text-slate-400">{ord.user_email || ord.user_id}</div>
+                    </td>
+                    <td className="p-3">
+                      <div className="text-white font-medium">{ord.package_name}</div>
+                      <div className="text-[11px] font-mono text-emerald-400">
+                        +{Number(ord.credits_granted || 0).toLocaleString('id-ID')} Kredit
+                      </div>
+                    </td>
+                    <td className="p-3 text-right font-mono font-bold text-amber-400 whitespace-nowrap">
+                      {formatIdr(Number(ord.amount || 0))}
+                    </td>
+                    <td className="p-3">
+                      <div className="font-mono text-cyan-300 uppercase text-[11px]">
+                        {ord.payment_method}
+                      </div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">
+                        {ord.external_reference || 'Belum konfirmasi pengirim'}
+                      </div>
+                    </td>
+                    <td className="p-3 text-center whitespace-nowrap">
+                      {isSettled ? (
+                        <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-mono text-[10px] uppercase">
+                          LUNAS / AKTIF
+                        </span>
+                      ) : isCancelled ? (
+                        <span className="px-2 py-0.5 bg-rose-500/15 border border-rose-500/40 text-rose-300 font-mono text-[10px] uppercase">
+                          DITOLAK
+                        </span>
+                      ) : ord.status === 'processing' ? (
+                        <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/50 text-amber-300 font-mono text-[10px] uppercase">
+                          SUDAH TRANSFER (VERIFIKASI)
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-400 font-mono text-[10px] uppercase">
+                          PENDING
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 text-right whitespace-nowrap">
+                      {!isSettled && !isCancelled ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleApproveOrder(ord)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-[11px] flex items-center gap-1 transition-colors"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{isBusy ? 'Memproses...' : 'Setujui & Aktifkan'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleRejectOrder(ord)}
+                            className="px-2.5 py-1.5 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 disabled:opacity-50 text-rose-200 text-[11px] flex items-center gap-1 transition-colors"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Tolak</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] font-mono text-slate-500">
+                          {ord.paid_at ? new Date(ord.paid_at).toLocaleDateString('id-ID') : 'Selesai'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
@@ -123,15 +304,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-indigo-400" />
-              {t?.adminPanel?.title || 'SaaS Commercial & Operations Console'}
+              {t?.adminPanel?.title || 'Konsol Komersial & Verifikasi Pembayaran Admin'}
             </h1>
             <span className="text-xs font-mono text-cyan-400 border border-cyan-500/30 px-2 py-0.5 uppercase tracking-wider">
-              SSOT Sec. 41
+              OWNER: {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
-            {t?.adminPanel?.subtitle ||
-              'Operational monitoring, AI API gross-margin auditing, and user credit balance governance.'}
+            Kelola persetujuan pembayaran masuk (Bank Mandiri {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountNumber} & E-Wallet{' '}
+            {OFFICIAL_MERCHANT_BANK_ACCOUNT.ewalletNumber}), audit margin API AI, dan saldo kredit seluruh pengguna.
           </p>
         </div>
 
@@ -149,7 +330,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
             <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
-              {t?.adminPanel?.metrics?.mrr || 'MRR (IDR)'}
+              {t?.adminPanel?.metrics?.mrr || 'Pendapatan (IDR)'}
             </span>
             <div className="text-xl font-mono font-bold text-white tabular-nums mt-1">
               {formatIdr(metrics.mrrIdr)}
@@ -157,19 +338,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
 
           <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
-            <span className="text-[11px] font-mono text-emerald-400 uppercase tracking-wider">
-              {t?.adminPanel?.metrics?.grossMargin || 'Gross Margin'}
+            <span className="text-[11px] font-mono text-amber-400 uppercase tracking-wider">
+              Antrean Verifikasi
             </span>
-            <div className="text-xl font-mono font-bold text-emerald-400 tabular-nums mt-1">
-              {metrics.grossMarginPercent}%
+            <div className="text-xl font-mono font-bold text-amber-400 tabular-nums mt-1">
+              {pendingVerificationOrders.length} Order
             </div>
           </div>
 
           <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
-            <span className="text-[11px] font-mono text-amber-400 uppercase tracking-wider">
+            <span className="text-[11px] font-mono text-emerald-400 uppercase tracking-wider">
               {t?.adminPanel?.metrics?.totalCreditsSold || 'Kredit Terjual'}
             </span>
-            <div className="text-xl font-mono font-bold text-amber-400 tabular-nums mt-1">
+            <div className="text-xl font-mono font-bold text-emerald-400 tabular-nums mt-1">
               {metrics.totalCreditsSold.toLocaleString()}
             </div>
           </div>
@@ -194,17 +375,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
           <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
             <span className="text-[11px] font-mono text-indigo-400 uppercase tracking-wider">
-              {t?.adminPanel?.metrics?.subscribers || 'Pelanggan'}
+              Total Pengguna
             </span>
             <div className="text-xl font-mono font-bold text-indigo-300 tabular-nums mt-1">
-              {metrics.activeSubscribers} Studio
+              {profiles.length || 1} Akun
             </div>
           </div>
         </div>
       )}
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-1 border-b border-slate-800">
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-800">
         <button
           onClick={() => setActiveTab('overview')}
           className={`px-4 py-2.5 text-xs font-medium tracking-wide flex items-center gap-2 border-b-2 transition-all ${
@@ -214,7 +395,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           }`}
         >
           <Activity className="w-4 h-4 text-indigo-400" />
-          {t?.adminPanel?.tabs?.overview || 'Financial & Operational Summary'}
+          Ringkasan & Verifikasi Pembayaran
+        </button>
+
+        <button
+          onClick={() => setActiveTab('paymentVerification')}
+          className={`px-4 py-2.5 text-xs font-medium tracking-wide flex items-center gap-2 border-b-2 transition-all ${
+            activeTab === 'paymentVerification'
+              ? 'border-amber-400 text-white bg-slate-900/60'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Clock className="w-4 h-4 text-amber-400" />
+          Daftar Tagihan & Approval ({orders.length})
         </button>
 
         <button
@@ -239,7 +432,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           }`}
         >
           <Users className="w-4 h-4 text-cyan-400" />
-          {t?.adminPanel?.tabs?.userManagement || 'User Credit Governance'}
+          {t?.adminPanel?.tabs?.userManagement || 'Manajemen Kredit User'}
         </button>
 
         <button
@@ -251,11 +444,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           }`}
         >
           <Server className="w-4 h-4 text-emerald-400" />
-          {t?.adminPanel?.tabs?.systemHealth || 'Service Health & API Latency'}
+          {t?.adminPanel?.tabs?.systemHealth || 'Service Health'}
         </button>
       </div>
 
-      {/* TAB 1: OVERVIEW & GROSS MARGIN ANALYTICS */}
+      {/* TAB 1: OVERVIEW & PAYMENT VERIFICATION */}
       {activeTab === 'overview' && (() => {
         const settledOrders = orders.filter(
           o => o.status === 'settlement' || o.status === 'completed' || o.status === 'paid'
@@ -284,20 +477,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
         return (
           <div className="space-y-6">
+            {/* Priority Payment Verification Queue */}
+            {renderPaymentVerificationTable()}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Revenue vs Cost Analysis */}
               <div className="p-5 bg-slate-950/60 border border-slate-800 space-y-4">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <DollarSign className="w-4 h-4 text-emerald-400" />
-                  Analisis Margin Kotor AI SaaS (Real-Time Ledger)
+                  Analisis Pendapatan Rekening {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder}
                 </h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Kalkulasi langsung dari transaksi settlement dan pemakaian token AI aktual di database produksi (0 data dummy).
+                  Kalkulasi langsung dari transaksi yang telah disetujui masuk ke Bank Mandiri / E-Wallet Anda.
                 </p>
 
                 <div className="space-y-3 pt-2">
                   <div className="p-3 bg-slate-900/80 border border-slate-800 flex justify-between items-center text-xs">
-                    <span className="text-slate-300">Total Pendapatan Terkumpul (Settlement):</span>
+                    <span className="text-slate-300">Total Pembayaran Disetujui (Masuk Rekening):</span>
                     <span className="font-mono font-bold text-emerald-400">{formatIdr(totalRevenueIdr)}</span>
                   </div>
 
@@ -382,14 +578,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         );
       })()}
 
-      {/* TAB 2: GLOBAL TRANSACTION AUDIT */}
+      {/* TAB 2: DEDICATED PAYMENT VERIFICATION */}
+      {activeTab === 'paymentVerification' && renderPaymentVerificationTable()}
+
+      {/* TAB 3: GLOBAL TRANSACTION AUDIT */}
       {activeTab === 'ledgerAudit' && (
         <div className="space-y-4">
           <div className="p-4 bg-slate-950/40 border border-slate-800 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-bold text-white">Platform Transaction Audit Log</h3>
               <p className="text-xs text-slate-400">
-                Pemeriksaan kepatuhan buku besar kredit, pencocokan idempotency key, dan intervensi refund korektif.
+                Pemeriksaan kepatuhan buku besar kredit seluruh pengguna secara real-time.
               </p>
             </div>
           </div>
@@ -405,16 +604,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <th className="p-3 text-right">Saldo</th>
                   <th className="p-3 text-right">Biaya API</th>
                   <th className="p-3 text-center">Status</th>
-                  <th className="p-3 text-right">Intervensi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80 font-mono text-xs">
                 {transactions.map(tx => (
                   <tr key={tx.id} className="hover:bg-slate-900/30 transition-colors">
                     <td className="p-3 text-slate-400 whitespace-nowrap text-[11px]">
-                      {new Date(tx.created_at).toLocaleTimeString()}
+                      {new Date(tx.created_at).toLocaleString('id-ID')}
                     </td>
-                    <td className="p-3 text-slate-300 text-[11px]">user-demo-studio</td>
+                    <td className="p-3 text-slate-300 text-[11px]">
+                      <div className="font-sans font-semibold text-white">{tx.user_display_name || 'Creator'}</div>
+                      <div className="text-[10px] text-slate-500">{tx.user_email || tx.user_id}</div>
+                    </td>
                     <td className="p-3 font-sans text-white">{tx.description}</td>
                     <td
                       className={`p-3 text-right font-bold ${
@@ -425,22 +626,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </td>
                     <td className="p-3 text-right text-slate-300">{tx.balance_after}</td>
                     <td className="p-3 text-right text-slate-400">
-                      {tx.actual_cost_usd > 0 ? `$${tx.actual_cost_usd.toFixed(4)}` : '-'}
+                      {tx.actual_cost_usd > 0 ? `$${Number(tx.actual_cost_usd).toFixed(4)}` : '-'}
                     </td>
                     <td className="p-3 text-center">
                       <span className="text-[10px] px-1.5 py-0.5 border border-slate-700 uppercase tracking-wider text-slate-300">
                         {tx.status}
                       </span>
-                    </td>
-                    <td className="p-3 text-right font-sans">
-                      {tx.transaction_type === 'usage' && (
-                        <button
-                          onClick={() => handleRefundTransaction(tx.id)}
-                          className="text-[11px] text-cyan-400 hover:text-cyan-300 hover:underline"
-                        >
-                          Paksa Refund
-                        </button>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -450,7 +641,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* TAB 3: USER GOVERNANCE & MANUAL ADJUSTMENTS */}
+      {/* TAB 4: USER GOVERNANCE & MANUAL ADJUSTMENTS */}
       {activeTab === 'userGovernance' && (
         <div className="max-w-2xl mx-auto space-y-6">
           <div className="p-6 bg-slate-950/60 border border-slate-800 space-y-6">
@@ -460,19 +651,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 Manajemen Kredit & Intervensi Akun Pengguna
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Lakukan penyesuaian kredit manual dengan catatan audit wajib untuk kompensasi kendala rendering atau bonus kemitraan studio.
+                Pilih pengguna untuk menambah atau menyesuaikan saldo kredit secara langsung.
               </p>
             </div>
 
             <div className="space-y-4 text-xs">
               <div className="space-y-1">
-                <label className="text-slate-300 font-medium">ID Pengguna Target</label>
-                <input
-                  type="text"
-                  value={targetUserId}
-                  onChange={e => setTargetUserId(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 px-3 py-2 font-mono focus:outline-none focus:border-cyan-500"
-                />
+                <label className="text-slate-300 font-medium">Pilih Pengguna Target</label>
+                {profiles.length > 0 ? (
+                  <select
+                    value={targetUserId}
+                    onChange={e => setTargetUserId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 px-3 py-2 font-mono focus:outline-none focus:border-cyan-500"
+                  >
+                    {profiles.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.display_name} ({p.email}) — [{p.role}]
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={targetUserId}
+                    onChange={e => setTargetUserId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 px-3 py-2 font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                )}
               </div>
 
               <div className="space-y-1">
@@ -494,10 +699,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   rows={3}
                   value={adjustReason}
                   onChange={e => setAdjustReason(e.target.value)}
-                  placeholder={
-                    t?.adminPanel?.reasonPlaceholder ||
-                    'Alasan penyesuaian (e.g. Kompensasi gangguan render)...'
-                  }
+                  placeholder="Alasan penyesuaian (e.g. Bonus kredit atau koreksi manual)..."
                   className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 px-3 py-2 focus:outline-none focus:border-cyan-500"
                 />
               </div>
@@ -517,7 +719,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* TAB 4: SYSTEM HEALTH & API LATENCY */}
+      {/* TAB 5: SYSTEM HEALTH & API LATENCY */}
       {activeTab === 'systemHealth' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -529,15 +731,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between p-2.5 bg-slate-900 border border-slate-800/80">
                   <span className="text-slate-300">Supabase PostgreSQL & RLS:</span>
-                  <span className="text-emerald-400 font-mono">Operational (14ms)</span>
+                  <span className="text-emerald-400 font-mono">Operational</span>
                 </div>
                 <div className="flex justify-between p-2.5 bg-slate-900 border border-slate-800/80">
-                  <span className="text-slate-300">Local Storage Sandbox Fallback:</span>
-                  <span className="text-emerald-400 font-mono">Active & Synced</span>
+                  <span className="text-slate-300">Rekening Bank Mandiri ({OFFICIAL_MERCHANT_BANK_ACCOUNT.accountNumber}):</span>
+                  <span className="text-emerald-400 font-mono">Active (a/n {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder})</span>
                 </div>
                 <div className="flex justify-between p-2.5 bg-slate-900 border border-slate-800/80">
-                  <span className="text-slate-300">Dev Server Port 3000:</span>
-                  <span className="text-emerald-400 font-mono">HTTP 200 OK</span>
+                  <span className="text-slate-300">E-Wallet OVO / GoPay / DANA ({OFFICIAL_MERCHANT_BANK_ACCOUNT.ewalletNumber}):</span>
+                  <span className="text-emerald-400 font-mono">Active (a/n {OFFICIAL_MERCHANT_BANK_ACCOUNT.accountHolder})</span>
                 </div>
               </div>
             </div>
@@ -550,15 +752,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between p-2.5 bg-slate-900 border border-slate-800/80">
                   <span className="text-slate-300">Google Gemini 2.5 Pro (Reasoning):</span>
-                  <span className="text-emerald-400 font-mono">99.9% Uptime (280ms)</span>
+                  <span className="text-emerald-400 font-mono">99.9% Uptime</span>
                 </div>
                 <div className="flex justify-between p-2.5 bg-slate-900 border border-slate-800/80">
                   <span className="text-slate-300">Gemini 3.1 Flash Lite Image:</span>
-                  <span className="text-emerald-400 font-mono">Operational (1.2s / frame)</span>
+                  <span className="text-emerald-400 font-mono">Operational</span>
                 </div>
                 <div className="flex justify-between p-2.5 bg-slate-900 border border-slate-800/80">
-                  <span className="text-slate-300">Midtrans Payment Gateway Webhook:</span>
-                  <span className="text-emerald-400 font-mono">Ready & Listening</span>
+                  <span className="text-slate-300">Server-Side Billing & Approval Engine:</span>
+                  <span className="text-emerald-400 font-mono">Ready & Verified</span>
                 </div>
               </div>
             </div>

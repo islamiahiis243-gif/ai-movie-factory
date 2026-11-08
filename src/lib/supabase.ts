@@ -2863,6 +2863,124 @@ export async function simulateSettlePayment(
   return { success: true, order: updatedOrder, error: null };
 }
 
+export async function submitDirectPaymentProof(
+  userId: string,
+  orderId: string,
+  senderNote: string
+): Promise<{ success: boolean; order?: PaymentOrder; error: string | null }> {
+  const orders = getLocalPaymentOrders(userId);
+  const idx = orders.findIndex(o => o.id === orderId);
+  if (idx === -1) return { success: false, error: 'Order tidak ditemukan' };
+
+  const target = orders[idx];
+  const canonicalPackageType =
+    target.package_type === 'credit_pack' ? 'topup_credits' : target.package_type;
+
+  const apiRes = await callBillingServerApi({
+    action: 'submit_payment_proof',
+    sender_note: senderNote,
+    order: {
+      ...target,
+      package_type: canonicalPackageType
+    }
+  });
+
+  if (apiRes?.order) {
+    orders[idx] = apiRes.order;
+    saveLocalPaymentOrders(userId, orders);
+    return { success: true, order: apiRes.order, error: null };
+  }
+
+  const updatedOrder: PaymentOrder = {
+    ...target,
+    package_type: canonicalPackageType,
+    status: 'processing',
+    external_reference: senderNote
+      ? `MENUNGGU_VERIFIKASI | Pengirim: ${senderNote}`
+      : `MENUNGGU_VERIFIKASI | ${target.payment_method.toUpperCase()} -> SUMARLIN`
+  };
+  orders[idx] = updatedOrder;
+  saveLocalPaymentOrders(userId, orders);
+  return { success: true, order: updatedOrder, error: null };
+}
+
+export async function checkPaymentOrderStatus(
+  userId: string,
+  orderId: string
+): Promise<{ success: boolean; order?: PaymentOrder; settled: boolean; error: string | null }> {
+  const apiRes = await callBillingServerApi({
+    action: 'check_order_status',
+    order_id: orderId
+  });
+
+  if (apiRes?.order) {
+    const orders = getLocalPaymentOrders(userId);
+    const idx = orders.findIndex(o => o.id === orderId || o.order_number === apiRes.order.order_number);
+    if (idx !== -1) {
+      orders[idx] = apiRes.order;
+      saveLocalPaymentOrders(userId, orders);
+    }
+    if (apiRes.subscription) {
+      saveLocalSubscription(userId, apiRes.subscription);
+    }
+    const isSettled =
+      apiRes.order.status === 'settlement' ||
+      apiRes.order.status === 'completed' ||
+      apiRes.order.status === 'paid';
+    return { success: true, order: apiRes.order, settled: isSettled, error: null };
+  }
+
+  return { success: false, settled: false, error: 'Belum ada pembaruan status dari server.' };
+}
+
+export async function adminFetchAllBillingData(): Promise<{
+  orders: Array<PaymentOrder & { user_display_name?: string; user_email?: string }>;
+  transactions: Array<CreditTransaction & { user_display_name?: string; user_email?: string }>;
+  profiles: Array<{ id: string; display_name: string; email: string; role: string }>;
+  active_subscriptions_count: number;
+} | null> {
+  const apiRes = await callBillingServerApi({
+    action: 'admin_list_data'
+  });
+  if (apiRes && Array.isArray(apiRes.orders)) {
+    return {
+      orders: apiRes.orders,
+      transactions: apiRes.transactions || [],
+      profiles: apiRes.profiles || [],
+      active_subscriptions_count: apiRes.active_subscriptions_count || 0
+    };
+  }
+  return null;
+}
+
+export async function adminApprovePaymentOrder(
+  orderId: string
+): Promise<{ success: boolean; order?: PaymentOrder; error: string | null }> {
+  const apiRes = await callBillingServerApi({
+    action: 'admin_approve_order',
+    order_id: orderId
+  });
+  if (apiRes?.order) {
+    return { success: true, order: apiRes.order, error: null };
+  }
+  return { success: false, error: 'Gagal menyetujui pesanan pembayaran.' };
+}
+
+export async function adminRejectPaymentOrder(
+  orderId: string,
+  reason: string
+): Promise<{ success: boolean; order?: PaymentOrder; error: string | null }> {
+  const apiRes = await callBillingServerApi({
+    action: 'admin_reject_order',
+    order_id: orderId,
+    reason
+  });
+  if (apiRes?.order) {
+    return { success: true, order: apiRes.order, error: null };
+  }
+  return { success: false, error: 'Gagal menolak pesanan pembayaran.' };
+}
+
 export async function adminAdjustCredits(
   userId: string,
   amount: number,
@@ -2870,6 +2988,7 @@ export async function adminAdjustCredits(
 ): Promise<{ success: boolean; error: string | null }> {
   const apiRes = await callBillingServerApi({
     action: 'admin_adjust',
+    target_user_id: userId,
     amount,
     reason
   });

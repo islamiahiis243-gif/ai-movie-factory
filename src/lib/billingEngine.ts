@@ -21,111 +21,131 @@ export interface IndonesianPaymentChannel {
   shortLabel: string;
   category: 'qris' | 'virtual_account' | 'ewallet' | 'card';
   providerCode: string;
+  accountNumber: string;
+  accountHolder: string;
+  bankName: string;
   feeIdr: number;
-  settlementType: 'Instan (Real-Time)' | 'Otomatis (< 1 Menit)';
+  settlementType: 'Instan (Real-Time)' | 'Otomatis (< 1 Menit)' | 'Verifikasi Prioritas';
   instructions: string[];
 }
 
+export const OFFICIAL_MERCHANT_BANK_ACCOUNT = {
+  bankName: 'Bank Mandiri',
+  bankCode: '008',
+  accountNumber: '1590011997714',
+  accountHolder: 'SUMARLIN',
+  ewalletNumber: '081352006569',
+  ewalletHolder: 'SUMARLIN',
+  whatsappAdmin: '6281352006569'
+};
+
 export const INDONESIAN_PAYMENT_CHANNELS: IndonesianPaymentChannel[] = [
   {
-    id: 'qris',
-    name: 'QRIS Nasional (Semua Bank & E-Wallet)',
-    shortLabel: 'QRIS Instan',
-    category: 'qris',
-    providerCode: 'NMID ID1026008829104',
+    id: 'mandiri_va',
+    name: 'Transfer Bank Mandiri (Livin\' by Mandiri / ATM)',
+    shortLabel: 'Bank Mandiri',
+    category: 'virtual_account',
+    providerCode: 'Kode Bank 008',
+    accountNumber: '1590011997714',
+    accountHolder: 'SUMARLIN',
+    bankName: 'Bank Mandiri',
     feeIdr: 0,
-    settlementType: 'Instan (Real-Time)',
+    settlementType: 'Verifikasi Prioritas',
     instructions: [
-      'Buka aplikasi BCA Mobile, Livin\' by Mandiri, BRImo, BNI Mobile, GoPay, OVO, DANA, atau ShopeePay.',
-      'Pilih menu Scan QRIS dan arahkan kamera ke kode QR di layar.',
-      'Pastikan nama merchant adalah PT AI MOVIE FACTORY INDONESIA.',
-      'Konfirmasi nominal pembayaran dan masukkan PIN Anda.'
+      'Buka aplikasi Livin\' by Mandiri atau ATM Mandiri, pilih menu Transfer -> Ke Rekening Mandiri.',
+      'Masukkan Nomor Rekening Tujuan: 1590011997714.',
+      'Pastikan Nama Penerima yang muncul adalah SUMARLIN.',
+      'Masukkan nominal sesuai Total Tagihan, isi Nama Pengirim di bawah, lalu klik Konfirmasi Sudah Transfer.'
     ]
   },
   {
     id: 'bca_va',
-    name: 'BCA Virtual Account',
-    shortLabel: 'BCA VA',
+    name: 'Transfer dari BCA ke Bank Mandiri (BI-FAST / BCA Mobile / myBCA)',
+    shortLabel: 'Via BCA (BI-FAST)',
     category: 'virtual_account',
-    providerCode: '3901',
+    providerCode: 'Tujuan: Bank Mandiri (008)',
+    accountNumber: '1590011997714',
+    accountHolder: 'SUMARLIN',
+    bankName: 'Bank Mandiri (Kode 008)',
     feeIdr: 0,
-    settlementType: 'Otomatis (< 1 Menit)',
+    settlementType: 'Verifikasi Prioritas',
     instructions: [
-      'Buka BCA Mobile atau KlikBCA, pilih menu m-Transfer -> BCA Virtual Account.',
-      'Masukkan Nomor Virtual Account BCA yang tertera di layar.',
-      'Periksa rincian tagihan AI Movie Factory dan konfirmasi pembayaran.',
-      'Kredit dan status paket akan aktif otomatis segera setelah transfer berhasil.'
-    ]
-  },
-  {
-    id: 'mandiri_va',
-    name: 'Mandiri Bill Payment (Livin\')',
-    shortLabel: 'Mandiri VA',
-    category: 'virtual_account',
-    providerCode: '70012',
-    feeIdr: 0,
-    settlementType: 'Otomatis (< 1 Menit)',
-    instructions: [
-      'Buka aplikasi Livin\' by Mandiri, pilih menu Bayar -> Multipayment.',
-      'Pilih penyedia jasa Midtrans / AI Movie Factory (Kode 70012).',
-      'Masukkan Nomor Virtual Account Mandiri yang tertera.',
-      'Periksa detail tagihan dan masukkan PIN Livin\' Anda.'
-    ]
-  },
-  {
-    id: 'bni_va',
-    name: 'BNI Virtual Account',
-    shortLabel: 'BNI VA',
-    category: 'virtual_account',
-    providerCode: '8808',
-    feeIdr: 0,
-    settlementType: 'Otomatis (< 1 Menit)',
-    instructions: [
-      'Buka BNI Mobile Banking, pilih menu Transfer -> Virtual Account Billing.',
-      'Masukkan Nomor Virtual Account BNI yang tertera pada tagihan.',
-      'Pastikan nominal tagihan sesuai dan masukkan Password Transaksi.'
+      'Buka BCA Mobile atau myBCA, pilih m-Transfer -> Transfer Antar Bank.',
+      'Pilih Bank Tujuan: BANK MANDIRI (Kode 008) dan masukkan Nomor Rekening: 1590011997714.',
+      'Pilih layanan BI-FAST / Realtime Online dan pastikan Nama Penerima adalah SUMARLIN.',
+      'Selesaikan transfer sesuai Total Tagihan, lalu klik tombol Konfirmasi Sudah Transfer.'
     ]
   },
   {
     id: 'bri_va',
-    name: 'BRI Virtual Account (BRIVA)',
-    shortLabel: 'BRI VA',
+    name: 'Transfer dari BRI ke Bank Mandiri (BRImo / BI-FAST)',
+    shortLabel: 'Via BRI (BRImo)',
     category: 'virtual_account',
-    providerCode: '26215',
+    providerCode: 'Tujuan: Bank Mandiri (008)',
+    accountNumber: '1590011997714',
+    accountHolder: 'SUMARLIN',
+    bankName: 'Bank Mandiri (Kode 008)',
     feeIdr: 0,
-    settlementType: 'Otomatis (< 1 Menit)',
+    settlementType: 'Verifikasi Prioritas',
     instructions: [
-      'Buka aplikasi BRImo, pilih menu Pembayaran -> BRIVA.',
-      'Masukkan Nomor BRIVA yang tampil pada layar checkout.',
-      'Konfirmasi tagihan AI Movie Factory dan masukkan PIN BRImo.'
+      'Buka aplikasi BRImo, pilih menu Transfer -> Tambah Penerima Baru.',
+      'Pilih Bank Tujuan: Bank Mandiri dan masukkan Nomor Rekening: 1590011997714.',
+      'Pastikan Nama Penerima yang tertera adalah SUMARLIN.',
+      'Masukkan nominal tagihan, selesaikan transaksi, lalu klik Konfirmasi Sudah Transfer.'
+    ]
+  },
+  {
+    id: 'bni_va',
+    name: 'Transfer dari BNI / Bank Lain ke Bank Mandiri (BI-FAST)',
+    shortLabel: 'Via BNI / Bank Lain',
+    category: 'virtual_account',
+    providerCode: 'Tujuan: Bank Mandiri (008)',
+    accountNumber: '1590011997714',
+    accountHolder: 'SUMARLIN',
+    bankName: 'Bank Mandiri (Kode 008)',
+    feeIdr: 0,
+    settlementType: 'Verifikasi Prioritas',
+    instructions: [
+      'Buka aplikasi Mobile Banking Anda (wondr by BNI, SeaBank, Bank Jago, BSI, dll.).',
+      'Pilih Transfer Antar Bank ke BANK MANDIRI (Kode Bank: 008).',
+      'Masukkan Nomor Rekening: 1590011997714 (Atas Nama: SUMARLIN).',
+      'Transfer sesuai Total Tagihan dan klik Konfirmasi Sudah Transfer.'
     ]
   },
   {
     id: 'gopay',
-    name: 'GoPay / GoPay Later',
+    name: 'GoPay Transfer Instan',
     shortLabel: 'GoPay',
     category: 'ewallet',
-    providerCode: 'GOPAY-DIRECT',
+    providerCode: 'GOPAY-081352006569',
+    accountNumber: '081352006569',
+    accountHolder: 'SUMARLIN',
+    bankName: 'GoPay Indonesia',
     feeIdr: 0,
     settlementType: 'Instan (Real-Time)',
     instructions: [
-      'Pilih aplikasi Gojek / GoPay atau scan QR menggunakan GoPay.',
-      'Periksa rincian transaksi AI Movie Factory dan tekan Konfirmasi & Bayar.',
-      'Masukkan PIN GoPay 6 digit Anda.'
+      'Buka aplikasi Gojek atau GoPay, pilih menu Bayar / Kirim ke sesama GoPay.',
+      'Masukkan nomor tujuan GoPay: 081352006569 (Atas Nama: SUMARLIN).',
+      'Masukkan nominal sesuai Total Tagihan dan konfirmasi dengan PIN GoPay Anda.',
+      'Isi nama/nomor pengirim di bawah lalu klik Konfirmasi Sudah Transfer.'
     ]
   },
   {
-    id: 'shopeepay',
-    name: 'ShopeePay / SPayLater',
-    shortLabel: 'ShopeePay',
+    id: 'ovo',
+    name: 'OVO Cash Transfer',
+    shortLabel: 'OVO',
     category: 'ewallet',
-    providerCode: 'SHOPEEPAY-ID',
+    providerCode: 'OVO-081352006569',
+    accountNumber: '081352006569',
+    accountHolder: 'SUMARLIN',
+    bankName: 'OVO Dompet Digital',
     feeIdr: 0,
     settlementType: 'Instan (Real-Time)',
     instructions: [
-      'Buka aplikasi Shopee atau ShopeePay, lalu scan kode QR/deeplink pembayaran.',
-      'Pilih sumber dana ShopeePay atau SPayLater.',
-      'Masukkan PIN ShopeePay untuk menyelesaikan transaksi.'
+      'Buka aplikasi OVO, pilih menu Transfer -> Ke Sesama OVO.',
+      'Masukkan nomor HP tujuan OVO: 081352006569 (Atas Nama: SUMARLIN).',
+      'Masukkan nominal sesuai Total Tagihan dan selesaikan dengan Security Code OVO.',
+      'Isi nama/nomor pengirim di bawah lalu klik Konfirmasi Sudah Transfer.'
     ]
   },
   {
@@ -133,38 +153,51 @@ export const INDONESIAN_PAYMENT_CHANNELS: IndonesianPaymentChannel[] = [
     name: 'DANA Dompet Digital',
     shortLabel: 'DANA',
     category: 'ewallet',
-    providerCode: 'DANA-ID',
+    providerCode: 'DANA-081352006569',
+    accountNumber: '081352006569',
+    accountHolder: 'SUMARLIN',
+    bankName: 'DANA Indonesia',
     feeIdr: 0,
     settlementType: 'Instan (Real-Time)',
     instructions: [
-      'Buka aplikasi DANA dan pilih menu Pay / Pindai.',
-      'Verifikasi nominal transaksi AI Movie Factory dan masukkan PIN DANA.'
+      'Buka aplikasi DANA, pilih menu Kirim (Send) -> Kirim ke Teman / Nomor Telepon.',
+      'Masukkan nomor tujuan DANA: 081352006569 (Atas Nama: SUMARLIN).',
+      'Masukkan nominal sesuai Total Tagihan dan masukkan PIN DANA Anda.',
+      'Isi nama/nomor pengirim di bawah lalu klik Konfirmasi Sudah Transfer.'
     ]
   },
   {
-    id: 'ovo',
-    name: 'OVO Cash / OVO Points',
-    shortLabel: 'OVO',
+    id: 'shopeepay',
+    name: 'Transfer ke Rekening Mandiri dari ShopeePay / SeaBank',
+    shortLabel: 'ShopeePay / SeaBank',
     category: 'ewallet',
-    providerCode: 'OVO-ID',
+    providerCode: 'MANDIRI-1590011997714',
+    accountNumber: '1590011997714',
+    accountHolder: 'SUMARLIN',
+    bankName: 'Bank Mandiri (via ShopeePay)',
     feeIdr: 0,
     settlementType: 'Instan (Real-Time)',
     instructions: [
-      'Pastikan nomor ponsel OVO Anda aktif dan cek notifikasi push di aplikasi OVO.',
-      'Pilih metode OVO Cash dan masukkan Security Code OVO Anda.'
+      'Buka menu ShopeePay -> Transfer ke Bank, lalu pilih Bank Mandiri.',
+      'Masukkan Nomor Rekening: 1590011997714 (Atas Nama: SUMARLIN).',
+      'Masukkan nominal sesuai Total Tagihan dan konfirmasi PIN ShopeePay Anda.'
     ]
   },
   {
-    id: 'credit_card',
-    name: 'Kartu Kredit / Debit Online (Visa, Mastercard, JCB)',
-    shortLabel: 'Kartu Kredit/Debit',
-    category: 'card',
-    providerCode: '3DS-2.0-ID',
+    id: 'qris',
+    name: 'Transfer Instan Mandiri / E-Wallet Resmi',
+    shortLabel: 'Transfer Instan',
+    category: 'qris',
+    providerCode: 'MANDIRI-1590011997714',
+    accountNumber: '1590011997714',
+    accountHolder: 'SUMARLIN',
+    bankName: 'Bank Mandiri / OVO / GoPay / DANA',
     feeIdr: 0,
     settlementType: 'Instan (Real-Time)',
     instructions: [
-      'Mendukung seluruh kartu kredit & debit berlogo Visa, Mastercard, JCB, dan GPN Online.',
-      'Dilindungi enkripsi 3D Secure 2.0 (OTP Bank Penerbit) berstandar Bank Indonesia.'
+      'Transfer melalui Bank Mandiri: 1590011997714 a/n SUMARLIN.',
+      'Atau melalui OVO / GoPay / DANA ke nomor: 081352006569 a/n SUMARLIN.',
+      'Masukkan nominal sesuai Total Tagihan dan konfirmasi pembayaran Anda.'
     ]
   }
 ];
