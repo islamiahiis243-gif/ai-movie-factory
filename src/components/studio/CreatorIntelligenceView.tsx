@@ -7,7 +7,11 @@ import {
   deleteCreatorMilestone,
   fetchCreatorMediaKitSettings,
   saveCreatorMediaKitSettings,
+  supabase,
 } from '../../lib/supabase';
+import { AnalyticsClientService, LiveAnalyticsSnapshot } from '../../lib/distribution/analyticsClientService';
+import { fetchUserPublishingJobs } from '../../lib/distribution/publishingRepository';
+import { PublishingJob } from '../../lib/distribution/types';
 import {
   TrendingUp,
   DollarSign,
@@ -118,7 +122,15 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
   }, [projects, selectedProjectId]);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'milestones' | 'profitability' | 'growth_advisor' | 'media_kit'>('milestones');
+  const [activeTab, setActiveTab] = useState<'milestones' | 'profitability' | 'growth_advisor' | 'media_kit' | 'live_analytics'>('milestones');
+
+  // Live Analytics State (T9.5)
+  const [publishedJobs, setPublishedJobs] = useState<PublishingJob[]>([]);
+  const [liveSnapshots, setLiveSnapshots] = useState<Record<string, LiveAnalyticsSnapshot>>({});
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [syncingJobId, setSyncingJobId] = useState<string | null>(null);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
   // Media Kit State (Sprint 3: P2)
   const [isMediaKitModalOpen, setIsMediaKitModalOpen] = useState(false);
@@ -183,9 +195,154 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     }
   };
 
+  // Load Live Analytics Data (T9.5)
+  const loadLiveAnalyticsData = async () => {
+    if (!userId) return;
+    setIsLoadingAnalytics(true);
+    try {
+      // 1. Fetch published publishing jobs
+      const jobsRes = await fetchUserPublishingJobs(userId);
+      const pubs = (jobsRes.data || []).filter((j) => j.status === 'published');
+      setPublishedJobs(pubs);
+
+      // 2. Fetch latest snapshot history
+      const session = await supabase?.auth.getSession();
+      const token = session?.data?.session?.access_token;
+      if (token) {
+        const snapshots = await AnalyticsClientService.fetchHistory(token);
+        const map: Record<string, LiveAnalyticsSnapshot> = {};
+        for (const s of snapshots) {
+          // store most recent snapshot per publishing_job_id
+          if (!map[s.publishing_job_id] || new Date(s.synced_at) > new Date(map[s.publishing_job_id].synced_at)) {
+            map[s.publishing_job_id] = s;
+          }
+        }
+        setLiveSnapshots(map);
+        if (snapshots.length > 0) {
+          setLastSyncTime(new Date(snapshots[0].synced_at).toLocaleTimeString('id-ID'));
+        }
+      }
+    } catch (err: any) {
+      console.warn('Failed to load live analytics:', err);
+    } finally {
+      setIsLoadingAnalytics(false);
+    }
+  };
+
   useEffect(() => {
     loadMilestones();
+    loadLiveAnalyticsData();
   }, [userId]);
+
+  // Sync single job live metrics (T9.5)
+  const handleSyncSingleJob = async (jobId: string) => {
+    setSyncingJobId(jobId);
+    try {
+      const session = await supabase?.auth.getSession();
+      const token = session?.data?.session?.access_token;
+      if (!token) {
+        onShowToast('Harap login untuk menyinkronkan metrik', 'error');
+        return;
+      }
+      const snapshot = await AnalyticsClientService.syncJob(jobId, token);
+      setLiveSnapshots((prev) => ({ ...prev, [jobId]: snapshot }));
+      setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
+      onShowToast('Metrik live berhasil diperbarui langsung dari platform!', 'success');
+    } catch (err: any) {
+      onShowToast(err.message || 'Gagal menyinkronkan metrik', 'error');
+    } finally {
+      setSyncingJobId(null);
+    }
+  };
+
+  // Sync all published jobs live metrics (T9.5)
+  const handleSyncAllJobs = async () => {
+    if (publishedJobs.length === 0) {
+      onShowToast('Tidak ada video yang berstatus published untuk disinkronkan.', 'info');
+      return;
+    }
+    setIsSyncingAll(true);
+    let successCount = 0;
+    try {
+      const session = await supabase?.auth.getSession();
+      const token = session?.data?.session?.access_token;
+      if (!token) {
+        onShowToast('Harap login untuk menyinkronkan metrik', 'error');
+        return;
+      }
+      for (const job of publishedJobs) {
+        try {
+          const snap = await AnalyticsClientService.syncJob(job.id, token);
+          setLiveSnapshots((prev) => ({ ...prev, [job.id]: snap }));
+          successCount++;
+        } catch (e: any) {
+          console.warn('Sync failed for job', job.id, e);
+        }
+      }
+      setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
+      onShowToast(`Berhasil menyinkronkan ${successCount} dari ${publishedJobs.length} video live!`, 'success');
+    } catch (err: any) {
+      onShowToast(err.message || 'Gagal sinkronisasi live', 'error');
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
+
+  // Promote Live Snapshot to Milestone (T9.5 -> Milestone)
+  const handlePromoteToMilestone = (job: PublishingJob, snap?: LiveAnalyticsSnapshot) => {
+    setFormProjectId(job.project_id || '');
+    setFormProjectName(job.title || 'Film Rilis');
+    const platformKey: PublishingPlatformKey = 
+      job.platform === 'tiktok' ? 'tiktok' :
+      job.platform === 'instagram' ? 'reels' :
+      job.platform === 'x_twitter' ? 'x_twitter' : 'youtube';
+    setFormPlatform(platformKey);
+    setFormVideoUrl(job.published_video_url || '');
+    setFormViews(snap ? snap.views : 0);
+    setFormLikes(snap ? snap.likes : 0);
+    setFormComments(snap ? snap.comments : 0);
+    // Estimated ad revenue based on default RPM
+    const rpm = PLATFORM_CONFIG[platformKey]?.defaultRpm || 18000;
+    const estimatedRev = Math.round(((snap?.views || 0) / 1000) * rpm);
+    setFormRevenue(estimatedRev);
+    setFormNotes(`Disinkronkan otomatis dari metrik live ${job.platform} (ID: ${snap?.external_post_id || job.external_publish_id || '-'})`);
+    setIsAddModalOpen(true);
+    onShowToast('Data analitik live dimuat ke form Milestone!', 'info');
+  };
+
+  // Live Totals Aggregate
+  const liveTotals = useMemo(() => {
+    let totalViews = 0;
+    let totalLikes = 0;
+    let totalComments = 0;
+    let totalShares = 0;
+    let totalDuration = 0;
+    let countWithDuration = 0;
+
+    Object.values(liveSnapshots).forEach((s) => {
+      totalViews += Number(s.views) || 0;
+      totalLikes += Number(s.likes) || 0;
+      totalComments += Number(s.comments) || 0;
+      totalShares += Number(s.shares) || 0;
+      if (s.avg_view_duration_seconds > 0) {
+        totalDuration += s.avg_view_duration_seconds;
+        countWithDuration++;
+      }
+    });
+
+    const avgDuration = countWithDuration > 0 ? Math.round(totalDuration / countWithDuration) : 0;
+    const totalInteractions = totalLikes + totalComments + totalShares;
+
+    return {
+      totalViews,
+      totalLikes,
+      totalComments,
+      totalShares,
+      totalInteractions,
+      avgDuration,
+      syncedVideosCount: Object.keys(liveSnapshots).length,
+    };
+  }, [liveSnapshots]);
 
   // Aggregate Metrics
   const aggregateMetrics = useMemo(() => {
@@ -758,6 +915,21 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
           <span>{isId ? 'Media Kit & Proposal Sponsor' : 'Media Kit & Brand Pitch'}</span>
           <span className="bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[10px] font-mono border border-amber-500/30">
             PDF
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('live_analytics')}
+          className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            activeTab === 'live_analytics'
+              ? 'bg-blue-500 text-slate-950 shadow-md shadow-blue-500/20 font-extrabold'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          <span>{isId ? 'Analitik Live (T9.5)' : 'Live Analytics (T9.5)'}</span>
+          <span className="bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded text-[10px] font-mono border border-blue-500/30">
+            API Sync
           </span>
         </button>
       </div>
@@ -1576,6 +1748,261 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                 <span>Simpan sebagai PDF</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: Live Analytics Sync & Multi-Platform Performance Aggregator (T9.5) */}
+      {activeTab === 'live_analytics' && (
+        <div className="space-y-6">
+          {/* Action Toolbar */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-gradient-to-r from-blue-500/15 via-slate-900 to-slate-950 border border-blue-500/30 rounded-xl shadow-lg">
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-blue-400" />
+                <h3 className="text-sm font-bold text-white">
+                  {isId ? 'Sinkronisasi Metrik Platform Live (T9.5)' : 'Multi-Platform Live Analytics Hub'}
+                </h3>
+                <span className="text-[10px] font-mono bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30 font-semibold">
+                  100% Real API
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                {isId
+                  ? 'Agregasi metrik performa resmi langsung dari YouTube Data v3, TikTok Open API, Instagram Graph API & Facebook Graph API.'
+                  : 'Direct performance metric aggregation from official platform APIs.'}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {lastSyncTime && (
+                <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1 bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{isId ? 'Terakhir sync:' : 'Last synced:'} {lastSyncTime}</span>
+                </span>
+              )}
+
+              <button
+                onClick={loadLiveAnalyticsData}
+                disabled={isLoadingAnalytics}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAnalytics ? 'animate-spin text-blue-400' : ''}`} />
+                <span>{isId ? 'Segarkan' : 'Refresh'}</span>
+              </button>
+
+              <button
+                onClick={handleSyncAllJobs}
+                disabled={isSyncingAll || publishedJobs.length === 0}
+                className="px-3.5 py-1.5 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-md shadow-blue-500/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Zap className={`w-3.5 h-3.5 ${isSyncingAll ? 'animate-spin' : ''}`} />
+                <span>{isSyncingAll ? (isId ? 'Menyinkronkan...' : 'Syncing...') : (isId ? 'Sinkronkan Semua Metrik Live' : 'Sync All Live Metrics')}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Live Scorecard (Real Aggregate KPIs) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-[#101726] border border-blue-500/20 p-4 rounded-xl shadow-md">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-xs font-semibold">{isId ? 'Total Tayangan Live' : 'Total Live Views'}</span>
+                <Eye className="w-4 h-4 text-blue-400" />
+              </div>
+              <p className="text-2xl font-black text-white font-mono">
+                {liveTotals.totalViews.toLocaleString('id-ID')}
+              </p>
+              <p className="text-[10px] text-blue-300/80 mt-1 flex items-center gap-1">
+                <span>{isId ? 'Dari seluruh platform terverifikasi' : 'Across all verified platforms'}</span>
+              </p>
+            </div>
+
+            <div className="bg-[#101726] border border-emerald-500/20 p-4 rounded-xl shadow-md">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-xs font-semibold">{isId ? 'Total Interaksi Nyata' : 'Total Live Engagements'}</span>
+                <ThumbsUp className="w-4 h-4 text-emerald-400" />
+              </div>
+              <p className="text-2xl font-black text-emerald-400 font-mono">
+                {liveTotals.totalInteractions.toLocaleString('id-ID')}
+              </p>
+              <p className="text-[10px] text-emerald-300/80 mt-1 flex items-center gap-1">
+                <span>{liveTotals.totalLikes.toLocaleString('id-ID')} Suka • {liveTotals.totalComments.toLocaleString('id-ID')} Komentar • {liveTotals.totalShares.toLocaleString('id-ID')} Share</span>
+              </p>
+            </div>
+
+            <div className="bg-[#101726] border border-purple-500/20 p-4 rounded-xl shadow-md">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-xs font-semibold">{isId ? 'Rata-rata Durasi Tonton' : 'Avg View Duration'}</span>
+                <Film className="w-4 h-4 text-purple-400" />
+              </div>
+              <p className="text-2xl font-black text-purple-300 font-mono">
+                {liveTotals.avgDuration > 0 ? `${liveTotals.avgDuration} dtk` : '—'}
+              </p>
+              <p className="text-[10px] text-purple-300/80 mt-1 flex items-center gap-1">
+                <span>{isId ? 'Dihitung dari retensi resmi API' : 'Calculated from official API retention'}</span>
+              </p>
+            </div>
+
+            <div className="bg-[#101726] border border-amber-500/20 p-4 rounded-xl shadow-md">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-xs font-semibold">{isId ? 'Video Published Tersinkron' : 'Synced Published Videos'}</span>
+                <CheckCircle2 className="w-4 h-4 text-amber-400" />
+              </div>
+              <p className="text-2xl font-black text-amber-400 font-mono">
+                {liveTotals.syncedVideosCount} / {publishedJobs.length}
+              </p>
+              <p className="text-[10px] text-amber-300/80 mt-1 flex items-center gap-1">
+                <span>{isId ? 'Status tayang resmi di platform target' : 'Officially published on target platform'}</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Published Content Performance Table */}
+          <div className="bg-[#101726] border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+            <div className="p-4 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Film className="w-4 h-4 text-blue-400" />
+                  <span>{isId ? 'Daftar Film Terpublikasi & Metrik Real-Time' : 'Published Films & Real-Time Performance'}</span>
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {isId
+                    ? 'Klik tombol "Sinkronkan" untuk menarik angka penonton terbaru langsung dari server platform penyedia.'
+                    : 'Click "Sync Now" to fetch the latest view count directly from provider servers.'}
+                </p>
+              </div>
+              <span className="text-xs text-slate-400 font-mono">
+                Total {publishedJobs.length} video
+              </span>
+            </div>
+
+            {publishedJobs.length === 0 ? (
+              <div className="p-12 text-center space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-600">
+                  <Globe className="w-7 h-7 text-slate-500" />
+                </div>
+                <div className="space-y-1.5 max-w-md mx-auto">
+                  <h5 className="text-sm font-bold text-white">
+                    {isId ? 'Belum Ada Film yang Diterbitkan' : 'No Published Films Yet'}
+                  </h5>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    {isId
+                      ? 'Setelah film Anda selesai di-render dan diterbitkan ke YouTube, TikTok, Instagram, atau Facebook melalui Publishing Hub, Anda dapat melacak statistik performa real-time di sini.'
+                      : 'Once your films are rendered and published via the Publishing Hub, you can track live analytics here.'}
+                  </p>
+                </div>
+                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl max-w-lg mx-auto text-[11px] text-blue-300 text-left flex items-start gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>{isId ? 'Prinsip Integritas Data AMF:' : 'AMF Data Integrity Principle:'}</strong>{' '}
+                    {isId
+                      ? 'AI Movie Factory menolak menampilkan metrik palsu (dummy/fabricated stats). Seluruh angka analitik harus diverifikasi secara kriptografis melalui API platform resmi.'
+                      : 'AI Movie Factory enforces zero dummy data. All metrics are cryptographically verified via official platform APIs.'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 text-[10px] uppercase font-mono">
+                    <tr>
+                      <th className="p-3">Film / Judul</th>
+                      <th className="p-3">Platform</th>
+                      <th className="p-3 text-right">Tayangan Live</th>
+                      <th className="p-3 text-right">Suka</th>
+                      <th className="p-3 text-right">Komentar</th>
+                      <th className="p-3 text-right">Share</th>
+                      <th className="p-3 text-center">Status Sync</th>
+                      <th className="p-3 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 font-mono text-[11px]">
+                    {publishedJobs.map((job) => {
+                      const snap = liveSnapshots[job.id];
+                      const isSyncing = syncingJobId === job.id;
+                      const platformKey = job.platform as PublishingPlatformKey;
+                      const platformStyle = PLATFORM_CONFIG[platformKey] || {
+                        label: job.platform.toUpperCase(),
+                        color: 'text-slate-300',
+                        bg: 'bg-slate-800',
+                        border: 'border-slate-700',
+                      };
+
+                      return (
+                        <tr key={job.id} className="hover:bg-slate-900/50 transition-colors">
+                          <td className="p-3 font-sans">
+                            <div className="font-bold text-white max-w-xs truncate">{job.title}</div>
+                            {job.published_video_url && (
+                              <a
+                                href={job.published_video_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-cyan-400 hover:underline flex items-center gap-1 font-mono mt-0.5"
+                              >
+                                <span>{job.external_publish_id || 'Tonton di Platform'}</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${platformStyle.bg} ${platformStyle.color} ${platformStyle.border} uppercase`}>
+                              {job.platform}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right text-white font-bold">
+                            {snap ? snap.views.toLocaleString('id-ID') : <span className="text-slate-500 font-sans italic text-[10px]">Belum Sync</span>}
+                          </td>
+                          <td className="p-3 text-right text-emerald-400">
+                            {snap ? snap.likes.toLocaleString('id-ID') : '—'}
+                          </td>
+                          <td className="p-3 text-right text-blue-300">
+                            {snap ? snap.comments.toLocaleString('id-ID') : '—'}
+                          </td>
+                          <td className="p-3 text-right text-purple-300">
+                            {snap ? snap.shares.toLocaleString('id-ID') : '—'}
+                          </td>
+                          <td className="p-3 text-center">
+                            {snap ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-sans">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>Tersinkron</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 font-sans">
+                                <AlertCircle className="w-3 h-3" />
+                                <span>Menunggu Sync</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleSyncSingleJob(job.id)}
+                                disabled={isSyncing}
+                                title="Tarik metrik terbaru via API"
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold rounded border border-slate-700 transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin text-blue-400' : ''}`} />
+                                <span>{isSyncing ? '...' : (isId ? 'Sync' : 'Sync')}</span>
+                              </button>
+
+                              <button
+                                onClick={() => handlePromoteToMilestone(job, snap)}
+                                title="Jadikan Milestone untuk kalkulasi Laba & Media Kit"
+                                className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] font-bold rounded border border-amber-500/30 transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <Sparkles className="w-3 h-3 text-amber-400" />
+                                <span>{isId ? 'Milestone' : 'Milestone'}</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

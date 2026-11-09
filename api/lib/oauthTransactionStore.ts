@@ -1,7 +1,12 @@
 /**
- * AI MOVIE FACTORY — ONE-TIME OAUTH TRANSACTION STORE (T9.3.1)
+ * AI MOVIE FACTORY — ONE-TIME OAUTH TRANSACTION STORE (T9.3.1 & Production Hardened)
  * Enforces strictly atomic, single-use OAuth state parameters to eliminate replay attacks.
  * Binds transactions to: AMF User ID, Provider Platform, Redirect URI, Expiration, and Optional PKCE.
+ *
+ * Security Invariant:
+ * In production (NODE_ENV === 'production'), PostgreSQL (public.oauth_state_transactions) is the
+ * SOLE source of truth. If the table is not available in cloud, it fails closed immediately.
+ * In-memory fallback is strictly reserved for isolated non-production testing suites.
  */
 
 import crypto from 'crypto';
@@ -20,11 +25,15 @@ export interface OAuthTransaction {
   createdAt: string;
 }
 
-// In-memory fallback / test cache with atomic CAS (Compare-And-Swap) lock
+// In-memory test cache with atomic CAS (Compare-And-Swap) lock (strictly non-production / isolated test harness)
 const memoryTransactionStore = new Map<string, OAuthTransaction>();
 const activeLocks = new Set<string>();
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes strict TTL
+
+function isProduction(): boolean {
+  return process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+}
 
 /**
  * Creates and persists a cryptographically secure, one-time OAuth state transaction.
@@ -62,7 +71,9 @@ export async function createOAuthTransaction(params: {
     createdAt: now.toISOString(),
   };
 
-  // 1. Try persisting to Supabase Cloud public.oauth_state_transactions via service_role
+  let dbPersisted = false;
+
+  // 1. Persist to Supabase Cloud public.oauth_state_transactions via service_role
   try {
     const adminSupabase = getSupabaseAdmin();
     const { error: dbErr } = await adminSupabase.from('oauth_state_transactions').insert({
@@ -77,14 +88,25 @@ export async function createOAuthTransaction(params: {
     });
 
     if (dbErr) {
-      // If table is pending cloud migration or not yet available, fallback to memory
-      console.warn('oauth_state_transactions table notice (falling back to memory):', dbErr.message);
+      if (isProduction()) {
+        throw new Error(
+          `PRODUCTION_FAIL_CLOSED: Gagal menyimpan transaksi OAuth ke basis data (${dbErr.message}). Pastikan migrasi v3.8.1 telah diterapkan di Supabase Cloud.`
+        );
+      }
+      console.warn('oauth_state_transactions table notice (test fallback):', dbErr.message);
+    } else {
+      dbPersisted = true;
     }
   } catch (err: any) {
+    if (isProduction()) {
+      throw new Error(
+        `PRODUCTION_FAIL_CLOSED: Kredensial server Supabase atau tabel transaksi belum siap (${err.message}). Otorisasi OAuth dihentikan demi keamanan.`
+      );
+    }
     console.warn('OAuth state persistence using in-memory transactional cache:', err.message);
   }
 
-  // Always mirror in memory store for resilient multi-layer resolution
+  // Mirror in memory store for test environment or local multi-layer resolution
   memoryTransactionStore.set(stateToken, { ...transaction });
 
   return { state: stateToken, transaction };
@@ -169,12 +191,14 @@ export async function consumeOAuthTransaction(params: {
           }
         }
       }
-    } catch {
-      // Supabase query failed, proceed to memory store check
+    } catch (dbErr: any) {
+      if (isProduction()) {
+        throw new Error(`PRODUCTION_FAIL_CLOSED: Basis data transaksi tidak dapat diakses (${dbErr.message}).`);
+      }
     }
 
-    // 2. Check memory store if not yet resolved from DB
-    if (!consumedTransaction) {
+    // 2. Check memory store if not in production and not yet resolved from DB
+    if (!consumedTransaction && !isProduction()) {
       const memTx = memoryTransactionStore.get(stateToken);
       if (!memTx) {
         throw new Error(failureReason || 'INVALID_STATE: Token transaksi OAuth tidak valid atau tidak ditemukan.');
@@ -196,7 +220,7 @@ export async function consumeOAuthTransaction(params: {
         throw new Error('REDIRECT_URI_MISMATCH: Redirect URI transaksi tidak sesuai.');
       }
 
-      // Atomic CAS in memory
+      // Atomic CAS in memory (for testing suite only)
       memTx.consumedAt = new Date().toISOString();
       consumedTransaction = { ...memTx };
     }

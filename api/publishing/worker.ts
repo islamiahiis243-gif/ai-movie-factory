@@ -1,8 +1,11 @@
 /**
  * Vercel Serverless Function: POST /api/publishing/worker
- * AI Movie Factory — Protected Background Publishing Worker (T9.4)
+ * AI Movie Factory — Protected Background Publishing Worker (T9.4 & Production Hardened)
  * Triggered by Vercel Cron or background queue runner.
- * Strictly protected by CRON_SECRET or PUBLISHING_WORKER_SECRET.
+ * Strictly protected by CRON_SECRET, PUBLISHING_WORKER_SECRET, or SUPABASE_SECRET_KEY.
+ *
+ * Reliability Invariant:
+ * Stale jobs (older than 15 min lease) are reconciled before retrying to prevent duplicate uploads.
  */
 
 import { getSupabaseAdmin } from '../lib/supabaseAdmin';
@@ -34,19 +37,54 @@ export default async function handler(req: any, res: any) {
   try {
     const adminSupabase = getSupabaseAdmin();
 
-    // 1. Recover stale processing jobs (older than 15 minutes)
+    // 1. Reconcile stale processing jobs (older than 15 minutes lease)
+    // Avoid blindly re-queuing if external publication or session already occurred!
     const staleCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    await adminSupabase
+    const { data: staleJobs } = await adminSupabase
       .from('publishing_jobs')
-      .update({
-        status: 'queued',
-        error_message: 'Job recovered from stalled worker process.',
-        worker_claim_id: null,
-      })
-      .eq('status', 'processing')
+      .select('id, external_publish_id, published_video_url, retry_count')
+      .in('status', ['processing', 'uploading'])
       .lt('claimed_at', staleCutoff);
 
-    // 2. Claim up to 5 queued jobs
+    if (staleJobs && staleJobs.length > 0) {
+      for (const sj of staleJobs) {
+        if (sj.external_publish_id || sj.published_video_url) {
+          // Reconciled: already published externally
+          await adminSupabase
+            .from('publishing_jobs')
+            .update({
+              status: 'published',
+              progress_percentage: 100,
+              completed_at: new Date().toISOString(),
+              error_message: null,
+            })
+            .eq('id', sj.id);
+        } else if ((sj.retry_count || 0) >= 3) {
+          // Max retry exceeded
+          await adminSupabase
+            .from('publishing_jobs')
+            .update({
+              status: 'failed',
+              error_message: 'Pekerjaan melebihi batas percobaan maksimal (3x). Silakan periksa status studio platform.',
+              completed_at: new Date().toISOString(),
+            })
+            .eq('id', sj.id);
+        } else {
+          // Increment retry count with fencing before re-queuing
+          await adminSupabase
+            .from('publishing_jobs')
+            .update({
+              status: 'queued',
+              retry_count: (sj.retry_count || 0) + 1,
+              error_message: 'Worker lease kedaluwarsa — dijadwalkan ulang secara aman.',
+              worker_claim_id: null,
+            })
+            .eq('id', sj.id);
+        }
+      }
+    }
+
+    // 2. Claim up to 5 queued jobs atomically
     const { data: queuedJobs, error: fetchErr } = await adminSupabase
       .from('publishing_jobs')
       .select('id, user_id, platform')

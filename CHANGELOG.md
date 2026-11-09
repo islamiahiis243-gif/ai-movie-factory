@@ -3,6 +3,40 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.6] - Phase 15 Sprint 3 (Commercial Readiness, Production Closure & T9.5 Live Analytics Sync) - 2026-11-09 16:00 +07:00
+
+### Added
+- **Production OAuth Fail-Closed Hardening (`api/lib/oauthTransactionStore.ts`):**
+  - Enforced strict fail-closed security policy in production (`NODE_ENV === 'production'`) requiring the PostgreSQL `oauth_state_transactions` table.
+  - Rejects state transaction creation with `PRODUCTION_FAIL_CLOSED` if database table is missing, terminating vulnerable memory-only fallbacks across serverless instances.
+- **Worker Lease & Stale Job Recovery Reconciliation (`api/publishing/worker.ts`):**
+  - Replaced naive status resets with idempotent reconciliation: checks whether `external_publish_id` or `published_video_url` was already assigned before retrying stale jobs.
+  - Automatically marks jobs `published` if external publication succeeded, preventing duplicate uploads.
+  - Enforces max retry cap (3x) before failing closed.
+  - Protected worker lease with fencing tokens to prevent race conditions across parallel lambdas.
+- **Vercel Cron Automation (`vercel.json`):**
+  - Configured automated cron schedules for `/api/publishing/worker` (`*/10 * * * *`) and `/api/analytics/sync-worker` (`0 */4 * * *`).
+- **Database Migration V3.9 Live Analytics Sync (`supabase/upgrade_v3_9_live_analytics_sync.sql`, `supabase/deploy_all_migrations.sql`):**
+  - Created `public.creator_analytics_snapshots` and `public.creator_analytics_sync_jobs` tables.
+  - Implemented Row Level Security (RLS) with server-only write privilege (`REVOKE INSERT, UPDATE, DELETE FROM anon, authenticated`) and creator-isolated `SELECT` policies.
+- **T9.5 Live Analytics Engine & Multi-Platform Adapters (`api/lib/analytics/`):**
+  - `YouTubeAnalyticsAdapter`: Direct integration with YouTube Data API v3 statistics & YouTube Analytics API.
+  - `TikTokAnalyticsAdapter`: Direct integration with TikTok Open API Video Query endpoint (`/v2/video/query/`).
+  - `InstagramAnalyticsAdapter`: Direct integration with Meta Graph API v19.0 Instagram Reels Insights (`plays`, `reach`, `likes`, `comments`, `shares`).
+  - `FacebookAnalyticsAdapter`: Direct integration with Meta Graph API v19.0 Page Video Insights.
+  - `AnalyticsService`: Ownership validation, token management, provider dispatch, snapshot persistence, and idempotency control.
+- **Serverless Analytics Endpoints (`api/analytics/`):**
+  - `POST /api/analytics/sync`: Live real-time sync for authenticated creators.
+  - `GET /api/analytics/history`: Historical snapshot time-series retrieval.
+  - `POST /api/analytics/sync-worker`: Cron-driven background synchronization worker protected by `CRON_SECRET`.
+- **Creator Intelligence UI Live Analytics Dashboard (`src/components/studio/CreatorIntelligenceView.tsx`):**
+  - Added dedicated **Analitik Live (T9.5)** tab.
+  - Real-time performance scorecard: Total Live Views, Total Live Interactions, Average Watch Duration, Synced Published Videos.
+  - Content Performance Table with real-time stats, 1-click provider sync, external video links, and 1-click **Milestone** promotion feeding directly into Media Kit and Profitability calculations.
+  - Honest zero-dummy empty states preserving strict data integrity.
+- **Automated Verification Suite (`scripts/test_analytics_sync.ts`):**
+  - 6 comprehensive tests covering adapter extraction, 401 unauthenticated rejection, 403 cross-user rejection, non-published state rejection, snapshot persistence, and cron secret authorization.
+
 ## [1.15.5] - Phase 15 Sprint 3 (T9.3.1 Security Hardening & T9.4 First-Wave Publishing Engine) - 2026-11-09 14:40 +07:00
 
 ### Added

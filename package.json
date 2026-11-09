@@ -1,7 +1,7 @@
 {
   "name": "ai-movie-factory",
   "private": true,
-  "version": "1.15.5",
+  "version": "1.15.6",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -10,8 +10,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test_vercel_golive_readiness.ts && tsx scripts/test_oauth_vault_security.ts && tsx scripts/test_publishing_engine.ts",
-    "verify:golive": "tsx scripts/test_vercel_golive_readiness.ts && tsx scripts/test_oauth_vault_security.ts && tsx scripts/test_publishing_engine.ts"
+    "test": "tsx scripts/test_vercel_golive_readiness.ts && tsx scripts/test_oauth_vault_security.ts && tsx scripts/test_publishing_engine.ts && tsx scripts/test_analytics_sync.ts",
+    "verify:golive": "tsx scripts/test_vercel_golive_readiness.ts && tsx scripts/test_oauth_vault_security.ts && tsx scripts/test_publishing_engine.ts && tsx scripts/test_analytics_sync.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
