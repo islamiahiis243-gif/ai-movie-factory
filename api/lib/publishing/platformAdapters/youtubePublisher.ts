@@ -164,3 +164,9 @@ export class YouTubePlatformPublisher implements IServerPlatformPublisher {
     };
   }
 }
+
+
+// Vercel Serverless Function guard: Prevents build failure when scanning api/ directory
+export default function handler(req: any, res: any) {
+  return res.status(404).json({ error: 'Internal module. Not an endpoint.' });
+}
