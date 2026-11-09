@@ -9,9 +9,10 @@ import { getSupabaseAdmin } from '../lib/supabaseAdmin';
 import { AnalyticsService } from '../lib/analytics/analyticsService';
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
+  // Support both GET (invoked by Vercel Cron) and POST (manual/webhook runners)
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST');
+    return res.status(405).json({ error: 'Method Not Allowed. Use GET or POST.' });
   }
 
   const authHeader = String(req.headers?.authorization || '');

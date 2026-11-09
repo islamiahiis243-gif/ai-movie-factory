@@ -19,10 +19,10 @@ CREATE TABLE IF NOT EXISTS public.creator_analytics_snapshots (
   likes BIGINT NOT NULL DEFAULT 0,
   comments BIGINT NOT NULL DEFAULT 0,
   shares BIGINT NOT NULL DEFAULT 0,
-  watch_time_seconds BIGINT NOT NULL DEFAULT 0,
-  avg_view_duration_seconds INTEGER NOT NULL DEFAULT 0,
-  retention_rate NUMERIC(5,2) DEFAULT 0.00,
-  subscribers_gained INTEGER NOT NULL DEFAULT 0,
+  watch_time_seconds BIGINT DEFAULT NULL,
+  avg_view_duration_seconds INTEGER DEFAULT NULL,
+  retention_rate NUMERIC(5,2) DEFAULT NULL,
+  subscribers_gained INTEGER DEFAULT NULL,
   raw_provider_metrics JSONB,
   sync_source TEXT NOT NULL DEFAULT 'manual_refresh' CHECK (
     sync_source IN ('cron_sync', 'manual_refresh', 'webhook', 'initial_snapshot')

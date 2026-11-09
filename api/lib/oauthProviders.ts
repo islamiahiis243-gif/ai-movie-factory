@@ -68,6 +68,7 @@ export function getProviderConfig(platformId: string): OAuthProviderConfig {
         scopes: [
           'https://www.googleapis.com/auth/youtube.upload',
           'https://www.googleapis.com/auth/youtube.readonly',
+          'https://www.googleapis.com/auth/yt-analytics.readonly',
           'https://www.googleapis.com/auth/userinfo.profile',
         ],
         clientId,
@@ -87,7 +88,7 @@ export function getProviderConfig(platformId: string): OAuthProviderConfig {
         authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
         tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
         revokeUrl: 'https://open.tiktokapis.com/v2/oauth/revoke/',
-        scopes: ['user.info.basic', 'video.publish', 'video.upload'],
+        scopes: ['user.info.basic', 'video.publish', 'video.upload', 'video.list'],
         clientId,
         clientSecret,
         isConfigured: Boolean(clientId && clientSecret),
@@ -102,11 +103,12 @@ export function getProviderConfig(platformId: string): OAuthProviderConfig {
       return {
         id: 'instagram',
         name: 'Instagram (Meta)',
-        authUrl: 'https://www.facebook.com/v19.0/dialog/oauth',
-        tokenUrl: 'https://graph.facebook.com/v19.0/oauth/access_token',
+        authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+        tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
         scopes: [
           'instagram_basic',
           'instagram_content_publish',
+          'instagram_manage_insights',
           'pages_show_list',
           'pages_read_engagement',
         ],
@@ -124,8 +126,8 @@ export function getProviderConfig(platformId: string): OAuthProviderConfig {
       return {
         id: 'facebook',
         name: 'Facebook (Meta)',
-        authUrl: 'https://www.facebook.com/v19.0/dialog/oauth',
-        tokenUrl: 'https://graph.facebook.com/v19.0/oauth/access_token',
+        authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+        tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
         scopes: [
           'pages_show_list',
           'pages_read_engagement',
@@ -354,7 +356,7 @@ export async function fetchPlatformUserProfile(
     case 'instagram': {
       // Fetch user's pages and connected Instagram business account
       const res = await fetch(
-        'https://graph.facebook.com/v19.0/me?fields=id,name,accounts{instagram_business_account{id,username,profile_picture_url}}',
+        'https://graph.facebook.com/v21.0/me?fields=id,name,accounts{instagram_business_account{id,username,profile_picture_url}}',
         {
           headers: { Authorization: `Bearer ${accessToken}` },
         }
@@ -379,7 +381,7 @@ export async function fetchPlatformUserProfile(
 
     case 'facebook': {
       const res = await fetch(
-        'https://graph.facebook.com/v19.0/me?fields=id,name,picture',
+        'https://graph.facebook.com/v21.0/me?fields=id,name,picture',
         {
           headers: { Authorization: `Bearer ${accessToken}` },
         }

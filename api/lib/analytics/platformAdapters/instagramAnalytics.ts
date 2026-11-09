@@ -1,6 +1,6 @@
 /**
  * AI MOVIE FACTORY — INSTAGRAM REELS LIVE ANALYTICS ADAPTER (T9.5)
- * Official Meta Graph API v19.0 Instagram Insights Integration.
+ * Official Meta Graph API v21.0 Instagram Insights Integration.
  */
 
 import { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types';
@@ -24,7 +24,7 @@ export class InstagramAnalyticsAdapter implements IServerPlatformAnalyticsAdapte
     // 1. Fetch base media counts (like_count, comments_count)
     try {
       const baseRes = await fetch(
-        `https://graph.facebook.com/v19.0/${externalPostId}?fields=like_count,comments_count,media_type&access_token=${accessToken}`
+        `https://graph.facebook.com/v21.0/${externalPostId}?fields=like_count,comments_count,media_type&access_token=${accessToken}`
       );
       if (baseRes.ok) {
         const baseData = await baseRes.json();
@@ -39,7 +39,7 @@ export class InstagramAnalyticsAdapter implements IServerPlatformAnalyticsAdapte
     // 2. Fetch Reels Insights (reach, plays, shares, saved, total_interactions)
     try {
       const insightsRes = await fetch(
-        `https://graph.facebook.com/v19.0/${externalPostId}/insights?metric=reach,plays,shares,saved,total_interactions&access_token=${accessToken}`
+        `https://graph.facebook.com/v21.0/${externalPostId}/insights?metric=reach,plays,shares,saved,total_interactions&access_token=${accessToken}`
       );
       if (insightsRes.ok) {
         const iData = await insightsRes.json();
@@ -62,10 +62,11 @@ export class InstagramAnalyticsAdapter implements IServerPlatformAnalyticsAdapte
       likes,
       comments,
       shares,
-      watchTimeSeconds: 0,
-      avgViewDurationSeconds: 0,
-      retentionRate: 0,
-      subscribersGained: 0,
+      watchTimeSeconds: null,
+      avgViewDurationSeconds: null,
+      retentionRate: null,
+      subscribersGained: null,
+      isWatchTimeAvailable: false,
       raw: rawData,
     };
   }

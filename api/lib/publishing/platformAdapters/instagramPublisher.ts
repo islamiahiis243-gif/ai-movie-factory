@@ -41,7 +41,7 @@ export class InstagramPlatformPublisher implements IServerPlatformPublisher {
 
     try {
       // Step 1: Create Media Container for Reel
-      const containerUrl = new URL(`https://graph.facebook.com/v19.0/${igUserId}/media`);
+      const containerUrl = new URL(`https://graph.facebook.com/v21.0/${igUserId}/media`);
       containerUrl.searchParams.append('media_type', 'REELS');
       containerUrl.searchParams.append('video_url', job.media_url);
       containerUrl.searchParams.append('caption', caption);
@@ -68,7 +68,7 @@ export class InstagramPlatformPublisher implements IServerPlatformPublisher {
       let isReady = false;
       for (let i = 0; i < 3; i++) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
-        const statusUrl = `https://graph.facebook.com/v19.0/${containerId}?fields=status_code&access_token=${accessToken}`;
+        const statusUrl = `https://graph.facebook.com/v21.0/${containerId}?fields=status_code&access_token=${accessToken}`;
         const statusRes = await fetch(statusUrl);
         const statusData = await statusRes.json().catch(() => ({}));
 
@@ -87,7 +87,7 @@ export class InstagramPlatformPublisher implements IServerPlatformPublisher {
 
       // Step 3: Publish container if ready
       if (isReady) {
-        const publishUrl = new URL(`https://graph.facebook.com/v19.0/${igUserId}/media_publish`);
+        const publishUrl = new URL(`https://graph.facebook.com/v21.0/${igUserId}/media_publish`);
         publishUrl.searchParams.append('creation_id', containerId);
         publishUrl.searchParams.append('access_token', accessToken);
 

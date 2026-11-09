@@ -109,9 +109,15 @@ export class AnalyticsService {
     // 4. Persist to database if available
     try {
       const adminSupabase = getSupabaseAdmin();
-      await adminSupabase.from('creator_analytics_snapshots').insert(snapshot);
-    } catch {
-      // Retain in memory if database table pending cloud migration
+      const { error: insertErr } = await adminSupabase.from('creator_analytics_snapshots').insert(snapshot);
+      if (insertErr && process.env.NODE_ENV === 'production') {
+        throw new Error(`Gagal menyimpan snapshot analitik ke database cloud: ${insertErr.message}`);
+      }
+    } catch (err: any) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`Database error saat menyimpan snapshot analitik: ${err.message}`);
+      }
+      // In development/test, retain in memory
     }
 
     _setMemorySnapshot(snapshot);

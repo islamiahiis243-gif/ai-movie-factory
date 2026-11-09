@@ -8,10 +8,11 @@ export interface ParsedPlatformMetrics {
   likes: number;
   comments: number;
   shares: number;
-  watchTimeSeconds: number;
-  avgViewDurationSeconds: number;
-  retentionRate: number; // percentage (0.00 to 100.00)
-  subscribersGained: number;
+  watchTimeSeconds?: number | null;
+  avgViewDurationSeconds?: number | null;
+  retentionRate?: number | null; // percentage (0.00 to 100.00) or null if unavailable
+  subscribersGained?: number | null;
+  isWatchTimeAvailable?: boolean;
   raw?: any;
 }
 
@@ -26,10 +27,10 @@ export interface AnalyticsSnapshotRecord {
   likes: number;
   comments: number;
   shares: number;
-  watch_time_seconds: number;
-  avg_view_duration_seconds: number;
-  retention_rate: number;
-  subscribers_gained: number;
+  watch_time_seconds?: number | null;
+  avg_view_duration_seconds?: number | null;
+  retention_rate?: number | null;
+  subscribers_gained?: number | null;
   raw_provider_metrics?: any;
   sync_source: 'cron_sync' | 'manual_refresh' | 'webhook' | 'initial_snapshot';
   synced_at: string;

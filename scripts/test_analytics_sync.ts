@@ -340,7 +340,7 @@ async function runAnalyticsSyncTests() {
     }
     console.log('✔ POST /api/analytics/sync-worker rejected invalid secret (401)');
 
-    // 6.2 Valid Secret Authorized
+    // 6.2 Valid Secret Authorized (POST)
     const workerReqGood = {
       method: 'POST',
       headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
@@ -351,6 +351,27 @@ async function runAnalyticsSyncTests() {
       throw new Error(`Expected 200 on authorized worker call, got ${workerResGood.getStatusCode()}`);
     }
     console.log('✔ POST /api/analytics/sync-worker authorized with CRON_SECRET (200 OK)');
+
+    // 6.3 Vercel Cron GET Request Compatibility Verification
+    const workerReqVercelGet = {
+      method: 'GET',
+      headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+    };
+    const workerResVercelGet = createMockRes();
+    await syncWorkerHandler(workerReqVercelGet, workerResVercelGet);
+    if (workerResVercelGet.getStatusCode() !== 200) {
+      throw new Error(`Expected 200 on Vercel Cron GET request, got ${workerResVercelGet.getStatusCode()}`);
+    }
+    console.log('✔ GET /api/analytics/sync-worker (Vercel Cron) successfully accepted & authorized (200 OK)');
+
+    // -------------------------------------------------------------
+    // TEST 7: Honest Data Integrity (Unavailable vs Zero Distinction)
+    // -------------------------------------------------------------
+    console.log('\n=== TEST 7: Data Integrity & Unavailable vs Zero Distinction ===');
+    if (ttMetrics.watchTimeSeconds !== null || ttMetrics.avgViewDurationSeconds !== null) {
+      throw new Error('TikTok watch time must be null (unavailable), not 0');
+    }
+    console.log('✔ TikTok adapter strictly reports watch time as unavailable (null), preventing fabricated metrics');
 
     console.log('\n================================================================');
     console.log('ALL T9.5 LIVE ANALYTICS VERIFICATION TESTS PASSED SUCCESSFULLY! ✔');

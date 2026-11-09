@@ -90,15 +90,23 @@ export async function getPublishingJob(jobId: string): Promise<PublishJobRecord 
 }
 
 /**
- * Updates a publishing job with strict state machine validation.
+ * Updates a publishing job with strict state machine validation and fencing protection.
  */
 export async function updatePublishingJob(
   jobId: string,
-  updates: Partial<PublishJobRecord>
+  updates: Partial<PublishJobRecord>,
+  options?: { expectedWorkerClaimId?: string }
 ): Promise<PublishJobRecord> {
   const current = await getPublishingJob(jobId);
   if (!current) {
     throw new Error(`Job publikasi #${jobId} tidak ditemukan.`);
+  }
+
+  // Fencing check: if a lease claim was expected, ensure the job has not been claimed by a newer worker
+  if (options?.expectedWorkerClaimId && current.worker_claim_id && current.worker_claim_id !== options.expectedWorkerClaimId) {
+    throw new Error(
+      `Fencing violation: Worker lease expired or was taken over by another worker (${current.worker_claim_id} vs ${options.expectedWorkerClaimId}). Update rejected.`
+    );
   }
 
   if (updates.status && !isValidStatusTransition(current.status, updates.status)) {
@@ -115,7 +123,11 @@ export async function updatePublishingJob(
 
   try {
     const adminSupabase = getSupabaseAdmin();
-    await adminSupabase.from('publishing_jobs').update(updates).eq('id', jobId);
+    let query = adminSupabase.from('publishing_jobs').update(updates).eq('id', jobId);
+    if (options?.expectedWorkerClaimId) {
+      query = query.eq('worker_claim_id', options.expectedWorkerClaimId);
+    }
+    await query;
   } catch {
     // Database write failed, retain in memory
   }
@@ -168,10 +180,14 @@ export async function executePublishingJob(params: {
     }
 
     // 3. Transition to uploading
-    await updatePublishingJob(jobId, {
-      status: 'uploading',
-      progress_percentage: 40,
-    });
+    await updatePublishingJob(
+      jobId,
+      {
+        status: 'uploading',
+        progress_percentage: 40,
+      },
+      { expectedWorkerClaimId: workerClaimId }
+    );
 
     // 4. Invoke platform publisher adapter
     const result = await publisher.publishVideo({
@@ -183,43 +199,79 @@ export async function executePublishingJob(params: {
     const completedAt = new Date().toISOString();
 
     if (result.status === 'published') {
-      return await updatePublishingJob(jobId, {
-        status: 'published',
-        progress_percentage: 100,
-        external_publish_id: result.externalPublishId,
-        published_video_url: result.publishedVideoUrl,
-        provider_response_summary: result.providerSummary || null,
-        completed_at: completedAt,
-        error_message: null,
-      });
+      return await updatePublishingJob(
+        jobId,
+        {
+          status: 'published',
+          progress_percentage: 100,
+          external_publish_id: result.externalPublishId,
+          published_video_url: result.publishedVideoUrl,
+          provider_response_summary: result.providerSummary || null,
+          completed_at: completedAt,
+          error_message: null,
+        },
+        { expectedWorkerClaimId: workerClaimId }
+      );
     } else if (result.status === 'requires_user_action') {
-      return await updatePublishingJob(jobId, {
-        status: 'requires_user_action',
-        progress_percentage: result.progressPercentage || 50,
-        external_publish_id: result.externalPublishId,
-        error_message: result.errorMessage,
-        provider_response_summary: result.providerSummary || null,
-        completed_at: completedAt,
-      });
+      return await updatePublishingJob(
+        jobId,
+        {
+          status: 'requires_user_action',
+          progress_percentage: result.progressPercentage || 50,
+          external_publish_id: result.externalPublishId,
+          error_message: result.errorMessage,
+          provider_response_summary: result.providerSummary || null,
+          completed_at: completedAt,
+        },
+        { expectedWorkerClaimId: workerClaimId }
+      );
     } else {
       const newRetryCount = (job.retry_count || 0) + 1;
-      return await updatePublishingJob(jobId, {
-        status: 'failed',
-        progress_percentage: result.progressPercentage || 0,
-        error_message: result.errorMessage || 'Penerbitan video gagal diproses oleh provider.',
-        retry_count: newRetryCount,
-        completed_at: completedAt,
-        provider_response_summary: result.providerSummary || null,
-      });
+      return await updatePublishingJob(
+        jobId,
+        {
+          status: 'failed',
+          progress_percentage: result.progressPercentage || 0,
+          error_message: result.errorMessage || 'Penerbitan video gagal diproses oleh provider.',
+          retry_count: newRetryCount,
+          completed_at: completedAt,
+          provider_response_summary: result.providerSummary || null,
+        },
+        { expectedWorkerClaimId: workerClaimId }
+      );
     }
   } catch (err: any) {
+    const isAmbiguousTimeout =
+      err.message?.toLowerCase().includes('timeout') ||
+      err.message?.toLowerCase().includes('etimedout') ||
+      err.message?.toLowerCase().includes('fetch failed') ||
+      err.message?.toLowerCase().includes('504');
+
+    if (isAmbiguousTimeout) {
+      // Ambiguous state: avoid duplicate upload by moving to requires_user_action
+      return await updatePublishingJob(
+        jobId,
+        {
+          status: 'requires_user_action',
+          progress_percentage: 50,
+          error_message: `Unggahan mengalami kendala jaringan yang ambigu (${err.message}). Status ditangguhkan ke requires_user_action untuk mencegah duplikasi unggahan.`,
+          completed_at: new Date().toISOString(),
+        },
+        { expectedWorkerClaimId: workerClaimId }
+      );
+    }
+
     const newRetryCount = (job.retry_count || 0) + 1;
-    return await updatePublishingJob(jobId, {
-      status: 'failed',
-      progress_percentage: 0,
-      error_message: err.message || 'Terjadi kesalahan sistem saat mengeksekusi publikasi.',
-      retry_count: newRetryCount,
-      completed_at: new Date().toISOString(),
-    });
+    return await updatePublishingJob(
+      jobId,
+      {
+        status: 'failed',
+        progress_percentage: 0,
+        error_message: err.message || 'Terjadi kesalahan sistem saat mengeksekusi publikasi.',
+        retry_count: newRetryCount,
+        completed_at: new Date().toISOString(),
+      },
+      { expectedWorkerClaimId: workerClaimId }
+    );
   }
 }

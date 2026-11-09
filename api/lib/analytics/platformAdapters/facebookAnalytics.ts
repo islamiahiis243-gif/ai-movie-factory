@@ -1,6 +1,6 @@
 /**
  * AI MOVIE FACTORY — FACEBOOK PAGE VIDEO LIVE ANALYTICS ADAPTER (T9.5)
- * Official Meta Graph API v19.0 Facebook Video Metrics Integration.
+ * Official Meta Graph API v21.0 Facebook Video Metrics Integration.
  */
 
 import { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types';
@@ -16,7 +16,7 @@ export class FacebookAnalyticsAdapter implements IServerPlatformAnalyticsAdapter
     const { externalPostId, accessToken } = params;
 
     // Fetch video insights and public metrics
-    const url = `https://graph.facebook.com/v19.0/${externalPostId}?fields=views,likes.summary(true),comments.summary(true),shares&access_token=${accessToken}`;
+    const url = `https://graph.facebook.com/v21.0/${externalPostId}?fields=views,likes.summary(true),comments.summary(true),shares&access_token=${accessToken}`;
 
     const res = await fetch(url, { method: 'GET' });
     const data = await res.json().catch(() => ({}));
@@ -35,10 +35,11 @@ export class FacebookAnalyticsAdapter implements IServerPlatformAnalyticsAdapter
       likes,
       comments,
       shares,
-      watchTimeSeconds: 0,
-      avgViewDurationSeconds: 0,
-      retentionRate: 0,
-      subscribersGained: 0,
+      watchTimeSeconds: null,
+      avgViewDurationSeconds: null,
+      retentionRate: null,
+      subscribersGained: null,
+      isWatchTimeAvailable: false,
       raw: data,
     };
   }

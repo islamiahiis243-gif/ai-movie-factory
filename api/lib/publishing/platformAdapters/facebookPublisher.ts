@@ -32,7 +32,7 @@ export class FacebookPlatformPublisher implements IServerPlatformPublisher {
     const description = [job.description || job.title, tags].filter(Boolean).join('\n\n');
 
     try {
-      const url = new URL(`https://graph.facebook.com/v19.0/${pageId}/videos`);
+      const url = new URL(`https://graph.facebook.com/v21.0/${pageId}/videos`);
       url.searchParams.append('file_url', job.media_url);
       url.searchParams.append('title', job.title.slice(0, 100));
       url.searchParams.append('description', description);

@@ -40,10 +40,11 @@ export class YouTubeAnalyticsAdapter implements IServerPlatformAnalyticsAdapter 
     let likes = Number(stats.likeCount || 0);
     let comments = Number(stats.commentCount || 0);
     let shares = 0;
-    let watchTimeSeconds = 0;
-    let avgViewDurationSeconds = 0;
-    let retentionRate = 0;
-    let subscribersGained = 0;
+    let watchTimeSeconds: number | null = null;
+    let avgViewDurationSeconds: number | null = null;
+    let retentionRate: number | null = null;
+    let subscribersGained: number | null = null;
+    let isWatchTimeAvailable = false;
 
     // 2. Optional: Attempt granular engagement & retention via YouTube Analytics API
     try {
@@ -71,10 +72,11 @@ export class YouTubeAnalyticsAdapter implements IServerPlatformAnalyticsAdapter 
           avgViewDurationSeconds = Math.round(Number(row[1] || 0));
           retentionRate = Math.min(100, Math.max(0, Number(row[2] || 0)));
           subscribersGained = Number(row[3] || 0);
+          isWatchTimeAvailable = true;
         }
       }
     } catch {
-      // Analytics API may fail if scopes are limited; keep Data API base metrics
+      // Analytics API may fail if scopes are limited; keep metrics as null (unavailable)
     }
 
     return {
@@ -86,6 +88,7 @@ export class YouTubeAnalyticsAdapter implements IServerPlatformAnalyticsAdapter 
       avgViewDurationSeconds,
       retentionRate,
       subscribersGained,
+      isWatchTimeAvailable,
       raw: stats,
     };
   }

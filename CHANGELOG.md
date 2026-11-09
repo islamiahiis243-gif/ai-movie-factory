@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.7] - Production Activation & Verification (Vercel Cron GET, Worker Lease Fencing & Meta v21.0 Upgrade) - 2026-11-09 16:50 +07:00
+
+### Fixed
+- **Vercel Cron HTTP GET Method Compatibility (`api/publishing/worker.ts`, `api/analytics/sync-worker.ts`):**
+  - Resolved 405 Method Not Allowed error when triggered by Vercel Cron.
+  - Workers now accept both `GET` (used natively by Vercel Cron) and `POST` (manual runner/dispatch) while strictly enforcing `CRON_SECRET` / `PUBLISHING_WORKER_SECRET` / `SUPABASE_SECRET_KEY` authorization.
+- **Worker Concurrency & Fencing Token Verification (`api/lib/publishing/jobProcessor.ts`, `api/publishing/worker.ts`):**
+  - Worker claims are now acquired atomically in PostgreSQL using conditional updates (`WHERE status = 'queued'`).
+  - Added strict fencing token checks: If a worker lease expires and a newer worker assumes ownership, updates from the stale worker are strictly rejected.
+  - Ambiguous provider failures (such as network drops or timeouts after video upload initiation) now transition safely to `requires_user_action` instead of blindly triggering a duplicate upload.
+- **Meta Graph API Version Upgrade (`api/lib/oauthProviders.ts`, `api/lib/analytics/platformAdapters/*`, `api/lib/publishing/platformAdapters/*`):**
+  - Migrated Meta Graph API endpoints from deprecated `v19.0` to active LTS `v21.0` for Instagram Reels publishing, Instagram insights, Facebook Page video upload, and Facebook metrics.
+- **YouTube & TikTok OAuth Scopes Alignment (`api/lib/oauthProviders.ts`):**
+  - Added `https://www.googleapis.com/auth/yt-analytics.readonly` to YouTube provider scopes for granular watch time and retention analytics.
+  - Added `video.list` to TikTok provider scopes required by `/v2/video/query/`.
+- **Honest Data Integrity & Nullable Metrics (`api/lib/analytics/types.ts`, `supabase/upgrade_v3_9_live_analytics_sync.sql`, `supabase/deploy_all_migrations.sql`):**
+  - Made watch time, average view duration, retention rate, and subscribers gained explicitly nullable (`DEFAULT NULL`) instead of defaulting to `0`.
+  - Prevents falsified reporting by ensuring unprovided metrics are clearly marked as unavailable (`null`), not zero.
+
 ## [1.15.6] - Phase 15 Sprint 3 (Commercial Readiness, Production Closure & T9.5 Live Analytics Sync) - 2026-11-09 16:00 +07:00
 
 ### Added

@@ -12,6 +12,7 @@
 import {
   isValidStatusTransition,
   executePublishingJob,
+  updatePublishingJob,
   _setMemoryJob,
 } from '../api/lib/publishing/jobProcessor';
 import { PublishingDispatcher } from '../api/lib/publishing/dispatcher';
@@ -106,7 +107,7 @@ async function runPublishingEngineTests() {
   }
   console.log('✔ POST /api/publishing/dispatch rejects unauthenticated requests (401)');
 
-  console.log('\n=== TEST 3: Background Worker Endpoint Security Guard ===');
+  console.log('\n=== TEST 3: Background Worker Endpoint Security Guard & Vercel Cron Compatibility ===');
   const workerReqBad = {
     method: 'POST',
     headers: { authorization: 'Bearer invalid_worker_secret' },
@@ -117,6 +118,50 @@ async function runPublishingEngineTests() {
     throw new Error(`Expected 401 Unauthorized on invalid worker secret, got ${workerResBad.getStatusCode()}`);
   }
   console.log('✔ POST /api/publishing/worker rejects unauthorized cron/worker invocations (401)');
+
+  // 3.2 Vercel Cron GET invocation compatibility
+  process.env.CRON_SECRET = 'amf_super_secret_cron_token_2026';
+  const workerReqVercelGet = {
+    method: 'GET',
+    headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+  };
+  const workerResVercelGet = createMockRes();
+  await workerHandler(workerReqVercelGet, workerResVercelGet);
+  if (workerResVercelGet.getStatusCode() !== 200) {
+    throw new Error(`Expected 200 on Vercel Cron GET request, got ${workerResVercelGet.getStatusCode()}`);
+  }
+  console.log('✔ GET /api/publishing/worker (Vercel Cron) successfully accepted & authorized (200 OK)');
+
+  // 3.3 Worker Lease Fencing Token Protection
+  const jobFencingId = 'job-fence-001';
+  _setMemoryJob({
+    id: jobFencingId,
+    user_id: userA,
+    platform: 'youtube',
+    target_format: '16:9',
+    title: 'Fencing Test Video',
+    hashtags: [],
+    media_url: 'https://test.mp4',
+    status: 'processing',
+    worker_claim_id: 'active_worker_claim_999',
+    progress_percentage: 15,
+    retry_count: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  let fencingCaught = false;
+  try {
+    await updatePublishingJob(
+      jobFencingId,
+      { status: 'uploading' },
+      { expectedWorkerClaimId: 'stale_worker_claim_111' }
+    );
+  } catch (err: any) {
+    fencingCaught = true;
+    console.log('✔ Fencing token protected job from stale worker overwrite:', err.message);
+  }
+  if (!fencingCaught) throw new Error('Stale worker was able to update job without valid fencing token!');
 
   console.log('\n=== TEST 4: Mocked First-Wave Publisher Adapters (YouTube & Meta) ===');
   // 4.1 Mock YouTube publisher execution

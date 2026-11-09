@@ -14,10 +14,10 @@ export interface LiveAnalyticsSnapshot {
   likes: number;
   comments: number;
   shares: number;
-  watch_time_seconds: number;
-  avg_view_duration_seconds: number;
-  retention_rate: number;
-  subscribers_gained: number;
+  watch_time_seconds?: number | null;
+  avg_view_duration_seconds?: number | null;
+  retention_rate?: number | null;
+  subscribers_gained?: number | null;
   sync_source: string;
   synced_at: string;
 }

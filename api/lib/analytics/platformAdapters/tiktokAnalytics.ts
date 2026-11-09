@@ -43,10 +43,11 @@ export class TikTokAnalyticsAdapter implements IServerPlatformAnalyticsAdapter {
       likes: Number(video.like_count || 0),
       comments: Number(video.comment_count || 0),
       shares: Number(video.share_count || 0),
-      watchTimeSeconds: 0,
-      avgViewDurationSeconds: 0,
-      retentionRate: 0,
-      subscribersGained: 0,
+      watchTimeSeconds: null,
+      avgViewDurationSeconds: null,
+      retentionRate: null,
+      subscribersGained: null,
+      isWatchTimeAvailable: false,
       raw: video,
     };
   }

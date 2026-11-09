@@ -324,7 +324,7 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       totalLikes += Number(s.likes) || 0;
       totalComments += Number(s.comments) || 0;
       totalShares += Number(s.shares) || 0;
-      if (s.avg_view_duration_seconds > 0) {
+      if (s.avg_view_duration_seconds != null && s.avg_view_duration_seconds > 0) {
         totalDuration += s.avg_view_duration_seconds;
         countWithDuration++;
       }
@@ -1761,16 +1761,16 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-blue-400" />
                 <h3 className="text-sm font-bold text-white">
-                  {isId ? 'Sinkronisasi Metrik Platform Live (T9.5)' : 'Multi-Platform Live Analytics Hub'}
+                  {isId ? 'Sinkronisasi Metrik Platform Resmi (T9.5)' : 'Official Multi-Platform Analytics Hub'}
                 </h3>
                 <span className="text-[10px] font-mono bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30 font-semibold">
-                  100% Real API
+                  API Sync • Cron 4 Jam / On-Demand
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
                 {isId
-                  ? 'Agregasi metrik performa resmi langsung dari YouTube Data v3, TikTok Open API, Instagram Graph API & Facebook Graph API.'
-                  : 'Direct performance metric aggregation from official platform APIs.'}
+                  ? 'Agregasi metrik resmi langsung dari YouTube Data & Analytics API, TikTok Open API, Instagram Graph API & Facebook Graph API (Cron 4 jam & tombol sinkronisasi instan).'
+                  : 'Official performance metrics aggregated directly from provider APIs (4-hour cron sync & instant refresh).'}
               </p>
             </div>
 
