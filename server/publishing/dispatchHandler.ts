@@ -4,8 +4,8 @@
  * Authenticates creator, validates job ownership, enforces idempotency, and executes publishing.
  */
 
-import { authenticateServerlessRequest } from '../supabaseAdmin';
-import { PublishingDispatcher } from './dispatcher';
+import { authenticateServerlessRequest } from '../supabaseAdmin.ts';
+import { PublishingDispatcher } from './dispatcher.ts';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {

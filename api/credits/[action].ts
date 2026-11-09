@@ -3,8 +3,8 @@
  * AI Movie Factory — Unified Credit Operations (Hobby Zero-Cost Consolidated Router)
  */
 
-import balanceHandler from '../../server/credits/balanceHandler';
-import transactionHandler from '../../server/credits/transactionHandler';
+import balanceHandler from '../../server/credits/balanceHandler.ts';
+import transactionHandler from '../../server/credits/transactionHandler.ts';
 
 export default async function handler(req: any, res: any) {
   const urlPath = req.url ? req.url.split('?')[0] : '';

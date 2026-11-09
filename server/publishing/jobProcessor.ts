@@ -4,13 +4,13 @@
  * atomic job claiming, and execution across registered platform publishers.
  */
 
-import { getSupabaseAdmin } from '../supabaseAdmin';
-import { PublishJobRecord, ServerPublishingStatus, IServerPlatformPublisher } from './types';
-import { getValidAccessToken } from './tokenManager';
-import { YouTubePlatformPublisher } from './platformAdapters/youtubePublisher';
-import { TikTokPlatformPublisher } from './platformAdapters/tiktokPublisher';
-import { InstagramPlatformPublisher } from './platformAdapters/instagramPublisher';
-import { FacebookPlatformPublisher } from './platformAdapters/facebookPublisher';
+import { getSupabaseAdmin } from '../supabaseAdmin.ts';
+import type { PublishJobRecord, ServerPublishingStatus, IServerPlatformPublisher } from './types.ts';
+import { getValidAccessToken } from './tokenManager.ts';
+import { YouTubePlatformPublisher } from './platformAdapters/youtubePublisher.ts';
+import { TikTokPlatformPublisher } from './platformAdapters/tiktokPublisher.ts';
+import { InstagramPlatformPublisher } from './platformAdapters/instagramPublisher.ts';
+import { FacebookPlatformPublisher } from './platformAdapters/facebookPublisher.ts';
 
 const PUBLISHERS: Record<string, IServerPlatformPublisher> = {
   youtube: new YouTubePlatformPublisher(),

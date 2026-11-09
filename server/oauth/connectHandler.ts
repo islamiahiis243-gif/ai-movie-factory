@@ -5,9 +5,9 @@
  * and issues CSRF-protected redirect URL.
  */
 
-import { authenticateServerlessRequest } from '../supabaseAdmin';
-import { getProviderConfig, buildAuthorizationUrl } from '../oauthProviders';
-import { createOAuthTransaction } from '../oauthTransactionStore';
+import { authenticateServerlessRequest } from '../supabaseAdmin.ts';
+import { getProviderConfig, buildAuthorizationUrl } from '../oauthProviders.ts';
+import { createOAuthTransaction } from '../oauthTransactionStore.ts';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {

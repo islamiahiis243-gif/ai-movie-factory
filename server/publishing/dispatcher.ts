@@ -3,8 +3,8 @@
  * Validates ownership, enforces idempotency, and coordinates job execution.
  */
 
-import { getPublishingJob, updatePublishingJob, executePublishingJob } from './jobProcessor';
-import { PublishJobRecord } from './types';
+import { getPublishingJob, updatePublishingJob, executePublishingJob } from './jobProcessor.ts';
+import type { PublishJobRecord } from './types.ts';
 
 export class PublishingDispatcher {
   /**

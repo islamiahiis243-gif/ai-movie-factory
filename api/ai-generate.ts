@@ -12,14 +12,14 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { authenticateServerlessRequest, getSupabaseAdmin } from '../server/supabaseAdmin';
+import { authenticateServerlessRequest, getSupabaseAdmin } from '../server/supabaseAdmin.ts';
 import {
   reserveUserCredits,
   settleUserCredits,
   releaseUserCredits,
   recordAiUsage,
-} from '../server/credits/creditEngine';
-import { calculateProviderCost } from '../server/cost/providerCostEngine';
+} from '../server/credits/creditEngine.ts';
+import { calculateProviderCost } from '../server/cost/providerCostEngine.ts';
 
 export interface AiGenerateRequestBody {
   operation?: 'script_outline' | 'character_seed' | 'continuity_audit' | 'shot_prompt';

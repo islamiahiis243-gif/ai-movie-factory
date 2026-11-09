@@ -5,10 +5,10 @@
  * encrypts secrets with AES-256-GCM, and stores in the server-only platform_oauth_tokens vault.
  */
 
-import { encryptOAuthToken } from '../oauthCrypto';
-import { exchangeCodeForTokens, fetchPlatformUserProfile, getProviderConfig } from '../oauthProviders';
-import { getSupabaseAdmin } from '../supabaseAdmin';
-import { consumeOAuthTransaction } from '../oauthTransactionStore';
+import { encryptOAuthToken } from '../oauthCrypto.ts';
+import { exchangeCodeForTokens, fetchPlatformUserProfile, getProviderConfig } from '../oauthProviders.ts';
+import { getSupabaseAdmin } from '../supabaseAdmin.ts';
+import { consumeOAuthTransaction } from '../oauthTransactionStore.ts';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {

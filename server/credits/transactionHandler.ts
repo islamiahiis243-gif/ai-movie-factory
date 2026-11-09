@@ -3,13 +3,13 @@
  * AI Movie Factory — Dedicated Credit Transaction Operations
  */
 
-import { authenticateServerlessRequest } from '../supabaseAdmin';
+import { authenticateServerlessRequest } from '../supabaseAdmin.ts';
 import {
   reserveUserCredits,
   settleUserCredits,
   releaseUserCredits,
   getUserCreditBalance,
-} from './creditEngine';
+} from './creditEngine.ts';
 
 export default async function transactionHandler(req: any, res: any) {
   if (req.method !== 'POST') {

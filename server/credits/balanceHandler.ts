@@ -3,8 +3,8 @@
  * AI Movie Factory — Protected User Credit Balance Query
  */
 
-import { authenticateServerlessRequest } from '../supabaseAdmin';
-import { getUserCreditBalance } from './creditEngine';
+import { authenticateServerlessRequest } from '../supabaseAdmin.ts';
+import { getUserCreditBalance } from './creditEngine.ts';
 
 export default async function balanceHandler(req: any, res: any) {
   if (req.method !== 'GET' && req.method !== 'POST') {

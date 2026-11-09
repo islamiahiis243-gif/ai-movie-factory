@@ -3,7 +3,7 @@
  * Official TikTok Open API Video Query Integration.
  */
 
-import { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types';
+import type { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types.ts';
 
 export class TikTokAnalyticsAdapter implements IServerPlatformAnalyticsAdapter {
   platformId = 'tiktok';

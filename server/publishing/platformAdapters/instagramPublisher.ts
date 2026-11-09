@@ -4,7 +4,7 @@
  * Requires Instagram Professional Account linked to a Facebook Page.
  */
 
-import { IServerPlatformPublisher, PublishJobRecord, PublishResult } from '../types';
+import type { IServerPlatformPublisher, PublishJobRecord, PublishResult } from '../types.ts';
 
 export class InstagramPlatformPublisher implements IServerPlatformPublisher {
   platformId = 'instagram';

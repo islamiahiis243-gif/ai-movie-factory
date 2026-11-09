@@ -4,7 +4,7 @@
  * Requires Facebook Page admin/editor permissions (`pages_manage_posts`, `publish_video`).
  */
 
-import { IServerPlatformPublisher, PublishJobRecord, PublishResult } from '../types';
+import type { IServerPlatformPublisher, PublishJobRecord, PublishResult } from '../types.ts';
 
 export class FacebookPlatformPublisher implements IServerPlatformPublisher {
   platformId = 'facebook';

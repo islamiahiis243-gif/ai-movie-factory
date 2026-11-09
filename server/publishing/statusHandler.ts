@@ -4,8 +4,8 @@
  * Authenticates creator, validates job ownership, returns sanitized progress and external URL.
  */
 
-import { authenticateServerlessRequest } from '../supabaseAdmin';
-import { getPublishingJob } from './jobProcessor';
+import { authenticateServerlessRequest } from '../supabaseAdmin.ts';
+import { getPublishingJob } from './jobProcessor.ts';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {

@@ -4,14 +4,14 @@
  * rate limit exponential backoff, and time-series aggregation.
  */
 
-import { getSupabaseAdmin } from '../supabaseAdmin';
-import { getValidAccessToken } from '../publishing/tokenManager';
-import { getPublishingJob } from '../publishing/jobProcessor';
-import { AnalyticsSnapshotRecord, IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from './types';
-import { YouTubeAnalyticsAdapter } from './platformAdapters/youtubeAnalytics';
-import { TikTokAnalyticsAdapter } from './platformAdapters/tiktokAnalytics';
-import { InstagramAnalyticsAdapter } from './platformAdapters/instagramAnalytics';
-import { FacebookAnalyticsAdapter } from './platformAdapters/facebookAnalytics';
+import { getSupabaseAdmin } from '../supabaseAdmin.ts';
+import { getValidAccessToken } from '../publishing/tokenManager.ts';
+import { getPublishingJob } from '../publishing/jobProcessor.ts';
+import type { AnalyticsSnapshotRecord, IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from './types.ts';
+import { YouTubeAnalyticsAdapter } from './platformAdapters/youtubeAnalytics.ts';
+import { TikTokAnalyticsAdapter } from './platformAdapters/tiktokAnalytics.ts';
+import { InstagramAnalyticsAdapter } from './platformAdapters/instagramAnalytics.ts';
+import { FacebookAnalyticsAdapter } from './platformAdapters/facebookAnalytics.ts';
 
 const ADAPTERS: Record<string, IServerPlatformAnalyticsAdapter> = {
   youtube: new YouTubeAnalyticsAdapter(),

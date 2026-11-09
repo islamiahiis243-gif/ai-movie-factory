@@ -3,7 +3,7 @@
  * Official Meta Graph API v21.0 Instagram Insights Integration.
  */
 
-import { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types';
+import type { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types.ts';
 
 export class InstagramAnalyticsAdapter implements IServerPlatformAnalyticsAdapter {
   platformId = 'instagram';

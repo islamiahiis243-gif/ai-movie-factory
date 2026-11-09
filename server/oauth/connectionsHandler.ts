@@ -5,8 +5,8 @@
  * NEVER leaks token ciphertext, encryption keys, or IVs to the client.
  */
 
-import { authenticateServerlessRequest } from '../supabaseAdmin';
-import { getProviderConfig } from '../oauthProviders';
+import { authenticateServerlessRequest } from '../supabaseAdmin.ts';
+import { getProviderConfig } from '../oauthProviders.ts';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {

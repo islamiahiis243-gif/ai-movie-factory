@@ -3,7 +3,7 @@
  * Official YouTube Data API v3 & YouTube Analytics API Integration.
  */
 
-import { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types';
+import type { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types.ts';
 
 export class YouTubeAnalyticsAdapter implements IServerPlatformAnalyticsAdapter {
   platformId = 'youtube';

@@ -8,8 +8,8 @@
  * Stale jobs (older than 15 min lease) are reconciled before retrying to prevent duplicate uploads.
  */
 
-import { getSupabaseAdmin } from '../supabaseAdmin';
-import { executePublishingJob } from './jobProcessor';
+import { getSupabaseAdmin } from '../supabaseAdmin.ts';
+import { executePublishingJob } from './jobProcessor.ts';
 
 export default async function handler(req: any, res: any) {
   // Support both GET (invoked by Vercel Cron) and POST (manual/webhook runners)

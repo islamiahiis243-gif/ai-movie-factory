@@ -4,7 +4,7 @@
  * Supports Direct Post and Creator Inbox with honest permission verification.
  */
 
-import { IServerPlatformPublisher, PublishJobRecord, PublishResult } from '../types';
+import type { IServerPlatformPublisher, PublishJobRecord, PublishResult } from '../types.ts';
 
 export class TikTokPlatformPublisher implements IServerPlatformPublisher {
   platformId = 'tiktok';

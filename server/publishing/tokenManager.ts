@@ -5,9 +5,9 @@
  * Enforces AES-256-GCM re-encryption and vault synchronization.
  */
 
-import { getSupabaseAdmin } from '../supabaseAdmin';
-import { decryptOAuthToken, encryptOAuthToken } from '../oauthCrypto';
-import { getProviderConfig } from '../oauthProviders';
+import { getSupabaseAdmin } from '../supabaseAdmin.ts';
+import { decryptOAuthToken, encryptOAuthToken } from '../oauthCrypto.ts';
+import { getProviderConfig } from '../oauthProviders.ts';
 
 export interface DecryptedTokenPayload {
   accessToken: string;

@@ -10,7 +10,7 @@
  */
 
 import crypto from 'crypto';
-import { getSupabaseAdmin } from './supabaseAdmin';
+import { getSupabaseAdmin } from './supabaseAdmin.ts';
 
 export interface OAuthTransaction {
   id: string;

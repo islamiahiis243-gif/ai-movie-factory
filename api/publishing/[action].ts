@@ -3,10 +3,10 @@
  * AI Movie Factory — Unified Publishing Pipeline (Hobby Zero-Cost Consolidated Router)
  */
 
-import dispatchHandler from '../../server/publishing/dispatchHandler';
-import statusHandler from '../../server/publishing/statusHandler';
-import cancelHandler from '../../server/publishing/cancelHandler';
-import workerHandler from '../../server/publishing/workerHandler';
+import dispatchHandler from '../../server/publishing/dispatchHandler.ts';
+import statusHandler from '../../server/publishing/statusHandler.ts';
+import cancelHandler from '../../server/publishing/cancelHandler.ts';
+import workerHandler from '../../server/publishing/workerHandler.ts';
 
 export default async function handler(req: any, res: any) {
   const urlPath = req.url ? req.url.split('?')[0] : '';

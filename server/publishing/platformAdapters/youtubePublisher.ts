@@ -4,7 +4,7 @@
  * Compliant with Google API Quotas and Resumable Upload specifications.
  */
 
-import { IServerPlatformPublisher, PublishJobRecord, PublishResult } from '../types';
+import type { IServerPlatformPublisher, PublishJobRecord, PublishResult } from '../types.ts';
 
 export class YouTubePlatformPublisher implements IServerPlatformPublisher {
   platformId = 'youtube';

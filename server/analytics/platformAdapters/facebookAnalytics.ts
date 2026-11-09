@@ -3,7 +3,7 @@
  * Official Meta Graph API v21.0 Facebook Video Metrics Integration.
  */
 
-import { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types';
+import type { IServerPlatformAnalyticsAdapter, ParsedPlatformMetrics } from '../types.ts';
 
 export class FacebookAnalyticsAdapter implements IServerPlatformAnalyticsAdapter {
   platformId = 'facebook';
