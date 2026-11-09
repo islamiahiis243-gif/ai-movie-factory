@@ -10,7 +10,7 @@ import {
   PublishingPlatformPreset,
   ExportPackage,
 } from '../../types/database';
-import { fetchProjectAssets, fetchProjectScenes, createExportPackage, fetchExportPackages } from '../../lib/supabase';
+import { fetchProjectAssets, fetchProjectScenes, createExportPackage, fetchExportPackages, supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import {
   Scissors,
@@ -68,6 +68,9 @@ import {
   Globe,
   Calendar,
   MessageSquare,
+  Link,
+  Unlink,
+  Lock,
 } from 'lucide-react';
 import {
   PLATFORM_REGISTRY,
@@ -78,6 +81,7 @@ import {
 } from '../../lib/distribution/platformRegistry';
 import { PlatformId, PublishingJob } from '../../lib/distribution/types';
 import { UniversalPublishingService } from '../../lib/distribution/publishingService';
+import { OAuthDistributionService, CreatorConnection } from '../../lib/distribution/oauthService';
 
 interface EditingPostViewProps {
   projects: Project[];
@@ -153,6 +157,17 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   const [platformFilterTab, setPlatformFilterTab] = useState<'all' | 'first_wave' | 'expansion'>('all');
   const [isSavingDraftJobs, setIsSavingDraftJobs] = useState(false);
   const [userPublishingJobs, setUserPublishingJobs] = useState<PublishingJob[]>([]);
+
+  // OAuth Connections & Vault State (T9.3)
+  const [userConnections, setUserConnections] = useState<CreatorConnection[]>([]);
+  const [configuredPlatforms, setConfiguredPlatforms] = useState<Record<string, boolean>>({
+    youtube: false,
+    tiktok: false,
+    instagram: false,
+    facebook: false,
+  });
+  const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
+  const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
 
   // Animation Timer Ref
   const animationFrameRef = useRef<number | null>(null);
@@ -755,6 +770,100 @@ ${chaptersContent}
     }
     loadPublishingJobs();
   }, [userId, activeProject?.id]);
+
+  // Load OAuth connections for active user (T9.3)
+  const loadOAuthConnections = async () => {
+    try {
+      const session = (await supabase?.auth.getSession())?.data.session;
+      if (!session?.access_token) return;
+      const res = await OAuthDistributionService.fetchConnections(session.access_token);
+      setUserConnections(res.connections || []);
+      if (res.configuredPlatforms) {
+        setConfiguredPlatforms(res.configuredPlatforms);
+      }
+    } catch (err) {
+      console.warn('Failed to load OAuth connections:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadOAuthConnections();
+  }, [userId]);
+
+  // Handle OAuth callback URL parameters (?connected=platform or ?oauth_error=msg)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connectedParam = params.get('connected');
+    const accountParam = params.get('account');
+    const oauthError = params.get('oauth_error');
+
+    if (connectedParam) {
+      onShowToast(
+        `Koneksi Akun ${connectedParam.toUpperCase()}${accountParam ? ` (@${accountParam})` : ''} berhasil diverifikasi & disimpan aman di vault!`,
+        'success'
+      );
+      setPublishingSubTab('universal_channels');
+      loadOAuthConnections();
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (oauthError) {
+      onShowToast(`Otorisasi OAuth gagal: ${oauthError}`, 'error');
+      setPublishingSubTab('universal_channels');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  const handleConnectOAuth = async (platId: PlatformId) => {
+    setConnectingPlatform(platId);
+    try {
+      const session = (await supabase?.auth.getSession())?.data.session;
+      if (!session?.access_token) {
+        onShowToast('Silakan masuk (login) terlebih dahulu untuk menghubungkan akun platform.', 'error');
+        return;
+      }
+
+      const res = await OAuthDistributionService.initiateConnect({
+        platform: platId,
+        accessToken: session.access_token,
+        returnUrl: window.location.href,
+      });
+
+      if (res.redirectUrl) {
+        onShowToast(`Mengarahkan ke otorisasi resmi ${platId.toUpperCase()}...`, 'info');
+        window.location.href = res.redirectUrl;
+      }
+    } catch (err: any) {
+      onShowToast(err.message || `Gagal menghubungkan ${platId}`, 'error');
+    } finally {
+      setConnectingPlatform(null);
+    }
+  };
+
+  const handleDisconnectOAuth = async (platId: PlatformId, accountId?: string) => {
+    const confirm = window.confirm(`Apakah Anda yakin ingin memutuskan sambungan akun ${platId.toUpperCase()} dari brankas AMF?`);
+    if (!confirm) return;
+
+    setDisconnectingPlatform(platId);
+    try {
+      const session = (await supabase?.auth.getSession())?.data.session;
+      if (!session?.access_token) {
+        onShowToast('Sesi autentikasi kedaluwarsa. Silakan masuk kembali.', 'error');
+        return;
+      }
+
+      const res = await OAuthDistributionService.disconnect({
+        platform: platId,
+        accessToken: session.access_token,
+        accountId,
+      });
+
+      setUserConnections((prev) => prev.filter((c) => c.platform !== platId));
+      onShowToast(res.message, 'success');
+    } catch (err: any) {
+      onShowToast(err.message || `Gagal memutuskan akun ${platId}`, 'error');
+    } finally {
+      setDisconnectingPlatform(null);
+    }
+  };
 
   // Toggle platform selection in multi-platform composer
   const togglePlatformSelection = (pid: PlatformId) => {
@@ -1834,18 +1943,34 @@ ${chaptersContent}
                       {platformsList.map((plat) => {
                         const isSelected = selectedPlatforms.includes(plat.id);
                         const isFocused = activeChannelView === plat.id;
+                        const existingConn = userConnections.find(
+                          (c) => c.platform === plat.id && c.connection_status !== 'revoked'
+                        );
+                        const isFirstWave = ['youtube', 'tiktok', 'instagram', 'facebook'].includes(plat.id);
+                        const isServerConfigured = Boolean(configuredPlatforms[plat.id]);
 
                         let statusLabel = 'Rencana Rilis';
                         let statusBadge = 'bg-slate-800 text-slate-400 border-slate-700';
-                        if (plat.integrationStatus === 'manual_export_available') {
+
+                        if (existingConn) {
+                          if (existingConn.connection_status === 'connected') {
+                            statusLabel = `Terhubung: @${existingConn.provider_account_name || 'Channel'}`;
+                            statusBadge = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold';
+                          } else if (existingConn.connection_status === 'expired') {
+                            statusLabel = 'Perlu Otorisasi Ulang';
+                            statusBadge = 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+                          }
+                        } else if (isFirstWave) {
+                          if (isServerConfigured) {
+                            statusLabel = 'OAuth 2.0 Siap';
+                            statusBadge = 'bg-sky-500/10 text-sky-400 border-sky-500/30';
+                          } else {
+                            statusLabel = 'API Belum Diatur';
+                            statusBadge = 'bg-slate-800 text-slate-400 border-slate-700';
+                          }
+                        } else if (plat.integrationStatus === 'manual_export_available') {
                           statusLabel = 'Ekspor Manual Siap';
                           statusBadge = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
-                        } else if (plat.integrationStatus === 'architecture_ready') {
-                          statusLabel = 'Arsitektur Siap';
-                          statusBadge = 'bg-sky-500/10 text-sky-400 border-sky-500/30';
-                        } else if (plat.integrationStatus === 'api_in_development') {
-                          statusLabel = 'API v2 (T9.4)';
-                          statusBadge = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
                         }
 
                         return (
@@ -1863,7 +1988,7 @@ ${chaptersContent}
                                 {renderPlatformIcon(plat.iconName)}
                                 <span className="font-bold text-white text-xs">{plat.name}</span>
                               </div>
-                              <span className={`text-[9px] px-2 py-0.5 rounded-full border font-mono ${statusBadge}`}>
+                              <span className={`text-[9px] px-2 py-0.5 rounded-full border font-mono truncate max-w-[130px] ${statusBadge}`}>
                                 {statusLabel}
                               </span>
                             </div>
@@ -1951,6 +2076,111 @@ ${chaptersContent}
                           {activePlat.manualWorkflowNotes.id}
                         </p>
                       </div>
+
+                      {/* OAuth 2.0 Direct Account Connection & Encrypted Vault (T9.3) */}
+                      {(() => {
+                        const activeConn = userConnections.find(
+                          (c) => c.platform === activePlat.id && c.connection_status !== 'revoked'
+                        );
+                        const isFirstWave = ['youtube', 'tiktok', 'instagram', 'facebook'].includes(activePlat.id);
+                        const isServerConfigured = Boolean(configuredPlatforms[activePlat.id]);
+                        const isConnecting = connectingPlatform === activePlat.id;
+                        const isDisconnecting = disconnectingPlatform === activePlat.id;
+
+                        return (
+                          <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-lg space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-white flex items-center gap-2">
+                                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                                {isId ? 'Koneksi Otorisasi Akun (OAuth 2.0 & Token Vault)' : 'OAuth 2.0 Account Authorization & Token Vault'}
+                              </span>
+                              <span className="text-[10px] font-mono text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded border border-cyan-400/20">
+                                AES-256-GCM Vault
+                              </span>
+                            </div>
+
+                            {activeConn ? (
+                              <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="flex items-center gap-2.5">
+                                  {activeConn.provider_avatar_url ? (
+                                    <img
+                                      src={activeConn.provider_avatar_url}
+                                      alt={activeConn.provider_account_name}
+                                      className="w-9 h-9 rounded-full border border-emerald-500/40 object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-9 h-9 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                                      <ShieldCheck className="w-5 h-5" />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-white text-xs">
+                                        {activeConn.provider_account_name || 'Channel Creator'}
+                                      </span>
+                                      <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded font-mono">
+                                        {activeConn.connection_status === 'connected' ? 'Terhubung' : 'Perlu Otorisasi'}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 block font-mono">
+                                      ID: {activeConn.provider_account_id}
+                                      {activeConn.token_expires_at
+                                        ? ` • Kedaluwarsa: ${new Date(activeConn.token_expires_at).toLocaleDateString()}`
+                                        : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDisconnectOAuth(activePlat.id, activeConn.provider_account_id)}
+                                  disabled={isDisconnecting}
+                                  className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                                >
+                                  <Unlink className="w-3.5 h-3.5" />
+                                  <span>{isDisconnecting ? 'Memutuskan...' : 'Putuskan Sambungan'}</span>
+                                </button>
+                              </div>
+                            ) : isFirstWave ? (
+                              <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-lg space-y-2">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div className="text-[11px] text-slate-300">
+                                    <p className="font-medium">
+                                      {isServerConfigured
+                                        ? `Hubungkan akun resmi ${activePlat.name} Anda untuk penerbitan langsung.`
+                                        : `API Developer ${activePlat.name} belum dikonfigurasi di Vercel Environment Variables.`}
+                                    </p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">
+                                      {isServerConfigured
+                                        ? 'Token akses disimpan dengan enkripsi simetris terotentikasi AES-256-GCM pada brankas server-only.'
+                                        : `Untuk mengaktifkan OAuth resmi, konfigurasikan kunci developer (${activePlat.name.toLowerCase().includes('youtube') ? 'YOUTUBE_CLIENT_ID & SECRET' : activePlat.name.toLowerCase().includes('tiktok') ? 'TIKTOK_CLIENT_KEY & SECRET' : 'META_APP_ID & SECRET'}).`}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConnectOAuth(activePlat.id)}
+                                    disabled={isConnecting}
+                                    className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
+                                      isServerConfigured
+                                        ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow'
+                                        : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-white'
+                                    }`}
+                                  >
+                                    <Link className="w-3.5 h-3.5" />
+                                    <span>{isConnecting ? 'Mengarahkan...' : isServerConfigured ? `Hubungkan ${activePlat.name}` : 'Coba Otorisasi'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="p-2.5 bg-slate-950/50 border border-slate-800 rounded-lg text-[11px] text-slate-400 flex items-center justify-between">
+                                <span>Platform ekspansi ini saat ini mendukung alur Ekspor Manual master video, caption, dan paket thumbnail.</span>
+                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                  Ekspor Manual Siap
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       <div className="flex items-center justify-between pt-1">
                         <span className="text-[11px] text-slate-400">

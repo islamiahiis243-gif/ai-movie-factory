@@ -3,6 +3,35 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.4] - Phase 15 Sprint 3 (T9.3): Serverless OAuth Broker & Encrypted Token Vault Architecture - 2026-11-09 14:20 +07:00
+
+### Added
+- **Serverless OAuth Cryptographic Vault Engine (`api/lib/oauthCrypto.ts`):**
+  - **Authenticated Symmetric Encryption:** AES-256-GCM cipher with random 12-byte (96-bit) IV/nonce and 16-byte authentication tags.
+  - **AAD (Additional Authenticated Data) Binding:** Ciphertext is cryptographically bound to `${userId}:${platform}:${accountId}` preventing token transplantation or cross-account injection.
+  - **Zero Client Exposure:** Base table `platform_oauth_tokens` has all SELECT, INSERT, UPDATE, DELETE grants revoked from `anon` and `authenticated` roles. Client applications never query, receive, or decrypt ciphertext tokens.
+  - **Anti-CSRF Signed State Broker:** Issues HMAC-SHA256 signed tamper-proof state tokens containing random cryptographic nonces and strict 10-minute expiration timestamps.
+- **First-Wave OAuth Provider Specifications (`api/lib/oauthProviders.ts`):**
+  - Comprehensive adapter specifications for **YouTube (Google)**, **TikTok**, **Instagram (Meta)**, and **Facebook (Meta)**.
+  - Granular scopes handling (e.g. `youtube.upload`, `video.publish`, `instagram_content_publish`, `pages_manage_posts`).
+  - Automated creator profile retrieval (Channel Title, Creator Display Name, Avatar URL, Provider Account ID).
+  - Honest missing-credential detection: If production environment variables are not configured on Vercel, the broker returns a structured 503 response detailing the missing variables rather than faking connections.
+- **Serverless OAuth Vercel Endpoints:**
+  - `POST /api/oauth/connect`: Authenticates user session, validates provider readiness, signs CSRF state, and issues official authorization redirect URL.
+  - `GET /api/oauth/callback`: Validates signed CSRF state, exchanges authorization code for tokens, encrypts tokens with AES-256-GCM, stores payload in the vault via Supabase `service_role`, and redirects safely to Studio with connection indicators.
+  - `GET /api/oauth/connections`: Exposes sanitized connection metadata (`platform`, `provider_account_name`, `provider_account_id`, `connection_status`, `token_expires_at`, `granted_scopes`) without exposing secrets or keys.
+  - `POST /api/oauth/disconnect`: Authenticates session, attempts remote revocation with provider, and removes/revokes token record from the encrypted vault.
+- **Encrypted Token Vault Database Migration (`supabase/upgrade_v3_8_oauth_token_vault.sql` & `supabase/deploy_all_migrations.sql`):**
+  - Provisioned `public.platform_oauth_tokens` table with strict RLS policies, index optimizations, and automated timestamp triggers.
+  - Created `public.creator_connected_platforms` view projecting sanitized non-sensitive metadata for authenticated creators.
+- **Client Service & Studio Connection Manager (`src/lib/distribution/oauthService.ts`, `src/components/studio/EditingPostView.tsx`):**
+  - Real-time connection status badges on platform cards (`Terhubung: @channel`, `Perlu Otorisasi Ulang`, `OAuth 2.0 Siap`, `API Belum Diatur`, `Ekspor Manual Siap`).
+  - Active Channel Inspector OAuth Vault card with avatar display, account identifier, expiration date, and 1-click Disconnect modal confirmation.
+  - Direct OAuth connection trigger and informative guidance for developer API credentials.
+- **Automated Security & Unit Test Suite (`scripts/test_oauth_vault_security.ts`):**
+  - Automated tests covering AES-256-GCM encryption round-trip, 1-byte ciphertext tampering rejection, AAD mismatch detection, OAuth state HMAC forgery rejection, and serverless endpoint HTTP method & authentication restrictions.
+  - Integrated into `npm test` and `npm run verify:golive`.
+
 ## [1.15.3] - Phase 15 Sprint 3 (T9.2): Universal Distribution Foundation & Platform Capability Registry - 2026-11-09 14:05 +07:00
 
 ### Added
