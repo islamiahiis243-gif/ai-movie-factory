@@ -3,6 +3,29 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.3] - Phase 15 Sprint 3 (T9.2): Universal Distribution Foundation & Platform Capability Registry - 2026-11-09 14:05 +07:00
+
+### Added
+- **Universal Multi-Platform Capability Registry (`src/lib/distribution/platformRegistry.ts`):**
+  - Architected unified registry covering **13 major global distribution platforms**:
+    - **4 First-Wave Priority Channels:** YouTube, TikTok, Instagram Reels/Video, Facebook Pages/Reels.
+    - **9 Expansion Channels:** X (Twitter), LinkedIn Video, Pinterest Video Pins, Snapchat Spotlight, Meta Threads, Telegram Channels, Vimeo Cinema, Dailymotion, Reddit Communities.
+  - Granular constraint engine tracking official developer specifications: aspect ratios (`16:9`, `9:16`, `4:5`, `2.39:1`), maximum file size limits, duration limits, OAuth scopes, account eligibility requirements, and direct API vs manual workflow rules.
+  - Multi-platform pre-flight content validator (`validateContentForPlatform`) auditing title length, duration compliance, aspect ratio hazards, and hashtag recommendations.
+- **Shared Platform Adapter Contract (`src/lib/distribution/types.ts`):**
+  - Designed provider-agnostic `IPlatformAdapter` interface establishing contracts for content validation, derivative media preparation, job status polling, and performance analytics sync.
+- **Universal Publishing Job Queue Model (`supabase/upgrade_v3_7_universal_publishing_engine.sql` & `supabase/deploy_all_migrations.sql`):**
+  - Provisioned `public.publishing_jobs` table supporting 9-state lifecycle (`draft`, `queued`, `scheduled`, `processing`, `uploading`, `published`, `requires_user_action`, `failed`, `cancelled`).
+  - **Critical Security & Anti-Tampering Trigger:**
+    - Strict Row-Level Security (RLS) and PostgreSQL trigger `validate_publishing_job_client_update()` preventing ordinary client users from forging `published` status, altering server-assigned `published_video_url`, or manipulating external publish IDs directly from client browser queries.
+- **Publishing Repository & Dual-Mode Orchestrator (`src/lib/distribution/publishingRepository.ts`, `src/lib/distribution/publishingService.ts`):**
+  - Implemented CRUD services for creating multi-platform draft jobs, updating metadata, and safe job cancellation with transparent error propagation and resilient local storage fallback.
+- **Studio Publishing Hub UI Integration (`src/components/studio/EditingPostView.tsx`):**
+  - Introduced dedicated **13 Kanal Distribusi** sub-tab in the post-production suite.
+  - Interactive platform filter rail (`Semua (13)`, `Prioritas (4)`, `Ekspansi (9)`) with official icons, authentic integration status badges, and multi-channel selection checkboxes.
+  - Active Channel Inspector revealing developer docs links, format constraints, and distribution workflow notes.
+  - Universal Multi-Platform Publishing Queue widget inside *Paket Rilis & Cuan* allowing 1-click batch draft creation directly to Supabase cloud.
+
 ## [1.15.2] - Production Data Integrity, Creator Media Kit Privacy Hardening & Type Safety Audit - 2026-11-09 13:25 +07:00
 
 ### Added

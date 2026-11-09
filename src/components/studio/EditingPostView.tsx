@@ -54,7 +54,30 @@ import {
   Smartphone,
   SlidersHorizontal,
   ArrowRight,
+  Youtube,
+  Instagram,
+  Facebook,
+  Twitter,
+  Linkedin,
+  Pin,
+  Ghost,
+  AtSign,
+  Send,
+  CheckSquare,
+  Square,
+  Globe,
+  Calendar,
+  MessageSquare,
 } from 'lucide-react';
+import {
+  PLATFORM_REGISTRY,
+  getAllPlatforms,
+  getFirstWavePlatforms,
+  getExpansionPlatforms,
+  validateContentForPlatform,
+} from '../../lib/distribution/platformRegistry';
+import { PlatformId, PublishingJob } from '../../lib/distribution/types';
+import { UniversalPublishingService } from '../../lib/distribution/publishingService';
 
 interface EditingPostViewProps {
   projects: Project[];
@@ -75,7 +98,8 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   onNavigateToPipeline,
   onNavigateToIntelligence,
 }) => {
-  const { language } = useAuth();
+  const { user, profile, language } = useAuth();
+  const userId = user?.id || profile.id;
   const isId = language === 'id';
 
   // Active Project Selection
@@ -112,8 +136,8 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   // Tab View within Editor
   const [editorTab, setEditorTab] = useState<'timeline' | 'color_grading' | 'publishing' | 'audio_mixer'>('timeline');
 
-  // Publishing Hub States (Sprint 1: P0)
-  const [publishingSubTab, setPublishingSubTab] = useState<'format_safe_area' | 'ai_virality' | 'distribution_package'>('format_safe_area');
+  // Publishing Hub States (Universal Distribution Engine T9.2)
+  const [publishingSubTab, setPublishingSubTab] = useState<'format_safe_area' | 'ai_virality' | 'universal_channels' | 'distribution_package'>('format_safe_area');
   const [showSafeArea, setShowSafeArea] = useState<boolean>(true);
   const [reframeOffset, setReframeOffset] = useState<number>(0); // -30% to +30%
   const [selectedTitleIndex, setSelectedTitleIndex] = useState(0);
@@ -122,6 +146,13 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   const [isGeneratingTeaser, setIsGeneratingTeaser] = useState(false);
   const [teaserGenerated, setTeaserGenerated] = useState(false);
   const [simulatedViews, setSimulatedViews] = useState<number>(100000);
+
+  // Multi-Platform Distribution Hub State (T9.2)
+  const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformId[]>(['youtube', 'tiktok', 'instagram']);
+  const [activeChannelView, setActiveChannelView] = useState<PlatformId>('youtube');
+  const [platformFilterTab, setPlatformFilterTab] = useState<'all' | 'first_wave' | 'expansion'>('all');
+  const [isSavingDraftJobs, setIsSavingDraftJobs] = useState(false);
+  const [userPublishingJobs, setUserPublishingJobs] = useState<PublishingJob[]>([]);
 
   // Animation Timer Ref
   const animationFrameRef = useRef<number | null>(null);
@@ -709,6 +740,92 @@ ${chaptersContent}
     }
   };
 
+  // Load publishing jobs for active user and project (T9.2)
+  useEffect(() => {
+    async function loadPublishingJobs() {
+      if (!userId) return;
+      try {
+        const res = await UniversalPublishingService.fetchUserJobs(userId, activeProject?.id);
+        if (res.data) {
+          setUserPublishingJobs(res.data);
+        }
+      } catch (err) {
+        console.warn('Failed to load publishing jobs:', err);
+      }
+    }
+    loadPublishingJobs();
+  }, [userId, activeProject?.id]);
+
+  // Toggle platform selection in multi-platform composer
+  const togglePlatformSelection = (pid: PlatformId) => {
+    setSelectedPlatforms((prev) =>
+      prev.includes(pid) ? prev.filter((p) => p !== pid) : [...prev, pid]
+    );
+  };
+
+  // Helper for platform icon
+  const renderPlatformIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'Youtube': return <Youtube className="w-4 h-4 text-red-500" />;
+      case 'Instagram': return <Instagram className="w-4 h-4 text-pink-500" />;
+      case 'Facebook': return <Facebook className="w-4 h-4 text-blue-500" />;
+      case 'Twitter': return <Twitter className="w-4 h-4 text-slate-300" />;
+      case 'Linkedin': return <Linkedin className="w-4 h-4 text-sky-500" />;
+      case 'Pin': return <Pin className="w-4 h-4 text-rose-500" />;
+      case 'Ghost': return <Ghost className="w-4 h-4 text-yellow-400" />;
+      case 'AtSign': return <AtSign className="w-4 h-4 text-white" />;
+      case 'Send': return <Send className="w-4 h-4 text-sky-400" />;
+      case 'Tv': return <Tv className="w-4 h-4 text-blue-400" />;
+      case 'Film': return <Film className="w-4 h-4 text-cyan-400" />;
+      case 'MessageSquare': return <MessageSquare className="w-4 h-4 text-orange-500" />;
+      default: return <Video className="w-4 h-4 text-cyan-400" />;
+    }
+  };
+
+  // Save drafts across selected platforms
+  const handleSaveMultiPlatformDrafts = async () => {
+    if (!userId || !activeProject) return;
+    if (selectedPlatforms.length === 0) {
+      onShowToast('Pilih minimal satu platform tujuan publikasi.', 'error');
+      return;
+    }
+    setIsSavingDraftJobs(true);
+    try {
+      const activeTitle = viralityTitles[selectedTitleIndex]?.title || `${activeProject.name}: Mahakarya Sinema AI`;
+      const targetFormats: Record<PlatformId, string> = {} as any;
+      selectedPlatforms.forEach((p) => {
+        targetFormats[p] = p === 'youtube' || p === 'facebook' || p === 'vimeo' ? '16:9' : '9:16';
+      });
+
+      const res = await UniversalPublishingService.createMultiPlatformDrafts({
+        userId,
+        projectId: activeProject.id,
+        platformIds: selectedPlatforms,
+        targetFormats,
+        metadata: {
+          title: activeTitle,
+          description: seoDescriptionText,
+          caption: activeTitle,
+          hashtags: ['AIMovieFactory', 'SinemaAI', (activeProject.genre || 'Cinema').replace(/\s+/g, '')],
+          privacy: 'public',
+          aspectRatio: activePlatform === 'youtube_16_9' ? '16:9' : '9:16',
+        },
+        mediaUrl: projectAssets.find((a) => a.asset_type === 'video')?.file_url || 'https://storage.googleapis.com/amf-master-demo.mp4',
+      });
+
+      if (res.jobs.length > 0) {
+        setUserPublishingJobs((prev) => [...res.jobs, ...prev]);
+        onShowToast(`Berhasil menyimpan ${res.jobs.length} draf antrean publikasi ke basis data!`, 'success');
+      } else {
+        onShowToast('Gagal membuat draf publikasi', 'error');
+      }
+    } catch (err: any) {
+      onShowToast(err.message || 'Gagal menyimpan draf publikasi', 'error');
+    } finally {
+      setIsSavingDraftJobs(false);
+    }
+  };
+
   if (!activeProject) {
     return (
       <div className="p-8 text-center bg-[#101726] border border-slate-800 rounded-xl max-w-xl mx-auto">
@@ -1285,11 +1402,11 @@ ${chaptersContent}
           {/* Tab 3: Studio Publishing & Virality Hub (Sprint 1: P0) */}
           {editorTab === 'publishing' && (
             <div className="p-4 space-y-4 flex-1 overflow-y-auto max-h-[520px]">
-              {/* Publishing Sub-Tabs Header */}
-              <div className="flex bg-slate-950/80 p-1 rounded-lg border border-slate-800 text-[11px] font-semibold">
+              {/* Publishing Sub-Tabs Header (T9.2 Universal Engine) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 bg-slate-950/80 p-1 rounded-lg border border-slate-800 text-[11px] font-semibold gap-1">
                 <button
                   onClick={() => setPublishingSubTab('format_safe_area')}
-                  className={`flex-1 py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     publishingSubTab === 'format_safe_area'
                       ? 'bg-amber-400 text-slate-950 shadow font-bold'
                       : 'text-slate-400 hover:text-white'
@@ -1300,7 +1417,7 @@ ${chaptersContent}
                 </button>
                 <button
                   onClick={() => setPublishingSubTab('ai_virality')}
-                  className={`flex-1 py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     publishingSubTab === 'ai_virality'
                       ? 'bg-amber-400 text-slate-950 shadow font-bold'
                       : 'text-slate-400 hover:text-white'
@@ -1310,8 +1427,19 @@ ${chaptersContent}
                   <span>AI Virality Kit</span>
                 </button>
                 <button
+                  onClick={() => setPublishingSubTab('universal_channels')}
+                  className={`py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    publishingSubTab === 'universal_channels'
+                      ? 'bg-amber-400 text-slate-950 shadow font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>13 Kanal Distribusi</span>
+                </button>
+                <button
                   onClick={() => setPublishingSubTab('distribution_package')}
-                  className={`flex-1 py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     publishingSubTab === 'distribution_package'
                       ? 'bg-amber-400 text-slate-950 shadow font-bold'
                       : 'text-slate-400 hover:text-white'
@@ -1646,14 +1774,200 @@ ${chaptersContent}
                   </div>
 
                   <button
-                    onClick={() => setPublishingSubTab('distribution_package')}
+                    onClick={() => setPublishingSubTab('universal_channels')}
                     className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
-                    <span>Lanjut ke Paket Rilis & Cuan</span>
+                    <span>Lanjut ke 13 Kanal Distribusi</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
+
+              {/* Sub-tab 3: 13 Universal Distribution Channels (T9.2) */}
+              {publishingSubTab === 'universal_channels' && (() => {
+                const platformsList =
+                  platformFilterTab === 'first_wave'
+                    ? getFirstWavePlatforms()
+                    : platformFilterTab === 'expansion'
+                    ? getExpansionPlatforms()
+                    : getAllPlatforms();
+                const activePlat = PLATFORM_REGISTRY[activeChannelView] || PLATFORM_REGISTRY.youtube;
+
+                return (
+                  <div className="space-y-4">
+                    {/* Filter Pills */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <Globe className="w-4 h-4 text-amber-400" />
+                        <span className="font-bold text-white">Registry Kapabilitas Platform Universal</span>
+                      </div>
+                      <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-[10px]">
+                        <button
+                          onClick={() => setPlatformFilterTab('all')}
+                          className={`px-2 py-0.5 rounded cursor-pointer ${
+                            platformFilterTab === 'all' ? 'bg-amber-400 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Semua (13)
+                        </button>
+                        <button
+                          onClick={() => setPlatformFilterTab('first_wave')}
+                          className={`px-2 py-0.5 rounded cursor-pointer ${
+                            platformFilterTab === 'first_wave' ? 'bg-amber-400 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Prioritas (4)
+                        </button>
+                        <button
+                          onClick={() => setPlatformFilterTab('expansion')}
+                          className={`px-2 py-0.5 rounded cursor-pointer ${
+                            platformFilterTab === 'expansion' ? 'bg-amber-400 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Ekspansi (9)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Platform Cards Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      {platformsList.map((plat) => {
+                        const isSelected = selectedPlatforms.includes(plat.id);
+                        const isFocused = activeChannelView === plat.id;
+
+                        let statusLabel = 'Rencana Rilis';
+                        let statusBadge = 'bg-slate-800 text-slate-400 border-slate-700';
+                        if (plat.integrationStatus === 'manual_export_available') {
+                          statusLabel = 'Ekspor Manual Siap';
+                          statusBadge = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+                        } else if (plat.integrationStatus === 'architecture_ready') {
+                          statusLabel = 'Arsitektur Siap';
+                          statusBadge = 'bg-sky-500/10 text-sky-400 border-sky-500/30';
+                        } else if (plat.integrationStatus === 'api_in_development') {
+                          statusLabel = 'API v2 (T9.4)';
+                          statusBadge = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+                        }
+
+                        return (
+                          <div
+                            key={plat.id}
+                            onClick={() => setActiveChannelView(plat.id)}
+                            className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                              isFocused
+                                ? 'bg-slate-900 border-amber-400/60 shadow-lg'
+                                : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                {renderPlatformIcon(plat.iconName)}
+                                <span className="font-bold text-white text-xs">{plat.name}</span>
+                              </div>
+                              <span className={`text-[9px] px-2 py-0.5 rounded-full border font-mono ${statusBadge}`}>
+                                {statusLabel}
+                              </span>
+                            </div>
+
+                            <p className="text-[11px] text-slate-400 line-clamp-1 mb-2">
+                              {plat.description.id}
+                            </p>
+
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[10px]">
+                              <span className="text-slate-400 font-mono">
+                                Rasio: {plat.capabilities.supportedAspectRatios.join(', ')}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePlatformSelection(plat.id);
+                                }}
+                                className={`flex items-center gap-1 font-semibold px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                {isSelected ? <CheckSquare className="w-3 h-3 text-amber-400" /> : <Square className="w-3 h-3" />}
+                                <span>{isSelected ? 'Terpilih' : 'Pilih Rilis'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Active Platform Inspector Details */}
+                    <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                        <div className="flex items-center gap-2.5">
+                          {renderPlatformIcon(activePlat.iconName)}
+                          <div>
+                            <span className="font-bold text-white text-xs block">{activePlat.name}</span>
+                            <span className="text-[10px] text-slate-400">Kategori: {activePlat.category}</span>
+                          </div>
+                        </div>
+                        <a
+                          href={activePlat.officialDocUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] text-amber-400 hover:underline"
+                        >
+                          <span>Dokumentasi Resmi Developer</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono">
+                        <div className="p-2 bg-slate-900 rounded border border-slate-800">
+                          <span className="text-slate-400 block uppercase">Batas Durasi</span>
+                          <span className="text-white font-bold">
+                            {Math.floor(activePlat.capabilities.maxDurationSeconds / 60)} Menit
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-900 rounded border border-slate-800">
+                          <span className="text-slate-400 block uppercase">Batas Ukuran</span>
+                          <span className="text-white font-bold">
+                            {Math.floor(activePlat.capabilities.maxSizeBytes / (1024 * 1024 * 1024)) || 1} GB
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-900 rounded border border-slate-800">
+                          <span className="text-slate-400 block uppercase">Metode Publikasi</span>
+                          <span className="text-cyan-400 font-bold">
+                            {activePlat.capabilities.supportsDirectPublishing ? 'Direct API / Manual' : 'Ekspor Manual'}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-900 rounded border border-slate-800">
+                          <span className="text-slate-400 block uppercase">Kebutuhan Akun</span>
+                          <span className="text-amber-400 font-bold">
+                            {activePlat.capabilities.accountTypeRequired}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-slate-900/60 rounded-lg text-xs space-y-1">
+                        <strong className="text-slate-200 block text-[11px]">Panduan Alur Distribusi:</strong>
+                        <p className="text-slate-300 text-[11px] leading-relaxed">
+                          {activePlat.manualWorkflowNotes.id}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[11px] text-slate-400">
+                          {selectedPlatforms.length} platform terpilih untuk rilis serentak.
+                        </span>
+                        <button
+                          onClick={() => setPublishingSubTab('distribution_package')}
+                          className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span>Lanjut ke Paket Rilis & Antrean</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Sub-tab 3: Distribution Package & Monetization Simulator */}
               {publishingSubTab === 'distribution_package' && (() => {
@@ -1742,6 +2056,67 @@ ${chaptersContent}
                           </div>
                         </button>
                       </div>
+                    </div>
+
+                    {/* Universal Multi-Platform Publishing Queue & Draft Saver (T9.2) */}
+                    <div className="p-3.5 bg-slate-950/90 border border-slate-800 rounded-xl space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-amber-400" />
+                          <div>
+                            <span className="text-xs font-bold text-white block">
+                              Antrean Publikasi Multi-Platform ({selectedPlatforms.length} Kanal Terpilih)
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              Target Rilis: {selectedPlatforms.map((p) => PLATFORM_REGISTRY[p]?.name || p).join(', ')}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleSaveMultiPlatformDrafts}
+                          disabled={isSavingDraftJobs || selectedPlatforms.length === 0}
+                          className="px-3.5 py-1.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all shadow-md shadow-amber-400/20"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{isSavingDraftJobs ? 'Menyimpan...' : 'Simpan Draf Antrean'}</span>
+                        </button>
+                      </div>
+
+                      {userPublishingJobs.length > 0 ? (
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                          {userPublishingJobs.slice(0, 5).map((job) => (
+                            <div
+                              key={job.id}
+                              className="p-2 bg-slate-900/80 border border-slate-800 rounded-lg flex items-center justify-between text-xs"
+                            >
+                              <div className="flex items-center gap-2">
+                                {renderPlatformIcon(PLATFORM_REGISTRY[job.platform]?.iconName || 'Video')}
+                                <div>
+                                  <p className="font-bold text-white text-[11px] truncate max-w-[200px] sm:max-w-xs">{job.title}</p>
+                                  <p className="text-[9px] text-slate-400 font-mono">
+                                    {PLATFORM_REGISTRY[job.platform]?.name || job.platform} • Format {job.target_format}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[9px] px-2 py-0.5 rounded font-mono uppercase ${
+                                  job.status === 'published'
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                                    : job.status === 'queued' || job.status === 'scheduled'
+                                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                                    : 'bg-slate-800 text-slate-300'
+                                }`}>
+                                  {job.status}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-500 italic text-center py-1">
+                          Belum ada draf antrean publikasi tersimpan. Klik "Simpan Draf Antrean" untuk mendaftarkan pekerjaan rilis.
+                        </p>
+                      )}
                     </div>
 
                     {/* Creator Revenue & Net Profit Intelligence Simulator */}

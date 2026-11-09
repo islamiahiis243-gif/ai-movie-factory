@@ -116,9 +116,14 @@ flowchart LR
         T7["✅ Milestone Growth Logger"]
     end
 
-    subgraph P2["🚀 SPRINT 3 (Skala Lanjutan)"]
+    subgraph P2["🚀 SPRINT 3 (Universal Multi-Platform Distribution)"]
         T8["✅ Creator Media Kit & Proposal Sponsor (v1.15.1)"]
-        T9["⏳ Direct OAuth Publishing API (YouTube Data API / TikTok API)"]
+        T91["✅ T9.1: Multi-Platform Architecture & Security Audit (v1.15.2)"]
+        T92["✅ T9.2: 13-Platform Registry & Publishing Queue (v1.15.3)"]
+        T93["⏳ T9.3: Serverless OAuth Broker & Token Vault"]
+        T94["⏳ T9.4: First-Wave Direct APIs (YouTube, TikTok, Meta)"]
+        T95["⏳ T9.5: Multi-Platform Composer & Live Dispatch"]
+        T96["⏳ T9.6: Official Analytics Sync & Expansion"]
     end
 
     P0 --> P1 --> P2
@@ -128,4 +133,6 @@ flowchart LR
 - **Sprint 1 (P0):** ✅ **SELESAI (v1.15.0)** - Safe Area Preview, AI Virality Packaging, Teaser Generator, Master Package SRT/VTT.
 - **Sprint 2 (P1):** ✅ **SELESAI (v1.15.0)** - Profitability Simulator, Pre-Publishing Hook Analyzer, Milestone Growth Logger.
 - **Sprint 3 (P2 - T8):** ✅ **SELESAI (v1.15.1 - 2026-11-09 13:00 +07:00)** - 1-Click PDF Vector Media Kit Generator, Custom Rate Card Tier Editor, Standalone HTML Downloader, dan Direct Pitch Outreach Copy.
-- **Sprint 3 (P2 - T9):** ⏳ **INCOMPLETE (Task Berikutnya)** - Integrasi Direct OAuth Publishing API ke YouTube Data API v3 & TikTok Content Posting API.
+- **Sprint 3 (P2 - T9.1):** ✅ **SELESAI (v1.15.2 - 2026-11-09 13:45 +07:00)** - Audit arsitektur multi-platform universal, klarifikasi privasi kolom Media Kit, eliminasi dummy data, dan matriks kapabilitas.
+- **Sprint 3 (P2 - T9.2):** ✅ **SELESAI (v1.15.3 - 2026-11-09 14:05 +07:00)** - Universal Distribution Foundation, Registry Kapabilitas 13 Platform (YouTube, TikTok, Instagram, Facebook, X, LinkedIn, Pinterest, Snapchat, Threads, Telegram, Vimeo, Dailymotion, Reddit), Skema Basis Data `publishing_jobs` dengan proteksi anti-tampering RLS, repositori penerbitan, dan integrasi UI Publishing Hub.
+- **Sprint 3 (P2 - T9.3):** ⏳ **TASK BERIKUTNYA** - Serverless OAuth Broker & Token Vault AES-256-GCM (`/api/oauth/connect`, `/api/oauth/callback`).
