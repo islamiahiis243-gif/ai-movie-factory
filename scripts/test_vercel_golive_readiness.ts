@@ -70,12 +70,38 @@ async function runVercelGoLiveTests() {
   if (!analyticsCron) throw new Error('Missing /api/analytics/sync-worker in vercel.json crons');
 
   // Verify standard 5-field cron syntax (minute, hour, day-of-month, month, day-of-week)
-  const cronRegex = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/;
-  if (!cronRegex.test(publishingCron.schedule)) {
+  function isValidCronSyntax(expr: string): boolean {
+    if (typeof expr !== 'string') return false;
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length !== 5) return false;
+    const [min, hour, dom, mon, dow] = parts;
+    const minRegex = /^(\*(\/([1-5]?[0-9]))?|([0-5]?[0-9])(-[0-5]?[0-9])?)$/;
+    const hourRegex = /^(\*(\/(2[0-3]|1[0-9]|[1-9]))?|(2[0-3]|1[0-9]|[0-9])(-(2[0-3]|1[0-9]|[0-9]))?)$/;
+    const domRegex = /^(\*(\/([1-9]|[12][0-9]|3[01]))?|([1-9]|[12][0-9]|3[01])(-([1-9]|[12][0-9]|3[01]))?)$/;
+    const monRegex = /^(\*(\/(1[0-2]|[1-9]))?|(1[0-2]|[1-9])(-(1[0-2]|[1-9]))?)$/;
+    const dowRegex = /^(\*(\/([0-7]))?|([0-7])(-[0-7])?)$/;
+    return (
+      minRegex.test(min) &&
+      hourRegex.test(hour) &&
+      domRegex.test(dom) &&
+      monRegex.test(mon) &&
+      dowRegex.test(dow)
+    );
+  }
+
+  if (!isValidCronSyntax(publishingCron.schedule)) {
     throw new Error(`Invalid cron format for publishing worker: ${publishingCron.schedule}`);
   }
-  if (!cronRegex.test(analyticsCron.schedule)) {
+  if (!isValidCronSyntax(analyticsCron.schedule)) {
     throw new Error(`Invalid cron format for analytics worker: ${analyticsCron.schedule}`);
+  }
+
+  // Regression & Negative Tests: Ensure invalid cron patterns are strictly rejected
+  const invalidPatterns = ['/10', '0 /4', '* * * *', '* * * * * *', '60 * * * *', '0 25 * * *', 'not-a-cron'];
+  for (const bad of invalidPatterns) {
+    if (isValidCronSyntax(bad)) {
+      throw new Error(`Cron validator failed to reject invalid expression: "${bad}"`);
+    }
   }
 
   if (publishingCron.schedule !== '*/10 * * * *') {
@@ -84,7 +110,7 @@ async function runVercelGoLiveTests() {
   if (analyticsCron.schedule !== '0 */4 * * *') {
     throw new Error(`Expected 0 */4 * * * for analytics worker, got ${analyticsCron.schedule}`);
   }
-  console.log('✔ vercel.json crons validated (5-field standard syntax: publishing worker "*/10 * * * *", analytics worker "0 */4 * * *")');
+  console.log('✔ vercel.json crons validated (5-field standard syntax: publishing worker "*/10 * * * *", analytics worker "0 */4 * * *", semantic validator & negative tests passed)');
 
   const pkgConfig = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
   if (!pkgConfig.devDependencies?.esbuild?.startsWith('^0.28')) {

@@ -1670,10 +1670,6 @@ CREATE POLICY "Users can update own draft publishing jobs"
         (
             auth.uid() = user_id
             AND status IN ('draft', 'queued', 'scheduled', 'cancelled')
-            AND (
-                status != 'published' 
-                OR (OLD.status = 'published' AND published_video_url = OLD.published_video_url)
-            )
         )
         OR public.is_platform_admin(auth.uid())
     );
