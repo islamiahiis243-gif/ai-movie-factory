@@ -140,6 +140,14 @@ GRANT EXECUTE ON FUNCTION public.is_workspace_owner(UUID) TO anon, authenticated
 REVOKE ALL ON FUNCTION public.is_workspace_member(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_workspace_member(UUID) TO anon, authenticated, service_role;
 
+-- Grant execution on is_platform_admin so RLS policies and secure views evaluate cleanly for anon/authenticated
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'is_platform_admin') THEN
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.is_platform_admin(UUID) TO anon, authenticated, service_role;';
+  END IF;
+END $$;
+
 -- ==============================================================================
 -- PHASE 1: SAAS FOUNDATION & CORE IDENTITY SCHEMA
 -- ==============================================================================

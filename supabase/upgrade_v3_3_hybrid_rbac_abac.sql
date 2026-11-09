@@ -33,7 +33,8 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.is_platform_admin(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.is_platform_admin(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_platform_admin(UUID) TO anon, authenticated, service_role;
 
 -- ------------------------------------------------------------------------------
 -- 2. LEVEL 2: WORKSPACE RBAC EXTENDED FUNCTIONS
