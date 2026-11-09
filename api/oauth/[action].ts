@@ -3,10 +3,10 @@
  * AI Movie Factory — Unified OAuth Gateway (Hobby Zero-Cost Consolidated Router)
  */
 
-import connectHandler from '../lib/oauth/connectHandler';
-import callbackHandler from '../lib/oauth/callbackHandler';
-import connectionsHandler from '../lib/oauth/connectionsHandler';
-import disconnectHandler from '../lib/oauth/disconnectHandler';
+import connectHandler from '../../server/oauth/connectHandler';
+import callbackHandler from '../../server/oauth/callbackHandler';
+import connectionsHandler from '../../server/oauth/connectionsHandler';
+import disconnectHandler from '../../server/oauth/disconnectHandler';
 
 export default async function handler(req: any, res: any) {
   const urlPath = req.url ? req.url.split('?')[0] : '';

@@ -4,9 +4,9 @@
  * Strictly restricted to platform administrators.
  */
 
-import { authenticateServerlessRequest, getSupabaseAdmin } from '../lib/supabaseAdmin';
-import { runPricingSimulation, FullSimulationOutput } from '../lib/cost/pricingSimulator';
-import { calculateProviderCost } from '../lib/cost/providerCostEngine';
+import { authenticateServerlessRequest, getSupabaseAdmin } from '../../server/supabaseAdmin';
+import { runPricingSimulation, FullSimulationOutput } from '../../server/cost/pricingSimulator';
+import { calculateProviderCost } from '../../server/cost/providerCostEngine';
 
 async function isPlatformAdmin(adminSupabase: any, userId: string, email?: string): Promise<boolean> {
   if (email && email.toLowerCase() === 'islamiahiis243@gmail.com') {

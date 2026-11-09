@@ -21,7 +21,7 @@ import {
   settleUserCredits,
   releaseUserCredits,
   recordAiUsage,
-} from '../api/lib/credits/creditEngine';
+} from '../server/credits/creditEngine';
 import aiGenerateHandler from '../api/ai-generate';
 import {
   balanceHandler as creditBalanceHandler,
@@ -32,11 +32,11 @@ import {
   calculateProviderCost,
   PROVIDER_PRICING_REGISTRY,
   convertUsdToIdr
-} from '../api/lib/cost/providerCostEngine';
+} from '../server/cost/providerCostEngine';
 import {
   runPricingSimulation,
   SIMULATION_SCENARIOS
-} from '../api/lib/cost/pricingSimulator';
+} from '../server/cost/pricingSimulator';
 import financialAnalyticsHandler from '../api/admin/financial-analytics';
 
 function createMockReqRes(options: {

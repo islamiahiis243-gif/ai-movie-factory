@@ -24,13 +24,13 @@ import path from 'path';
 import {
   encryptOAuthToken,
   decryptOAuthToken,
-} from '../api/lib/oauthCrypto';
+} from '../server/oauthCrypto';
 import {
   createOAuthTransaction,
   consumeOAuthTransaction,
   _resetMemoryTransactionStore,
-} from '../api/lib/oauthTransactionStore';
-import { getProviderConfig } from '../api/lib/oauthProviders';
+} from '../server/oauthTransactionStore';
+import { getProviderConfig } from '../server/oauthProviders';
 import {
   connectHandler,
   connectionsHandler,

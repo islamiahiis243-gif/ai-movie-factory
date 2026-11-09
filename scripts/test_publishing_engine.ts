@@ -14,9 +14,9 @@ import {
   executePublishingJob,
   updatePublishingJob,
   _setMemoryJob,
-} from '../api/lib/publishing/jobProcessor';
-import { PublishingDispatcher } from '../api/lib/publishing/dispatcher';
-import { PublishJobRecord } from '../api/lib/publishing/types';
+} from '../server/publishing/jobProcessor';
+import { PublishingDispatcher } from '../server/publishing/dispatcher';
+import { PublishJobRecord } from '../server/publishing/types';
 import {
   dispatchHandler,
   statusHandler,

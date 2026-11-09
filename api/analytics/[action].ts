@@ -3,9 +3,9 @@
  * AI Movie Factory — Unified Analytics Engine (Hobby Zero-Cost Consolidated Router)
  */
 
-import syncHandler from '../lib/analytics/syncHandler';
-import historyHandler from '../lib/analytics/historyHandler';
-import syncWorkerHandler from '../lib/analytics/syncWorkerHandler';
+import syncHandler from '../../server/analytics/syncHandler';
+import historyHandler from '../../server/analytics/historyHandler';
+import syncWorkerHandler from '../../server/analytics/syncWorkerHandler';
 
 export default async function handler(req: any, res: any) {
   const urlPath = req.url ? req.url.split('?')[0] : '';

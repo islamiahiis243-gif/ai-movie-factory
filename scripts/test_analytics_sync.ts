@@ -9,17 +9,17 @@
  * 6. Background sync worker authorization guard (CRON_SECRET)
  */
 
-import { YouTubeAnalyticsAdapter } from '../api/lib/analytics/platformAdapters/youtubeAnalytics';
-import { TikTokAnalyticsAdapter } from '../api/lib/analytics/platformAdapters/tiktokAnalytics';
-import { InstagramAnalyticsAdapter } from '../api/lib/analytics/platformAdapters/instagramAnalytics';
-import { FacebookAnalyticsAdapter } from '../api/lib/analytics/platformAdapters/facebookAnalytics';
+import { YouTubeAnalyticsAdapter } from '../server/analytics/platformAdapters/youtubeAnalytics';
+import { TikTokAnalyticsAdapter } from '../server/analytics/platformAdapters/tiktokAnalytics';
+import { InstagramAnalyticsAdapter } from '../server/analytics/platformAdapters/instagramAnalytics';
+import { FacebookAnalyticsAdapter } from '../server/analytics/platformAdapters/facebookAnalytics';
 import {
   AnalyticsService,
   _clearMemorySnapshots,
   _getMemorySnapshots,
-} from '../api/lib/analytics/analyticsService';
-import { _setMemoryJob } from '../api/lib/publishing/jobProcessor';
-import { PublishJobRecord } from '../api/lib/publishing/types';
+} from '../server/analytics/analyticsService';
+import { _setMemoryJob } from '../server/publishing/jobProcessor';
+import { PublishJobRecord } from '../server/publishing/types';
 import {
   syncHandler,
   syncWorkerHandler,
