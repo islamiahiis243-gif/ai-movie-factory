@@ -1554,6 +1554,9 @@ CREATE TABLE IF NOT EXISTS public.creator_media_kits (
     rate_card_tier2 NUMERIC DEFAULT 5000000,
     rate_card_tier3 NUMERIC DEFAULT 12500000,
     custom_pitch_hook TEXT,
+    is_public BOOLEAN NOT NULL DEFAULT false,
+    share_phone BOOLEAN NOT NULL DEFAULT false,
+    share_email BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT creator_media_kits_user_id_key UNIQUE (user_id)
@@ -1573,6 +1576,27 @@ CREATE POLICY "Users can upsert own media kit"
     ON public.creator_media_kits FOR ALL
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
+
+-- Dedicated Sanitized Public View for External Brand Sponsors
+CREATE OR REPLACE VIEW public.creator_public_media_kits AS
+SELECT 
+    id,
+    user_id,
+    studio_name,
+    bio,
+    primary_niche,
+    location,
+    rate_card_tier1,
+    rate_card_tier2,
+    rate_card_tier3,
+    custom_pitch_hook,
+    CASE WHEN share_email = true THEN contact_email ELSE NULL END AS contact_email,
+    CASE WHEN share_phone = true THEN contact_phone ELSE NULL END AS contact_phone,
+    updated_at
+FROM public.creator_media_kits
+WHERE is_public = true;
+
+GRANT SELECT ON public.creator_public_media_kits TO anon, authenticated;
 
 COMMIT;
 -- ==============================================================================

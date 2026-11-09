@@ -3,6 +3,29 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.2] - Production Data Integrity, Creator Media Kit Privacy Hardening & Type Safety Audit - 2026-11-09 13:25 +07:00
+
+### Added
+- **Creator Media Kit Column-Level Privacy & Security Hardening (`supabase/upgrade_v3_6_creator_media_kit_privacy.sql` & `supabase/deploy_all_migrations.sql`):**
+  - Added granular privacy controls: `is_public` (default `false`), `share_phone` (default `false`), and `share_email` (default `true`).
+  - Strict RLS preservation: Base table `public.creator_media_kits` is restricted exclusively to the account owner (`auth.uid() = user_id`) and platform super admins (`public.is_platform_admin(auth.uid())`).
+  - Dedicated PostgreSQL Public View (`public.creator_public_media_kits`): Sanitized view exposing only public fields for prospective brand sponsors, automatically masking `contact_phone` and `contact_email` unless the creator explicitly enables public sharing.
+  - Added in-app Privacy & Visibility Drawer controls, visual status badges (`Publik (Bisa Diakses Mitra)` vs `Privat (Hanya Akun Anda)`), and automatic masking in both in-app preview and standalone HTML export.
+
+### Changed & Fixed
+- **Production Data Integrity & Zero Dummy Data Enforcement (`src/components/studio/CreatorIntelligenceView.tsx`):**
+  - Eliminated hardcoded fake starter milestone (`54,200 views`, `Rp 850,000 revenue`) that previously contaminated real user accounts.
+  - Restored clean, informative empty-state UI guiding creators to log real-world metrics after exporting and publishing their film.
+  - Real-time aggregate scorecard correctly displays true baseline values (`0 views`, `0.0% engagement`, `- retention score`) until actual milestones are recorded.
+- **Elimination of Silent Fallbacks & Deceptive Notifications (`src/lib/supabase.ts` & `src/components/studio/CreatorIntelligenceView.tsx`):**
+  - Fixed `saveCreatorMediaKitSettings` and `createCreatorMilestone` to report genuine database errors instead of silently catching errors and showing deceptive success toasts.
+  - UI now transparently reports cloud synchronization status.
+- **TypeScript Type Safety & Verification (`src/components/studio/EditingPostView.tsx`, `src/types/database.ts`):**
+  - Fixed `MediaAsset` property mismatch (`asset_type` instead of `type`).
+  - Added missing Lucide icon imports (`Globe`, `Users`, `Lock`, `Unlock`, `EyeOff`).
+  - Made `video_url` optional in `CreatorMilestone` to align with database nullability.
+  - Passed `npm run typecheck` (`tsc --noEmit`) and Vite production build with 0 errors.
+
 ## [1.15.1] - Phase 15 Sprint 3: Creator Media Kit & Brand Proposal Generator - 2026-11-09 13:00 +07:00
 
 ### Added

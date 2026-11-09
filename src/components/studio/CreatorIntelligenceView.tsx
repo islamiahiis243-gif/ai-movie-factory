@@ -45,6 +45,11 @@ import {
   Star,
   Sliders,
   Smartphone,
+  Globe,
+  Users,
+  Lock,
+  Unlock,
+  EyeOff,
 } from 'lucide-react';
 
 interface CreatorIntelligenceViewProps {
@@ -132,6 +137,9 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     rate_card_tier2: 5000000,
     rate_card_tier3: 12500000,
     custom_pitch_hook: 'Menghadirkan penempatan merek yang memikat secara alami ke dalam alur cerita film sinematik AI beresolusi 4K.',
+    is_public: false,
+    share_phone: false,
+    share_email: true,
   });
 
   // Milestones State
@@ -165,27 +173,11 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       if (res.data && res.data.length > 0) {
         setMilestones(res.data);
       } else {
-        // Provide starter milestone for rich initial UX if none exist
-        const starter: CreatorMilestone = {
-          id: 'starter-milestone-1',
-          user_id: userId,
-          project_id: activeProject?.id,
-          project_name: activeProject?.name || 'Mahakarya AI Pertama',
-          platform: 'youtube',
-          video_url: 'https://youtube.com',
-          views_count: 54200,
-          likes_count: 3890,
-          comments_count: 245,
-          revenue_earned: 850000,
-          currency: 'IDR',
-          release_date: new Date(Date.now() - 5 * 86400000).toISOString(),
-          notes: 'Rilis perdana full movie 4K. Kinerja retensi sangat tinggi di 30 detik pertama.',
-          created_at: new Date().toISOString(),
-        };
-        setMilestones([starter]);
+        setMilestones([]);
       }
     } catch (err: any) {
       console.warn('Failed to load milestones:', err);
+      setMilestones([]);
     } finally {
       setIsLoading(false);
     }
@@ -205,7 +197,7 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     const engagementRate = totalViews > 0 ? (((totalLikes + totalComments) / totalViews) * 100).toFixed(1) : '0.0';
     const totalCostEstimate = milestones.length * 250000;
     const netProfit = Math.max(totalRevenue - totalCostEstimate, 0);
-    const roiMultiple = totalCostEstimate > 0 ? (totalRevenue / totalCostEstimate).toFixed(1) : '1.0';
+    const roiMultiple = totalCostEstimate > 0 ? (totalRevenue / totalCostEstimate).toFixed(1) : '0.0';
 
     return {
       totalViews,
@@ -285,10 +277,15 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
         notes: formNotes.trim() || undefined,
       });
 
+      if (res.error) {
+        onShowToast(`Gagal mencatat rilis film: ${res.error}`, 'error');
+        return;
+      }
+
       if (res.data) {
         setMilestones((prev) => [res.data!, ...prev]);
         setIsAddModalOpen(false);
-        onShowToast(`Rilis film "${formProjectName}" berhasil dicatat ke intelijen bisnis!`, 'success');
+        onShowToast(`Rilis film "${formProjectName}" berhasil dicatat ke basis data!`, 'success');
         // Reset form
         setFormVideoUrl('');
         setFormNotes('');
@@ -337,10 +334,14 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     setIsSavingMediaKit(true);
     try {
       const res = await saveCreatorMediaKitSettings(mediaKitSettings);
+      if (res.error) {
+        onShowToast(`Gagal menyimpan ke basis data: ${res.error}`, 'error');
+        return;
+      }
       if (res.data) {
         setMediaKitSettings(res.data);
         setIsEditingMediaKit(false);
-        onShowToast('Pengaturan Media Kit & Rate Card berhasil disimpan!', 'success');
+        onShowToast('Pengaturan Media Kit & Rate Card berhasil disimpan ke Supabase Cloud!', 'success');
       }
     } catch (err: any) {
       onShowToast(err.message || 'Gagal menyimpan pengaturan media kit', 'error');
@@ -359,14 +360,23 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     const totalViewsStr = aggregateMetrics.totalViews.toLocaleString('id-ID');
     const engRateStr = aggregateMetrics.engagementRate;
 
-    const filmsHtml = milestones.slice(0, 6).map((m) => `
+    const filmsHtml = milestones.length > 0 
+      ? milestones.slice(0, 6).map((m) => `
       <tr>
         <td style="padding: 10px 12px; border-bottom: 1px solid #1e293b; font-weight: bold; color: #f8fafc;">${m.project_name}</td>
         <td style="padding: 10px 12px; border-bottom: 1px solid #1e293b; color: #38bdf8; text-transform: uppercase; font-size: 11px;">${m.platform}</td>
         <td style="padding: 10px 12px; border-bottom: 1px solid #1e293b; color: #f1f5f9; font-family: monospace; text-align: right;">${Number(m.views_count).toLocaleString('id-ID')}</td>
         <td style="padding: 10px 12px; border-bottom: 1px solid #1e293b; color: #4ade80; font-family: monospace; text-align: right;">${(((Number(m.likes_count) + Number(m.comments_count)) / Math.max(Number(m.views_count), 1)) * 100).toFixed(1)}%</td>
       </tr>
-    `).join('');
+    `).join('')
+      : `<tr><td colspan="4" style="text-align: center; padding: 18px; color: #64748b; font-style: italic;">Belum ada rilisan film yang dicatat. Daftar karya terverifikasi akan otomatis tercatat setelah Anda menambahkan milestone rilis film.</td></tr>`;
+
+    const contactEmailHtml = s.share_email !== false 
+      ? `Email: <span style="color: #38bdf8; font-weight: bold;">${s.contact_email}</span>` 
+      : `<span style="color: #64748b; font-style: italic;">Kontak melalui dashboard resmi</span>`;
+    const contactPhoneHtml = (s.share_phone && s.contact_phone)
+      ? `&nbsp;•&nbsp; WhatsApp: <span style="color: #4ade80; font-weight: bold;">${s.contact_phone}</span>`
+      : '';
 
     return `<!DOCTYPE html>
 <html lang="id">
@@ -450,7 +460,7 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Retensi 15s Hook</div>
-        <div class="kpi-val" style="color: #4ade80;">94%</div>
+        <div class="kpi-val" style="color: #4ade80;">${milestones.length > 0 ? '94%' : '-'}</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Karya Rilis</div>
@@ -501,8 +511,7 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       <div>
         <div style="font-size: 12px; font-weight: bold; color: #ffffff;">Tertarik Bekerja Sama atau Booking Slot Sponsor?</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
-          Email: <span style="color: #38bdf8; font-weight: bold;">${s.contact_email}</span> &nbsp;•&nbsp; 
-          WhatsApp: <span style="color: #4ade80; font-weight: bold;">${s.contact_phone}</span>
+          ${contactEmailHtml} ${contactPhoneHtml}
         </div>
       </div>
       <div style="font-size: 10px; color: #64748b; text-align: right;">
@@ -1255,6 +1264,43 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                   </div>
                 </div>
 
+                {/* Privacy & Visibility Settings */}
+                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+                  <span className="font-bold text-cyan-400 block text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Visibilitas & Kontrol Privasi Media Kit</span>
+                  </span>
+                  <div className="space-y-2 text-[11px] text-slate-300">
+                    <label className="flex items-center gap-2 cursor-pointer hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={mediaKitSettings.is_public ?? false}
+                        onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, is_public: e.target.checked })}
+                        className="rounded border-slate-700 text-cyan-500 focus:ring-0"
+                      />
+                      <span>Publikasikan Media Kit (Izinkan mitra sponsor mengakses portofolio Anda secara publik)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={mediaKitSettings.share_email ?? true}
+                        onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, share_email: e.target.checked })}
+                        className="rounded border-slate-700 text-cyan-500 focus:ring-0"
+                      />
+                      <span>Tampilkan alamat email bisnis pada dokumen publik</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={mediaKitSettings.share_phone ?? false}
+                        onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, share_phone: e.target.checked })}
+                        className="rounded border-slate-700 text-cyan-500 focus:ring-0"
+                      />
+                      <span>Tampilkan nomor WhatsApp/telepon pada dokumen publik</span>
+                    </label>
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-2 pt-2">
                   <button
                     type="button"
@@ -1305,9 +1351,9 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
               <div className="text-left sm:text-right">
                 <span className="text-xs font-bold text-amber-400 tracking-wider">AI MOVIE FACTORY</span>
                 <p className="text-[10px] text-slate-500">Hollywood AI Production Engine</p>
-                <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-mono">
-                  <ShieldCheck className="w-3 h-3" />
-                  Komersial Terverifikasi
+                <div className={`mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 ${mediaKitSettings.is_public ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-slate-800/80 text-slate-400 border-slate-700'} border rounded-full text-[10px] font-mono`}>
+                  {mediaKitSettings.is_public ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                  <span>{mediaKitSettings.is_public ? 'Publik (Bisa Diakses Mitra)' : 'Privat (Hanya Akun Anda)'}</span>
                 </div>
               </div>
             </div>
@@ -1340,7 +1386,7 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                 </div>
                 <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl text-center">
                   <span className="text-[10px] text-slate-400 uppercase font-semibold">Skor Retensi 15s</span>
-                  <p className="text-xl font-extrabold text-emerald-400 font-mono mt-1">94%</p>
+                  <p className="text-xl font-extrabold text-emerald-400 font-mono mt-1">{milestones.length > 0 ? '94%' : '-'}</p>
                 </div>
                 <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl text-center">
                   <span className="text-[10px] text-slate-400 uppercase font-semibold">Karya Rilis</span>
@@ -1466,23 +1512,31 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/80 font-mono text-[11px]">
-                    {milestones.slice(0, 5).map((m) => (
-                      <tr key={m.id} className="hover:bg-slate-900/50">
-                        <td className="p-2.5 font-sans font-bold text-white">{m.project_name}</td>
-                        <td className="p-2.5 uppercase text-cyan-400 text-[10px]">{m.platform}</td>
-                        <td className="p-2.5 text-right text-slate-200">
-                          {Number(m.views_count).toLocaleString('id-ID')}
-                        </td>
-                        <td className="p-2.5 text-right text-emerald-400">
-                          {(
-                            ((Number(m.likes_count) + Number(m.comments_count)) /
-                              Math.max(Number(m.views_count), 1)) *
-                            100
-                          ).toFixed(1)}
-                          %
+                    {milestones.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="p-6 text-center text-slate-500 italic font-sans">
+                          Belum ada rilisan film yang dicatat. Riwayat karya terverifikasi akan otomatis muncul setelah Anda mencatat milestone publikasi.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      milestones.slice(0, 5).map((m) => (
+                        <tr key={m.id} className="hover:bg-slate-900/50">
+                          <td className="p-2.5 font-sans font-bold text-white">{m.project_name}</td>
+                          <td className="p-2.5 uppercase text-cyan-400 text-[10px]">{m.platform}</td>
+                          <td className="p-2.5 text-right text-slate-200">
+                            {Number(m.views_count).toLocaleString('id-ID')}
+                          </td>
+                          <td className="p-2.5 text-right text-emerald-400">
+                            {(
+                              ((Number(m.likes_count) + Number(m.comments_count)) /
+                                Math.max(Number(m.views_count), 1)) *
+                              100
+                            ).toFixed(1)}
+                            %
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1493,14 +1547,24 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
               <div>
                 <span className="text-xs font-bold text-white block">Tertarik Menjadi Sponsor atau Kolaborasi?</span>
                 <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 mt-1">
-                  <span className="flex items-center gap-1.5 text-cyan-400">
-                    <Mail className="w-3.5 h-3.5" />
-                    {mediaKitSettings.contact_email}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-emerald-400">
-                    <Phone className="w-3.5 h-3.5" />
-                    {mediaKitSettings.contact_phone}
-                  </span>
+                  {mediaKitSettings.share_email !== false && (
+                    <span className="flex items-center gap-1.5 text-cyan-400">
+                      <Mail className="w-3.5 h-3.5" />
+                      {mediaKitSettings.contact_email}
+                    </span>
+                  )}
+                  {mediaKitSettings.share_phone && mediaKitSettings.contact_phone && (
+                    <span className="flex items-center gap-1.5 text-emerald-400">
+                      <Phone className="w-3.5 h-3.5" />
+                      {mediaKitSettings.contact_phone}
+                    </span>
+                  )}
+                  {!mediaKitSettings.share_phone && (
+                    <span className="text-[11px] text-slate-500 italic flex items-center gap-1">
+                      <EyeOff className="w-3 h-3" />
+                      Nomor telepon privat
+                    </span>
+                  )}
                 </div>
               </div>
 

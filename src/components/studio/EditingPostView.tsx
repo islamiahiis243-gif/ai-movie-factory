@@ -372,7 +372,7 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
 
   // Thumbnail Keyframes with High CTR Badges
   const thumbnailKeyframes = useMemo(() => {
-    const videoAssets = projectAssets.filter((a) => a.type === 'video' || a.type === 'image');
+    const videoAssets = projectAssets.filter((a) => a.asset_type === 'video' || a.asset_type === 'image');
     return [
       {
         id: 'thumb-1',

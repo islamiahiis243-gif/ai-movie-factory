@@ -1054,7 +1054,7 @@ export interface CreatorMilestone {
   project_id?: string;
   project_name: string;
   platform: PublishingPlatformKey;
-  video_url: string;
+  video_url?: string;
   views_count: number;
   likes_count: number;
   comments_count: number;
@@ -1101,5 +1101,8 @@ export interface CreatorMediaKitSettings {
   rate_card_tier2: number;
   rate_card_tier3: number;
   custom_pitch_hook?: string;
+  is_public?: boolean;
+  share_phone?: boolean;
+  share_email?: boolean;
   updated_at?: string;
 }

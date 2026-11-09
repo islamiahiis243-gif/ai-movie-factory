@@ -3938,11 +3938,16 @@ export async function createCreatorMilestone(
         .select()
         .single();
 
-      if (!error && data) {
+      if (error) {
+        return { data: null, error: error.message };
+      }
+      if (data) {
+        const all = getLocalCreatorMilestones();
+        saveLocalCreatorMilestones([data as CreatorMilestone, ...all]);
         return { data: data as CreatorMilestone, error: null };
       }
     } catch (err: any) {
-      console.warn('Supabase createCreatorMilestone failed, saving to local:', err);
+      return { data: null, error: err.message || 'Gagal menyimpan milestone ke basis data' };
     }
   }
 
@@ -4009,6 +4014,9 @@ export async function fetchCreatorMediaKitSettings(
     rate_card_tier2: fallbackDefaults?.rate_card_tier2 || 5000000,
     rate_card_tier3: fallbackDefaults?.rate_card_tier3 || 12500000,
     custom_pitch_hook: fallbackDefaults?.custom_pitch_hook || 'Menghadirkan penempatan merek yang memikat secara alami ke dalam alur cerita film sinematik AI beresolusi 4K.',
+    is_public: fallbackDefaults?.is_public ?? false,
+    share_phone: fallbackDefaults?.share_phone ?? false,
+    share_email: fallbackDefaults?.share_email ?? true,
     updated_at: new Date().toISOString(),
   };
 
@@ -4038,7 +4046,7 @@ export async function fetchCreatorMediaKitSettings(
 
 export async function saveCreatorMediaKitSettings(
   settings: CreatorMediaKitSettings
-): Promise<{ data: CreatorMediaKitSettings; error: string | null }> {
+): Promise<{ data: CreatorMediaKitSettings | null; error: string | null }> {
   const updated = {
     ...settings,
     updated_at: new Date().toISOString(),
@@ -4052,12 +4060,15 @@ export async function saveCreatorMediaKitSettings(
         .select()
         .single();
 
-      if (!error && data) {
+      if (error) {
+        return { data: null, error: error.message };
+      }
+      if (data) {
         saveLocalMediaKitSettings(settings.user_id, data as CreatorMediaKitSettings);
         return { data: data as CreatorMediaKitSettings, error: null };
       }
     } catch (err: any) {
-      console.warn('Supabase saveCreatorMediaKitSettings failed, saving local:', err);
+      return { data: null, error: err.message || 'Gagal menyimpan ke Supabase Cloud' };
     }
   }
 
