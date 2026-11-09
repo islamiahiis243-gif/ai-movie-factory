@@ -58,6 +58,34 @@ async function runVercelGoLiveTests() {
   }
   console.log('✔ vercel.json validated (framework: vite, SPA rewrites, security & immutable cache headers)');
 
+  // Validate Vercel Crons (P0 Correction)
+  if (!Array.isArray(vercelConfig.crons) || vercelConfig.crons.length !== 2) {
+    throw new Error('vercel.json must define exactly 2 cron jobs in "crons" array');
+  }
+
+  const publishingCron = vercelConfig.crons.find((c: any) => c.path === '/api/publishing/worker');
+  const analyticsCron = vercelConfig.crons.find((c: any) => c.path === '/api/analytics/sync-worker');
+
+  if (!publishingCron) throw new Error('Missing /api/publishing/worker in vercel.json crons');
+  if (!analyticsCron) throw new Error('Missing /api/analytics/sync-worker in vercel.json crons');
+
+  // Verify standard 5-field cron syntax (minute, hour, day-of-month, month, day-of-week)
+  const cronRegex = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/;
+  if (!cronRegex.test(publishingCron.schedule)) {
+    throw new Error(`Invalid cron format for publishing worker: ${publishingCron.schedule}`);
+  }
+  if (!cronRegex.test(analyticsCron.schedule)) {
+    throw new Error(`Invalid cron format for analytics worker: ${analyticsCron.schedule}`);
+  }
+
+  if (publishingCron.schedule !== '*/10 * * * *') {
+    throw new Error(`Expected */10 * * * * for publishing worker, got ${publishingCron.schedule}`);
+  }
+  if (analyticsCron.schedule !== '0 */4 * * *') {
+    throw new Error(`Expected 0 */4 * * * for analytics worker, got ${analyticsCron.schedule}`);
+  }
+  console.log('✔ vercel.json crons validated (5-field standard syntax: publishing worker "*/10 * * * *", analytics worker "0 */4 * * *")');
+
   const pkgConfig = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
   if (!pkgConfig.devDependencies?.esbuild?.startsWith('^0.28')) {
     throw new Error(`Expected esbuild ^0.28.0 for Vite 8 compatibility, got ${pkgConfig.devDependencies?.esbuild}`);

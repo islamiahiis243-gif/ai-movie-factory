@@ -18,6 +18,8 @@ export default function handler(req: any, res: any) {
   const geminiApiKey = process.env.GEMINI_API_KEY || '';
   const midtransServerKey = process.env.MIDTRANS_SERVER_KEY || '';
   const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+  const cronSecret = process.env.CRON_SECRET || '';
+  const oauthEncryptionKey = process.env.OAUTH_ENCRYPTION_KEY || process.env.OAUTH_TOKEN_ENCRYPTION_KEY || '';
 
   const isSupabasePublicConfigured = Boolean(
     supabaseUrl &&
@@ -29,11 +31,11 @@ export default function handler(req: any, res: any) {
   const payload = {
     status: 'ok',
     service: 'ai-movie-factory',
-    version: '1.13.0',
+    version: '1.15.7',
     runtime: 'vercel-serverless-node',
     timestamp: new Date().toISOString(),
     ssotCompliance: {
-      schemaVersion: 'V3.2 Enterprise Master',
+      schemaVersion: 'V3.9 Live Analytics Sync',
       protectedTablesCount: 24,
       storageBuckets: ['character-avatars', 'project-assets'],
       serverSideSecretsProtected: true,
@@ -46,6 +48,17 @@ export default function handler(req: any, res: any) {
       geminiServerProxy: Boolean(geminiApiKey && geminiApiKey !== 'MY_GEMINI_API_KEY'),
       midtransWebhookVerifier: Boolean(midtransServerKey),
       stripeWebhookVerifier: Boolean(stripeWebhookSecret),
+      cronWorkerConfigured: Boolean(cronSecret),
+      oauthVaultConfigured: Boolean(oauthEncryptionKey),
+      googleOAuthConfigured: Boolean(
+        (process.env.YOUTUBE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID) &&
+        (process.env.YOUTUBE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET)
+      ),
+      tikTokOAuthConfigured: Boolean(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET),
+      metaOAuthConfigured: Boolean(
+        (process.env.META_APP_ID || process.env.INSTAGRAM_CLIENT_ID) &&
+        (process.env.META_APP_SECRET || process.env.INSTAGRAM_CLIENT_SECRET)
+      ),
     },
   };
 

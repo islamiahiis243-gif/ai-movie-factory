@@ -17,7 +17,7 @@ const STATE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
  * 3. Fallback deterministic development/test key (non-production only)
  */
 export function getEncryptionKey(): Buffer {
-  const envKey = process.env.OAUTH_ENCRYPTION_KEY?.trim();
+  const envKey = (process.env.OAUTH_ENCRYPTION_KEY || process.env.OAUTH_TOKEN_ENCRYPTION_KEY)?.trim();
   if (envKey) {
     if (envKey.length === 64 && /^[0-9a-fA-F]+$/.test(envKey)) {
       return Buffer.from(envKey, 'hex');
@@ -165,7 +165,9 @@ export function generateOAuthState(params: {
     .replace(/\//g, '_')
     .replace(/=+$/, '');
 
-  const secret = getEncryptionKey();
+  const secret = process.env.OAUTH_STATE_SECRET?.trim()
+    ? crypto.createHash('sha256').update(process.env.OAUTH_STATE_SECRET.trim()).digest()
+    : getEncryptionKey();
   const signature = crypto
     .createHmac('sha256', secret)
     .update(base64Payload)
@@ -191,7 +193,9 @@ export function verifyOAuthState(stateString: string): OAuthStatePayload {
   const base64Payload = stateString.substring(0, dotIndex);
   const signature = stateString.substring(dotIndex + 1);
 
-  const secret = getEncryptionKey();
+  const secret = process.env.OAUTH_STATE_SECRET?.trim()
+    ? crypto.createHash('sha256').update(process.env.OAUTH_STATE_SECRET.trim()).digest()
+    : getEncryptionKey();
   const expectedSig = crypto
     .createHmac('sha256', secret)
     .update(base64Payload)
