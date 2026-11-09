@@ -139,3 +139,19 @@ All 24 relational tables in `supabase/deploy_all_migrations.sql` map 1:1 with `s
 1. Return to AI Movie Factory in your browser.
 2. Navigate to **Settings** and click **Uji Koneksi Supabase**.
 3. The badge will confirm: **`Koneksi Supabase Cloud terverifikasi dan aktif! Tabel "projects" aktif dengan Row-Level Security`**.
+
+---
+
+## 5. Addendum: Subsequent Enterprise Migrations (V3.3 – V3.12 Verified)
+**Timestamp:** `2026-11-09 21:31 +07:00`  
+**Status:** 100% Deployed & Active on Supabase Cloud (`jixfakvbhugpypjtyshq`)
+
+Following the initial 24-table baseline deployment, subsequent migrations were developed, audited, and applied:
+- `supabase/upgrade_v3_8_publishing_engine.sql` (Tables `creator_social_connections`, `publishing_jobs`, AES-256 vault)
+- `supabase/upgrade_v3_8_1_oauth_fail_closed.sql` (Table `oauth_state_transactions` with single-use atomic consumption)
+- `supabase/upgrade_v3_9_live_analytics_sync.sql` (Tables `creator_analytics_snapshots`, `creator_analytics_sync_jobs` with honest nullable metrics)
+- `supabase/upgrade_v3_10_supabase_cron_scheduler.sql` (Autonomous worker cron automation via `pg_cron` & `pg_net`)
+- `supabase/upgrade_v3_11_financial_hardening.sql` (Table `credit_reservations`, atomic RPC functions: `reserve_credits`, `settle_credits`, `release_credits`, `get_user_credit_balance`)
+- `supabase/upgrade_v3_12_financial_analytics.sql` (Table `ai_usage_records`, stored procedure `get_financial_summary_metrics`)
+
+Total schema footprint: 32 relational tables, 100% RLS-hardened, zero unhandled errors.

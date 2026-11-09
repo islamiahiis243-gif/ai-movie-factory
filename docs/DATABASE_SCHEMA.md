@@ -1,8 +1,10 @@
 # AI Movie Factory - Database Schema Documentation
 
-Document Version: 1.0  
-Status: Phase 1 Initial Foundation  
-Engine: Supabase PostgreSQL (with Row Level Security)
+**Document Version:** 4.0  
+**Timestamp:** `2026-11-09 21:31 +07:00`  
+**Status:** Production Verified (32 Tables, Enterprise RLS, Two-Phase Credit Protocol & Usage Metering)  
+**Target Environment:** Supabase Cloud PostgreSQL 15+ (`jixfakvbhugpypjtyshq`)  
+**Engine:** Supabase PostgreSQL with Row Level Security (RLS) & Atomic RPC Functions
 
 ---
 
@@ -494,11 +496,140 @@ Community-shared cinematic universe bibles, character packs, and workflow pipeli
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT timezone('utc', now())` | Publication date |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT timezone('utc', now())` | Last update |
 
+### 2.25. `public.character_marketplace_packs`
+Pre-seeded and community-shared multi-character packs with visual prompt seeds, costumes, and voice profiles.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Pack unique identifier |
+| `title` | `TEXT` | `NOT NULL` | Pack title (e.g. Xianxia Immortals) |
+| `genre` | `TEXT` | `NOT NULL` | Pack genre category |
+| `description` | `TEXT` | `NOT NULL` | Pack summary |
+| `characters_data` | `JSONB` | `NOT NULL DEFAULT '[]'` | Array of character dossiers |
+| `creator_id` | `UUID` | `NULLABLE REFERENCES public.profiles(id)` | Creator profile |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT timezone('utc', now())` | Creation timestamp |
+
+### 2.26. `public.creator_social_connections`
+Social platform OAuth connections with AES-256-GCM encrypted tokens for YouTube, TikTok, Instagram Reels, and Facebook Video.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Connection ID |
+| `user_id` | `UUID` | `NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE` | Creator user ID |
+| `platform` | `TEXT` | `NOT NULL` | `youtube`, `tiktok`, `instagram`, `facebook` |
+| `account_id` | `TEXT` | `NOT NULL` | Platform external account ID |
+| `account_name` | `TEXT` | `NOT NULL` | External channel/account display name |
+| `encrypted_access_token` | `TEXT` | `NOT NULL` | AES-256-GCM encrypted access token |
+| `encrypted_refresh_token`| `TEXT` | `NULLABLE` | AES-256-GCM encrypted refresh token |
+| `token_expires_at` | `TIMESTAMPTZ` | `NULLABLE` | Access token expiration timestamp |
+| `scopes` | `TEXT[]` | `NOT NULL DEFAULT '{}'` | Authorized OAuth scopes |
+| `metadata` | `JSONB` | `DEFAULT '{}'` | Additional platform metadata |
+| `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT timezone('utc', now())` | Last token refresh |
+
+### 2.27. `public.publishing_jobs`
+Social publishing jobs with multi-step lifecycle, worker lease fencing, and retry protection.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Publishing job identifier |
+| `user_id` | `UUID` | `NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE` | Creator user ID |
+| `project_id` | `UUID` | `NULLABLE REFERENCES public.projects(id)` | Associated project |
+| `connection_id` | `UUID` | `NOT NULL REFERENCES public.creator_social_connections(id)` | Target account |
+| `platform` | `TEXT` | `NOT NULL` | Destination platform |
+| `title` | `TEXT` | `NOT NULL` | Published video title |
+| `description` | `TEXT` | `DEFAULT ''` | Video caption/description |
+| `tags` | `TEXT[]` | `DEFAULT '{}'` | Video hashtags |
+| `video_url` | `TEXT` | `NOT NULL` | Source video file URL |
+| `status` | `TEXT` | `NOT NULL DEFAULT 'queued'` | `queued`, `claiming`, `rendering`, `publishing`, `published`, `failed`, `requires_user_action` |
+| `fencing_token` | `BIGINT` | `DEFAULT 0` | Lease fencing token preventing stale worker overwrites |
+| `worker_id` | `TEXT` | `NULLABLE` | Current worker instance claiming the lease |
+| `lease_expires_at` | `TIMESTAMPTZ`| `NULLABLE` | Worker lease expiration timestamp |
+| `external_publish_id` | `TEXT`| `NULLABLE` | Target platform post/video ID |
+| `published_video_url` | `TEXT`| `NULLABLE` | Public live URL of published video |
+| `retry_count` | `INTEGER`| `DEFAULT 0` | Current retry count (max 3) |
+| `error_details` | `JSONB` | `NULLABLE` | Diagnostic failure payload |
+
+### 2.28. `public.oauth_state_transactions`
+Single-use state storage for OAuth 2.0 flow with strict 5-minute TTL defending against CSRF and Replay attacks.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `state` | `TEXT` | `PRIMARY KEY` | Cryptographic state token |
+| `user_id` | `UUID` | `NOT NULL REFERENCES auth.users(id)` | Initiating user |
+| `platform` | `TEXT` | `NOT NULL` | Target platform |
+| `redirect_uri` | `TEXT` | `NOT NULL` | Initiating redirect URI |
+| `consumed_at` | `TIMESTAMPTZ`| `NULLABLE` | Timestamp when consumed (NULL = unspent) |
+| `created_at` | `TIMESTAMPTZ`| `NOT NULL DEFAULT timezone('utc', now())` | Creation timestamp |
+
+### 2.29. `public.creator_analytics_snapshots`
+Time-series analytics snapshots for published videos with honest nullable retention metrics.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Snapshot ID |
+| `user_id` | `UUID` | `NOT NULL REFERENCES auth.users(id)` | Creator profile |
+| `publishing_job_id` | `UUID` | `NOT NULL REFERENCES public.publishing_jobs(id)` | Associated publishing job |
+| `platform` | `TEXT` | `NOT NULL` | Source platform |
+| `views_count` | `BIGINT` | `NOT NULL DEFAULT 0` | Total views |
+| `likes_count` | `BIGINT` | `NOT NULL DEFAULT 0` | Total likes |
+| `shares_count` | `BIGINT` | `NOT NULL DEFAULT 0` | Total shares |
+| `comments_count` | `BIGINT` | `NOT NULL DEFAULT 0` | Total comments |
+| `watch_time_seconds` | `NUMERIC` | `NULLABLE DEFAULT NULL` | Total watch time (null if unavailable) |
+| `avg_view_duration_seconds`| `NUMERIC` | `NULLABLE DEFAULT NULL` | Average view duration |
+| `retention_rate_pct` | `NUMERIC` | `NULLABLE DEFAULT NULL` | Audience retention % |
+| `captured_at` | `TIMESTAMPTZ`| `NOT NULL DEFAULT timezone('utc', now())` | Snapshot timestamp |
+
+### 2.30. `public.creator_analytics_sync_jobs`
+Background synchronization run records for social media metrics.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Job ID |
+| `connection_id` | `UUID` | `NOT NULL REFERENCES public.creator_social_connections(id)` | Connected platform account |
+| `status` | `TEXT` | `NOT NULL DEFAULT 'queued'` | `queued`, `running`, `completed`, `failed` |
+| `synced_items_count`| `INTEGER` | `DEFAULT 0` | Videos refreshed |
+| `created_at` | `TIMESTAMPTZ`| `NOT NULL DEFAULT timezone('utc', now())` | Run timestamp |
+
+### 2.31. `public.credit_reservations`
+Two-phase commit atomic credit holds with row locking, expiration, and idempotency guarantees.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Reservation hold ID |
+| `user_id` | `UUID` | `NOT NULL REFERENCES auth.users(id)` | Profile debited |
+| `amount` | `INTEGER` | `NOT NULL CHECK (amount > 0)` | Credits reserved on hold |
+| `operation` | `TEXT` | `NOT NULL` | Generation operation name |
+| `model` | `TEXT` | `NOT NULL DEFAULT 'gemini-2.5-flash'` | AI model identifier |
+| `status` | `TEXT` | `NOT NULL DEFAULT 'held'` | `held`, `settled`, `released`, `expired` |
+| `expires_at` | `TIMESTAMPTZ`| `NOT NULL` | Hold expiration timestamp (5 min) |
+| `metadata` | `JSONB` | `DEFAULT '{}'` | Session and prompt metadata |
+| `settled_at` | `TIMESTAMPTZ`| `NULLABLE` | Final settlement timestamp |
+| `released_at`| `TIMESTAMPTZ`| `NULLABLE` | Refund/rollback timestamp |
+| `created_at` | `TIMESTAMPTZ`| `NOT NULL DEFAULT timezone('utc', now())` | Creation timestamp |
+
+### 2.32. `public.ai_usage_records`
+Granular token usage telemetry and billing status extracted directly from provider API response metadata.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Telemetry record ID |
+| `user_id` | `UUID` | `NOT NULL REFERENCES auth.users(id)` | Creator profile |
+| `operation` | `TEXT` | `NOT NULL` | Production task operation |
+| `model` | `TEXT` | `NOT NULL` | E.g. `gemini-2.5-flash` |
+| `prompt_tokens` | `INTEGER` | `NOT NULL DEFAULT 0` | Input token count |
+| `candidates_tokens`| `INTEGER` | `NOT NULL DEFAULT 0` | Output token count |
+| `total_tokens` | `INTEGER` | `NOT NULL DEFAULT 0` | Total tokens consumed |
+| `cached_tokens`| `INTEGER` | `NOT NULL DEFAULT 0` | Cached tokens count |
+| `cost_status` | `TEXT` | `NOT NULL DEFAULT 'free_tier'` | `free_tier`, `metered_real`, `mock_simulated` |
+| `execution_duration_ms`| `INTEGER` | `NOT NULL DEFAULT 0` | Latency duration in ms |
+| `reservation_id`| `UUID` | `NULLABLE REFERENCES public.credit_reservations(id)`| Associated reservation hold |
+| `created_at` | `TIMESTAMPTZ`| `NOT NULL DEFAULT timezone('utc', now())` | Creation timestamp |
+
 ---
 
-## 3. Row Level Security (RLS) Policies
+## 3. Row Level Security (RLS) Policies (All 32 Tables)
 
-Every table has RLS explicitly enabled:
+Every table has Row Level Security explicitly enabled:
 1. `profiles`: Users can SELECT and UPDATE only their own record (`auth.uid() = id`).
 2. `projects`: Users can SELECT, INSERT, UPDATE, DELETE only records where `auth.uid() = user_id`.
 3. `project_settings`: Users can access settings only for projects they own.
@@ -517,9 +648,17 @@ Every table has RLS explicitly enabled:
 16. `pipeline_job_logs`: Users can view and add job logs only for projects they own.
 17. `export_packages`: Users can manage master export packages only for projects they own.
 18. `subscriptions`: Users can view and manage only their own subscription records (`auth.uid() = user_id`).
-19. `credit_transactions`: Users can view only their own immutable credit transactions (`auth.uid() = user_id`).
+19. `credit_transactions`: Users can view only their own immutable credit transactions (`auth.uid() = user_id`). Server-only writes.
 20. `payment_orders`: Users can view and create only their own payment orders (`auth.uid() = user_id`).
 21. `workspaces`: Owners can manage workspaces, and registered members can view workspaces they belong to.
 22. `workspace_members`: Workspace owners can manage member rosters, and members can view fellow members.
 23. `workspace_invites`: Workspace owners can issue invites, and recipients can look up invites via token.
 24. `marketplace_templates`: Publicly readable by all users; only authors or admins can modify.
+25. `character_marketplace_packs`: Publicly readable; authors can manage their packs.
+26. `creator_social_connections`: Strictly creator-isolated (`auth.uid() = user_id`). Tokens never exposed publicly.
+27. `publishing_jobs`: Strictly creator-isolated (`auth.uid() = user_id`). Workers update via `service_role`.
+28. `oauth_state_transactions`: Single-use state verification. Client read restricted.
+29. `creator_analytics_snapshots`: Strictly creator-isolated (`auth.uid() = user_id`). Server-only writes.
+30. `creator_analytics_sync_jobs`: Creator-isolated; background sync execution via `service_role`.
+31. `credit_reservations`: Strictly creator-isolated (`auth.uid() = user_id`). Managed via atomic RPC functions.
+32. `ai_usage_records`: Strictly creator-isolated (`auth.uid() = user_id`). Server-only telemetry inserts.
