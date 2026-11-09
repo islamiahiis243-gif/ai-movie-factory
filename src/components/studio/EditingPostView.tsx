@@ -168,6 +168,7 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   });
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
   const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
+  const [dispatchingJobId, setDispatchingJobId] = useState<string | null>(null);
 
   // Animation Timer Ref
   const animationFrameRef = useRef<number | null>(null);
@@ -771,18 +772,21 @@ ${chaptersContent}
     loadPublishingJobs();
   }, [userId, activeProject?.id]);
 
-  // Load OAuth connections for active user (T9.3)
-  const loadOAuthConnections = async () => {
+  // Load OAuth connections for active user (T9.3.1 Security Hardened)
+  const loadOAuthConnections = async (): Promise<CreatorConnection[]> => {
     try {
       const session = (await supabase?.auth.getSession())?.data.session;
-      if (!session?.access_token) return;
+      if (!session?.access_token) return [];
       const res = await OAuthDistributionService.fetchConnections(session.access_token);
-      setUserConnections(res.connections || []);
+      const connections = res.connections || [];
+      setUserConnections(connections);
       if (res.configuredPlatforms) {
         setConfiguredPlatforms(res.configuredPlatforms);
       }
+      return connections;
     } catch (err) {
       console.warn('Failed to load OAuth connections:', err);
+      return [];
     }
   };
 
@@ -790,25 +794,41 @@ ${chaptersContent}
     loadOAuthConnections();
   }, [userId]);
 
-  // Handle OAuth callback URL parameters (?connected=platform or ?oauth_error=msg)
+  // Handle OAuth callback URL navigation hints (T9.3.1 - Strictly Server-Confirmed)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const connectedParam = params.get('connected');
-    const accountParam = params.get('account');
+    const authVerify = params.get('auth_verify') || params.get('connected');
     const oauthError = params.get('oauth_error');
 
-    if (connectedParam) {
-      onShowToast(
-        `Koneksi Akun ${connectedParam.toUpperCase()}${accountParam ? ` (@${accountParam})` : ''} berhasil diverifikasi & disimpan aman di vault!`,
-        'success'
-      );
-      setPublishingSubTab('universal_channels');
-      loadOAuthConnections();
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (oauthError) {
+    // Instantly sanitize URL: remove codes, tokens, states, or callback parameters from browser address bar
+    const cleanUrl = window.location.pathname;
+    if (authVerify || oauthError || params.get('code') || params.get('state') || params.get('account')) {
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+
+    if (oauthError) {
       onShowToast(`Otorisasi OAuth gagal: ${oauthError}`, 'error');
       setPublishingSubTab('universal_channels');
-      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+
+    if (authVerify) {
+      setPublishingSubTab('universal_channels');
+      // Verify persistence authoritatively against server API — NEVER trust query param alone!
+      loadOAuthConnections().then((verifiedConnections) => {
+        const confirmed = verifiedConnections.find(
+          (c) => c.platform === authVerify && c.connection_status === 'connected'
+        );
+        if (confirmed) {
+          onShowToast(
+            `Koneksi Akun ${authVerify.toUpperCase()} (@${confirmed.provider_account_name || 'Channel'}) berhasil diverifikasi & disimpan aman di vault server!`,
+            'success'
+          );
+        } else {
+          // If the query param was manually forged by user, do not grant fake connected status
+          console.warn(`OAuth verification failed: No active connection found on server for platform "${authVerify}".`);
+        }
+      });
     }
   }, []);
 
@@ -862,6 +882,42 @@ ${chaptersContent}
       onShowToast(err.message || `Gagal memutuskan akun ${platId}`, 'error');
     } finally {
       setDisconnectingPlatform(null);
+    }
+  };
+
+  const handleDispatchJob = async (jobId: string) => {
+    setDispatchingJobId(jobId);
+    try {
+      const session = (await supabase?.auth.getSession())?.data.session;
+      if (!session?.access_token) {
+        onShowToast('Silakan masuk (login) terlebih dahulu untuk mempublikasikan video.', 'error');
+        return;
+      }
+
+      onShowToast('Menginisiasi proses upload serverless ke platform...', 'info');
+      const updatedJob = await UniversalPublishingService.dispatchJobToServer({
+        jobId,
+        accessToken: session.access_token,
+      });
+
+      setUserPublishingJobs((prev) =>
+        prev.map((j) => (j.id === jobId ? { ...j, ...updatedJob } : j))
+      );
+
+      if (updatedJob.status === 'published') {
+        onShowToast(`Video berhasil dipublikasikan ke ${updatedJob.platform.toUpperCase()}!`, 'success');
+      } else if (updatedJob.status === 'requires_user_action') {
+        onShowToast(
+          `Video terkirim ke ${updatedJob.platform.toUpperCase()} dan menunggu tindakan/konfirmasi manual di creator studio platform.`,
+          'info'
+        );
+      } else if (updatedJob.status === 'failed') {
+        onShowToast(`Publikasi gagal: ${updatedJob.error_message || 'Terjadi kesalahan pada provider.'}`, 'error');
+      }
+    } catch (err: any) {
+      onShowToast(err.message || 'Gagal memproses dispatch publikasi.', 'error');
+    } finally {
+      setDispatchingJobId(null);
     }
   };
 
@@ -2329,15 +2385,56 @@ ${chaptersContent}
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className={`text-[9px] px-2 py-0.5 rounded font-mono uppercase ${
-                                  job.status === 'published'
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                                    : job.status === 'queued' || job.status === 'scheduled'
-                                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
-                                    : 'bg-slate-800 text-slate-300'
-                                }`}>
-                                  {job.status}
-                                </span>
+                                {job.status === 'published' ? (
+                                  <a
+                                    href={job.published_video_url || '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded font-mono uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20"
+                                  >
+                                    <span>Lihat Video</span>
+                                    <ExternalLink className="w-2.5 h-2.5" />
+                                  </a>
+                                ) : job.status === 'uploading' || job.status === 'processing' ? (
+                                  <span className="text-[9px] px-2 py-0.5 rounded font-mono uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30 animate-pulse">
+                                    {job.status === 'uploading' ? `Mengunggah (${job.progress_percentage || 40}%)` : 'Memproses...'}
+                                  </span>
+                                ) : job.status === 'requires_user_action' ? (
+                                  <span className="text-[9px] px-2 py-0.5 rounded font-mono uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                    Konfirmasi di Inbox
+                                  </span>
+                                ) : job.status === 'failed' ? (
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[9px] px-2 py-0.5 rounded font-mono uppercase bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                                      Gagal
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDispatchJob(job.id)}
+                                      disabled={dispatchingJobId === job.id}
+                                      className="text-[9px] px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-white rounded cursor-pointer"
+                                    >
+                                      Coba Lagi
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9px] px-2 py-0.5 rounded font-mono uppercase bg-slate-800 text-slate-300">
+                                      {job.status}
+                                    </span>
+                                    {['youtube', 'tiktok', 'instagram', 'facebook'].includes(job.platform) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDispatchJob(job.id)}
+                                        disabled={dispatchingJobId === job.id}
+                                        className="inline-flex items-center gap-1 text-[9px] px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded cursor-pointer transition-colors disabled:opacity-50"
+                                      >
+                                        <Send className="w-2.5 h-2.5" />
+                                        <span>{dispatchingJobId === job.id ? 'Memproses...' : 'Publikasikan'}</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ))}

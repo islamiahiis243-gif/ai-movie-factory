@@ -1,12 +1,13 @@
 /**
  * Vercel Serverless Function: POST /api/oauth/connect
- * AI Movie Factory — Serverless OAuth Broker (T9.3)
- * Authenticates creator, validates provider credentials, and issues CSRF-protected redirect URL.
+ * AI Movie Factory — Serverless OAuth Broker (T9.3.1 Security Hardened)
+ * Authenticates creator, validates provider credentials, registers one-time atomic state transaction,
+ * and issues CSRF-protected redirect URL.
  */
 
 import { authenticateServerlessRequest } from '../lib/supabaseAdmin';
-import { generateOAuthState } from '../lib/oauthCrypto';
 import { getProviderConfig, buildAuthorizationUrl } from '../lib/oauthProviders';
+import { createOAuthTransaction } from '../lib/oauthTransactionStore';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -34,11 +35,13 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // Generate CSRF state
-    const state = generateOAuthState({
+    // Register atomic one-time OAuth state transaction
+    const { state } = await createOAuthTransaction({
       userId: user.id,
       platform,
+      redirectUri: providerConfig.redirectUriPath,
       returnUrl,
+      ttlMs: 5 * 60 * 1000, // 5 minutes strict TTL
     });
 
     const redirectUrl = buildAuthorizationUrl(platform, state);

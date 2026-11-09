@@ -3,6 +3,44 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.5] - Phase 15 Sprint 3 (T9.3.1 Security Hardening & T9.4 First-Wave Publishing Engine) - 2026-11-09 14:40 +07:00
+
+### Added
+- **Stage 1 (T9.3.1) — Atomic One-Time OAuth State Consumption (`api/lib/oauthTransactionStore.ts`):**
+  - Replaced replay-vulnerable static HMAC states with a stateful, atomic single-use transaction mechanism.
+  - Binds state token to authenticated user (`userId`), target platform (`platform`), redirect URI, and strict 5-minute TTL.
+  - Guarantees race-condition prevention via atomic Compare-And-Swap (CAS) in memory and atomic SQL `UPDATE ... WHERE consumed_at IS NULL`.
+  - Rejects replay attempts, concurrent duplicate callbacks, expired states, and provider/URI mismatches.
+- **Stage 1 (T9.3.1) — Strictly Server-Confirmed Connection State (`src/components/studio/EditingPostView.tsx`):**
+  - Eliminated client trust in navigation URL query parameters (`?connected=platform&account=name`).
+  - Query parameters now treated as navigation hints only; connected state is confirmed exclusively after fetching authoritative metadata from `/api/oauth/connections`.
+  - URL is immediately sanitized to prevent token/code/state exposure in browser address bar.
+- **Stage 1 (T9.3.1) — Reliable Disconnect & Revocation Lifecycle (`api/oauth/disconnect.ts`):**
+  - Controlled lifecycle: `connected` ➔ `disconnecting` ➔ `disconnected`.
+  - Performs remote revocation for supported providers (Google `/revoke`, TikTok `/revoke`).
+  - Immediately wipes and invalidates local tokens (`encrypted_access_token = 'REVOKED'`) so AMF can no longer use them.
+  - Records safe operational status (`remote_revocation_status: 'success' | 'failed' | 'unsupported'`) without logging token secrets.
+- **Stage 1 (T9.3.1) — View Security Barrier & Isolation (`supabase/upgrade_v3_8_1_oauth_hardening_and_publishing_engine.sql`):**
+  - Secured `public.creator_connected_platforms` view with `WITH (security_barrier = true)` and strict filter `WHERE auth.uid() = user_id`.
+- **Stage 2 (T9.4) — First-Wave Publishing Dispatcher & Serverless Worker (`api/lib/publishing/`, `api/publishing/`):**
+  - **Server-Side Token Manager (`api/lib/publishing/tokenManager.ts`):** Decrypts tokens in server-only memory, checks expiration, and auto-refreshes tokens via provider endpoints before dispatch.
+  - **Controlled State Machine (`api/lib/publishing/jobProcessor.ts`):** Enforces 9-state lifecycle (`draft` ➔ `queued` ➔ `processing` ➔ `uploading` ➔ `published` / `requires_user_action` / `failed` / `cancelled`). Rejects client-forged published transitions.
+  - **First-Wave Publisher Adapters:**
+    - `YouTubePlatformPublisher`: YouTube Data API v3 resumable upload, Shorts vs Long-form aspect ratio detection, and quota error classification.
+    - `TikTokPlatformPublisher`: Content Posting API v2 Direct Post with `requires_user_action` fallback for unapproved apps.
+    - `InstagramPlatformPublisher`: Meta Graph API container flow (`/media` ➔ polling ➔ `/media_publish`).
+    - `FacebookPlatformPublisher`: Meta Graph API Page Video upload (`/{page-id}/videos`).
+  - **Serverless Endpoints:**
+    - `POST /api/publishing/dispatch`: Enforces user ownership and initiates serverless execution.
+    - `GET /api/publishing/status`: Sanitized progress and verified URL lookup.
+    - `POST /api/publishing/cancel`: Safe cancellation for pending/queued jobs.
+    - `POST /api/publishing/worker`: Protected background worker endpoint for Vercel Cron or batch processing.
+- **Stage 2 (T9.4) — Studio Publishing Hub Queue Integration (`src/components/studio/EditingPostView.tsx`):**
+  - Added 1-click **Publikasikan** button in Publishing Queue with animated progress states and external links to verified publications.
+  - Preserved manual export workflow as first-class option.
+- **Automated Security & Engine Test Suites (`scripts/test_oauth_vault_security.ts`, `scripts/test_publishing_engine.ts`):**
+  - Automated tests covering one-time consumption, replay attacks, race conditions, cross-user rejection, worker authentication, and mocked publisher execution.
+
 ## [1.15.4] - Phase 15 Sprint 3 (T9.3): Serverless OAuth Broker & Encrypted Token Vault Architecture - 2026-11-09 14:20 +07:00
 
 ### Added

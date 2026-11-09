@@ -1,13 +1,14 @@
 /**
  * Vercel Serverless Function: GET /api/oauth/callback
- * AI Movie Factory — OAuth Callback & Encrypted Token Vault Broker (T9.3)
- * Validates CSRF state, exchanges code for access & refresh tokens,
+ * AI Movie Factory — OAuth Callback & Encrypted Token Vault Broker (T9.3.1 Security Hardened)
+ * Validates one-time atomic transaction consumption, exchanges code for access & refresh tokens,
  * encrypts secrets with AES-256-GCM, and stores in the server-only platform_oauth_tokens vault.
  */
 
-import { verifyOAuthState, encryptOAuthToken } from '../lib/oauthCrypto';
-import { exchangeCodeForTokens, fetchPlatformUserProfile } from '../lib/oauthProviders';
+import { encryptOAuthToken } from '../lib/oauthCrypto';
+import { exchangeCodeForTokens, fetchPlatformUserProfile, getProviderConfig } from '../lib/oauthProviders';
 import { getSupabaseAdmin } from '../lib/supabaseAdmin';
+import { consumeOAuthTransaction } from '../lib/oauthTransactionStore';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
@@ -31,9 +32,25 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    // 1. Validate & unpack signed CSRF state
-    const statePayload = verifyOAuthState(String(state));
-    const { userId, platform, returnUrl } = statePayload;
+    const stateStr = String(state);
+    // Parse expected platform from secure state token prefix (e.g. amf_st_youtube_<random>)
+    const stateParts = stateStr.split('_');
+    const expectedPlatform = stateParts[2] || '';
+
+    if (!expectedPlatform) {
+      throw new Error('MALFORMED_STATE: Format state token tidak valid.');
+    }
+
+    const providerConfig = getProviderConfig(expectedPlatform);
+
+    // 1. Atomically consume the one-time OAuth state transaction
+    const transaction = await consumeOAuthTransaction({
+      stateToken: stateStr,
+      expectedPlatform,
+      expectedRedirectUri: providerConfig.redirectUriPath,
+    });
+
+    const { userId, platform, returnUrl } = transaction;
 
     // 2. Exchange authorization code for tokens
     const tokenResult = await exchangeCodeForTokens(platform, String(code));
@@ -81,7 +98,7 @@ export default async function handler(req: any, res: any) {
       );
 
     if (dbError) {
-      console.error('Failed to store OAuth tokens in vault:', dbError);
+      console.error('Failed to store OAuth tokens in vault:', dbError.message);
       return res.redirect(
         302,
         `/studio?tab=publishing&subtab=universal_channels&oauth_error=${encodeURIComponent(
@@ -90,16 +107,15 @@ export default async function handler(req: any, res: any) {
       );
     }
 
-    // 6. Safe redirect back to Studio Publishing Hub with success indicators
+    // 6. Safe redirect back to Studio Publishing Hub with navigation hint only
+    // Note: The UI must verify persistence via /api/oauth/connections and never trust query parameters alone
     const targetBase = returnUrl || '/studio?tab=publishing&subtab=universal_channels';
     const sep = targetBase.includes('?') ? '&' : '?';
-    const redirectUrl = `${targetBase}${sep}connected=${encodeURIComponent(
-      platform
-    )}&account=${encodeURIComponent(profile.accountName)}`;
+    const redirectUrl = `${targetBase}${sep}auth_verify=${encodeURIComponent(platform)}`;
 
     return res.redirect(302, redirectUrl);
   } catch (err: any) {
-    console.error('OAuth callback execution error:', err);
+    console.error('OAuth callback execution error:', err.message);
     return res.redirect(
       302,
       `/studio?tab=publishing&subtab=universal_channels&oauth_error=${encodeURIComponent(

@@ -115,6 +115,52 @@ export class UniversalPublishingService {
   }
 
   /**
+   * Dispatches a publishing job to the serverless publisher engine (T9.4).
+   */
+  static async dispatchJobToServer(params: {
+    jobId: string;
+    accessToken: string;
+    idempotencyKey?: string;
+  }): Promise<PublishingJob> {
+    const { jobId, accessToken, idempotencyKey } = params;
+
+    const res = await fetch('/api/publishing/dispatch', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ jobId, idempotencyKey }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Gagal memulai proses unggah video ke platform.');
+    }
+
+    return data.job;
+  }
+
+  /**
+   * Polls job status from the serverless status endpoint (T9.4).
+   */
+  static async pollJobStatus(jobId: string, accessToken: string): Promise<PublishingJob> {
+    const res = await fetch(`/api/publishing/status?jobId=${encodeURIComponent(jobId)}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Gagal memuat status publikasi.');
+    }
+
+    return data.job;
+  }
+
+  /**
    * Helper querying repository
    */
   static fetchUserJobs = fetchUserPublishingJobs;

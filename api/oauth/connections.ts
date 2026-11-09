@@ -17,12 +17,12 @@ export default async function handler(req: any, res: any) {
   try {
     const { adminSupabase, user } = await authenticateServerlessRequest(req);
 
-    // Read only sanitized columns from the vault
+    // Read only sanitized columns from the vault for active connections
     const { data: rows, error: dbError } = await adminSupabase
       .from('platform_oauth_tokens')
       .select('id, platform, provider_account_id, provider_account_name, provider_avatar_url, connection_status, token_expires_at, granted_scopes, created_at, updated_at')
       .eq('user_id', user.id)
-      .neq('connection_status', 'revoked');
+      .in('connection_status', ['connected', 'expired', 'needs_reauth']);
 
     if (dbError) {
       // In case the table is pending cloud migration execution, return empty list gracefully
