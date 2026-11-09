@@ -58,18 +58,7 @@ async function runVercelGoLiveTests() {
   }
   console.log('✔ vercel.json validated (framework: vite, SPA rewrites, security & immutable cache headers)');
 
-  // Validate Vercel Crons (P0 Correction)
-  if (!Array.isArray(vercelConfig.crons) || vercelConfig.crons.length !== 2) {
-    throw new Error('vercel.json must define exactly 2 cron jobs in "crons" array');
-  }
-
-  const publishingCron = vercelConfig.crons.find((c: any) => c.path === '/api/publishing/worker');
-  const analyticsCron = vercelConfig.crons.find((c: any) => c.path === '/api/analytics/sync-worker');
-
-  if (!publishingCron) throw new Error('Missing /api/publishing/worker in vercel.json crons');
-  if (!analyticsCron) throw new Error('Missing /api/analytics/sync-worker in vercel.json crons');
-
-  // Verify standard 5-field cron syntax (minute, hour, day-of-month, month, day-of-week)
+  // Validate Vercel Crons & Zero-Cost Hobby Compliance
   function isValidCronSyntax(expr: string): boolean {
     if (typeof expr !== 'string') return false;
     const parts = expr.trim().split(/\s+/);
@@ -89,13 +78,6 @@ async function runVercelGoLiveTests() {
     );
   }
 
-  if (!isValidCronSyntax(publishingCron.schedule)) {
-    throw new Error(`Invalid cron format for publishing worker: ${publishingCron.schedule}`);
-  }
-  if (!isValidCronSyntax(analyticsCron.schedule)) {
-    throw new Error(`Invalid cron format for analytics worker: ${analyticsCron.schedule}`);
-  }
-
   // Regression & Negative Tests: Ensure invalid cron patterns are strictly rejected
   const invalidPatterns = ['/10', '0 /4', '* * * *', '* * * * * *', '60 * * * *', '0 25 * * *', 'not-a-cron'];
   for (const bad of invalidPatterns) {
@@ -104,13 +86,22 @@ async function runVercelGoLiveTests() {
     }
   }
 
-  if (publishingCron.schedule !== '*/10 * * * *') {
-    throw new Error(`Expected */10 * * * * for publishing worker, got ${publishingCron.schedule}`);
+  // Ensure worker files exist and are ready for cron / external trigger
+  const publishingWorkerFile = path.join(rootDir, 'api', 'publishing', 'worker.ts');
+  const analyticsWorkerFile = path.join(rootDir, 'api', 'analytics', 'sync-worker.ts');
+  if (!fs.existsSync(publishingWorkerFile)) throw new Error('Missing api/publishing/worker.ts');
+  if (!fs.existsSync(analyticsWorkerFile)) throw new Error('Missing api/analytics/sync-worker.ts');
+
+  if (Array.isArray(vercelConfig.crons)) {
+    for (const cron of vercelConfig.crons) {
+      if (!isValidCronSyntax(cron.schedule)) {
+        throw new Error(`Invalid cron format in vercel.json: ${cron.schedule}`);
+      }
+    }
+    console.log('✔ vercel.json crons validated (standard 5-field syntax)');
+  } else {
+    console.log('✔ vercel.json operating in Hobby Zero-Cost Mode: crons omitted to prevent Vercel Hobby 3Fpeeb1 rejection; worker endpoints preserved for authenticated trigger');
   }
-  if (analyticsCron.schedule !== '0 */4 * * *') {
-    throw new Error(`Expected 0 */4 * * * for analytics worker, got ${analyticsCron.schedule}`);
-  }
-  console.log('✔ vercel.json crons validated (5-field standard syntax: publishing worker "*/10 * * * *", analytics worker "0 */4 * * *", semantic validator & negative tests passed)');
 
   const pkgConfig = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
   if (!pkgConfig.devDependencies?.esbuild?.startsWith('^0.28')) {

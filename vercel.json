@@ -4,16 +4,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "crons": [
-    {
-      "path": "/api/publishing/worker",
-      "schedule": "*/10 * * * *"
-    },
-    {
-      "path": "/api/analytics/sync-worker",
-      "schedule": "0 */4 * * *"
-    }
-  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
