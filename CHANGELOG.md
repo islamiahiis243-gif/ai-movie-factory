@@ -3,12 +3,12 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [1.15.8] - Final Development Milestone & Complete Financial Infrastructure (Phases 2–7 & Zero-Cost Vercel Production) - 2026-11-09 21:31 +07:00
+## [1.15.8] - Final Development Milestone, Complete Financial Infrastructure & UI Release Alignment - 2026-11-09 22:31 +07:00
 
 > **Status Milestone:** Final Development Milestone & Production Verification.  
 > **Production URL:** [https://ai-movie-factory.vercel.app/](https://ai-movie-factory.vercel.app/)  
-> **Production Deployment:** `dpl_Ak8T46SGhwjXE2qUbT1zMjHVQCZZ` (Status: `READY`)  
-> **Latest Git Commit:** `2c3a4d679da9c479e2d97d9116163588816fc14f`  
+> **Production Status:** Vercel `READY` | Supabase Cloud Active (`jixfakvbhugpypjtyshq`)  
+> **Latest Git Commit:** [`b3d05e1`](https://github.com/islamiahiis243-gif/ai-movie-factory/commit/b3d05e1)  
 > **Supabase Cloud Project:** `jixfakvbhugpypjtyshq`  
 > **File Pengguna Tak Terlacak:** `001_AI drama factory prompt.txt` (100% dipertahankan, tidak diubah, tidak dipindahkan, tidak dihapus).
 
@@ -20,6 +20,7 @@ Seluruh implementasi infrastruktur finansial, monetisasi, sistem kredit atomik, 
 4. **Simulator Sensitivitas & Penetapan Harga (Fase 5):** Evaluasi 4 tier langganan baseline (Free Rp0, Indie Rp149k, Pro Rp499k, PH Rp1.499M) pada 5 skenario stres (`normal`, `conservative`, `heavy_usage`, `high_video`, `high_retry`), membuktikan margin laba kotor SaaS tetap kokoh (>80%) bahkan jika kelak beralih ke Gemini Paid Tier.
 5. **Dashboard Analitik Finansial (Fase 6):** Tab analitik terintegrasi di `AdminDashboardView.tsx` dengan endpoint terproteksi `/api/admin/financial-analytics` dan stored procedure cloud `get_financial_summary_metrics()`.
 6. **Kepatuhan Vercel Hobby Zero-Cost & Cloud Cron:** Mengeliminasi sub-daily cron Vercel untuk mencegah penolakan Hobby `3Fpeeb1`, mengonsolidasi fungsi serverless dari 19 menjadi 8 router aktif (di bawah kuota 12 functions Vercel Hobby), serta mengaktifkan penjadwal otonom cloud via Supabase `pg_cron` & `pg_net`.
+7. **Penyelarasan Versi UI & Package (`Sidebar.tsx`, `package.json`, `api/health.ts`):** Mengganti label statis arsitektur basis data lama (`AMF Engine v3.3.0`) pada footer navigasi sidebar dengan badge rilis aplikasi resmi: `AMF Release v1.15.8 (Live)`. Menyelaraskan seluruh metadata versi di `package.json` dan endpoint `/api/health` ke `1.15.8` dengan skema `V3.12 Financial Hardening & Live Analytics`.
 
 ---
 
