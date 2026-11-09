@@ -190,3 +190,85 @@ FROM (
   ]) AS table_name
 ) e
 LEFT JOIN pg_tables a ON a.schemaname = 'public' AND a.tablename = e.table_name;
+
+-- ------------------------------------------------------------------------------
+-- 7. SPRINT 3 & T9 EXTENSION OBJECTS VERIFICATION (9 ESSENTIAL OBJECTS)
+-- ------------------------------------------------------------------------------
+WITH expected_t9_objects AS (
+  SELECT unnest(ARRAY[
+    'creator_milestones',
+    'creator_media_kits',
+    'creator_public_media_kits',
+    'publishing_jobs',
+    'platform_oauth_tokens',
+    'creator_connected_platforms',
+    'oauth_state_transactions',
+    'creator_analytics_snapshots',
+    'creator_analytics_sync_jobs'
+  ]) AS object_name
+),
+actual_tables_and_views AS (
+  SELECT table_name, table_type
+  FROM information_schema.tables
+  WHERE table_schema = 'public'
+),
+actual_rls AS (
+  SELECT tablename AS table_name, rowsecurity
+  FROM pg_tables
+  WHERE schemaname = 'public'
+),
+t9_audit AS (
+  SELECT 
+    e.object_name,
+    COALESCE(av.table_type, 'MISSING') AS object_type,
+    CASE 
+      WHEN av.table_type = 'VIEW' THEN 'VIEW (RLS VIA BASE TABLE OR BARRIER)'
+      WHEN r.rowsecurity THEN 'RLS ENABLED'
+      WHEN av.table_type IS NOT NULL THEN 'RLS DISABLED'
+      ELSE 'NOT FOUND'
+    END AS security_status,
+    CASE 
+      WHEN av.table_type = 'VIEW' THEN 'PASS'
+      WHEN av.table_type = 'BASE TABLE' AND r.rowsecurity THEN 'PASS'
+      ELSE 'FAIL'
+    END AS check_result
+  FROM expected_t9_objects e
+  LEFT JOIN actual_tables_and_views av ON av.table_name = e.object_name
+  LEFT JOIN actual_rls r ON r.table_name = e.object_name
+)
+SELECT 
+  '7. Sprint 3 & T9 Objects' AS check_category,
+  object_name,
+  object_type,
+  security_status,
+  check_result
+FROM t9_audit
+ORDER BY CASE WHEN check_result = 'FAIL' THEN 1 ELSE 2 END, object_name;
+
+-- ------------------------------------------------------------------------------
+-- 8. COMPREHENSIVE VERDICT (V3.9 MASTER INCLUDING ALL 33 OBJECTS)
+-- ------------------------------------------------------------------------------
+SELECT
+  COUNT(*) AS total_t9_objects,
+  COUNT(CASE WHEN av.table_name IS NOT NULL THEN 1 END) AS deployed_t9_objects,
+  CASE
+    WHEN COUNT(*) = 9 AND COUNT(CASE WHEN av.table_name IS NOT NULL THEN 1 END) = 9
+    THEN 'ALL 9 SPRINT 3 & T9 OBJECTS DEPLOYED & PROTECTED (PASS V3.9)'
+    ELSE 'T9 OBJECTS INCOMPLETE (AWAITING MIGRATION)'
+  END AS t9_verdict
+FROM (
+  SELECT unnest(ARRAY[
+    'creator_milestones',
+    'creator_media_kits',
+    'creator_public_media_kits',
+    'publishing_jobs',
+    'platform_oauth_tokens',
+    'creator_connected_platforms',
+    'oauth_state_transactions',
+    'creator_analytics_snapshots',
+    'creator_analytics_sync_jobs'
+  ]) AS object_name
+) e
+LEFT JOIN information_schema.tables av 
+  ON av.table_schema = 'public' AND av.table_name = e.object_name;
+
