@@ -12,7 +12,13 @@ import {
   Cpu,
   Server,
   Clock,
-  Building2
+  Building2,
+  TrendingUp,
+  BarChart3,
+  AlertTriangle,
+  Calculator,
+  Zap,
+  ShieldAlert
 } from 'lucide-react';
 import {
   CreditTransaction,
@@ -29,7 +35,8 @@ import {
   adminFetchAllBillingData,
   adminApprovePaymentOrder,
   adminRejectPaymentOrder,
-  adminAdjustCredits
+  adminAdjustCredits,
+  fetchAdminFinancialAnalytics
 } from '../../lib/supabase';
 
 interface AdminDashboardViewProps {
@@ -55,13 +62,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   t
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'paymentVerification' | 'ledgerAudit' | 'userGovernance' | 'systemHealth'
+    'overview' | 'paymentVerification' | 'ledgerAudit' | 'userGovernance' | 'systemHealth' | 'financialAnalytics'
   >('overview');
   const [transactions, setTransactions] = useState<EnrichedTransaction[]>([]);
   const [orders, setOrders] = useState<EnrichedOrder[]>([]);
   const [profiles, setProfiles] = useState<Array<{ id: string; display_name: string; email: string; role: string }>>([]);
   const [metrics, setMetrics] = useState<PlatformRevenueMetrics | null>(null);
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
+
+  // Financial Analytics & Simulator State (Phases 3–6)
+  const [financialData, setFinancialData] = useState<any>(null);
+  const [isLoadingFinancial, setIsLoadingFinancial] = useState<boolean>(false);
+  const [simScenario, setSimScenario] = useState<string>('normal');
+  const [simProviderMode, setSimProviderMode] = useState<string>('gemini_free');
+  const [isSimulating, setIsSimulating] = useState<boolean>(false);
+  const [simulationResult, setSimulationResult] = useState<any>(null);
 
   // Manual Credit Adjustment Form
   const [targetUserId, setTargetUserId] = useState<string>(currentUserId);
@@ -96,6 +111,42 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setMetrics(computePlatformMetrics(txList, ordList));
     } catch (err) {
       console.error('Failed to load admin data:', err);
+    }
+  };
+
+  const loadFinancialData = async () => {
+    setIsLoadingFinancial(true);
+    try {
+      const data = await fetchAdminFinancialAnalytics({ action: 'overview' });
+      if (data && data.success) {
+        setFinancialData(data);
+      }
+    } catch (err) {
+      console.error('Failed to load financial analytics:', err);
+    } finally {
+      setIsLoadingFinancial(false);
+    }
+  };
+
+  const handleRunSimulation = async () => {
+    setIsSimulating(true);
+    try {
+      const data = await fetchAdminFinancialAnalytics({
+        action: 'run_simulation',
+        scenarioKey: simScenario,
+        providerMode: simProviderMode,
+      });
+      if (data && data.success) {
+        setSimulationResult(data.simulation);
+        onShowToast('Simulasi harga & profitabilitas berhasil dijalankan.', 'success');
+      } else {
+        onShowToast('Gagal menjalankan simulasi.', 'error');
+      }
+    } catch (err) {
+      console.error('Simulation error:', err);
+      onShowToast('Terjadi kesalahan saat menjalankan simulasi.', 'error');
+    } finally {
+      setIsSimulating(false);
     }
   };
 
@@ -431,6 +482,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <Server className="w-4 h-4 text-emerald-400" />
           {t?.adminPanel?.tabs?.systemHealth || 'Service Health'}
         </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('financialAnalytics');
+            if (!financialData) loadFinancialData();
+          }}
+          className={`px-4 py-2.5 text-xs font-medium tracking-wide flex items-center gap-2 border-b-2 transition-all ${
+            activeTab === 'financialAnalytics'
+              ? 'border-cyan-400 text-cyan-300 bg-cyan-950/30'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4 text-cyan-400" />
+          <span>Analisis Keuangan &amp; Simulator (Phases 3–6)</span>
+        </button>
       </div>
 
       {/* TAB 1: OVERVIEW & PAYMENT VERIFICATION */}
@@ -748,6 +814,395 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <span className="text-emerald-400 font-mono">Ready & Verified</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6: FINANCIAL ANALYTICS & PRICING SIMULATOR (PHASES 3–6) */}
+      {activeTab === 'financialAnalytics' && (
+        <div className="space-y-6">
+          {/* Top Bar with Status & Refresh */}
+          <div className="p-4 bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-sm font-bold text-white">
+                  Dashboard Keuangan &amp; Simulator Margin SaaS
+                </h3>
+                <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-mono text-[10px] uppercase">
+                  Google Gemini Free Tier Aktif (Biaya Billed $0.00)
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Melacak telemetri token aktual, subsidi provider Google, ekivalen biaya berbayar, dan proyeksi margin laba kotor 4 tier subscription.
+              </p>
+            </div>
+            <button
+              onClick={loadFinancialData}
+              disabled={isLoadingFinancial}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 flex items-center gap-1.5 transition-colors self-start sm:self-auto shrink-0"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isLoadingFinancial ? 'animate-spin' : ''}`} />
+              <span>{isLoadingFinancial ? 'Memuat Data...' : 'Segarkan Analitik'}</span>
+            </button>
+          </div>
+
+          {/* Metric Overview Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
+              <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+                Total Pendapatan
+              </span>
+              <div className="text-xl font-mono font-bold text-emerald-400 tabular-nums mt-1">
+                {formatIdr(financialData?.summary?.total_platform_revenue_idr || metrics?.mrrIdr || 0)}
+              </div>
+              <span className="text-[10px] text-slate-500 mt-1">Gross Inflow (Coretax)</span>
+            </div>
+
+            <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
+              <span className="text-[11px] font-mono text-cyan-400 uppercase tracking-wider">
+                Biaya Billed Aktual
+              </span>
+              <div className="text-xl font-mono font-bold text-white tabular-nums mt-1">
+                ${Number(financialData?.summary?.total_billed_provider_cost_usd || 0).toFixed(4)}
+              </div>
+              <span className="text-[10px] text-emerald-400 mt-1">Rp 0 (100% Free Tier)</span>
+            </div>
+
+            <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
+              <span className="text-[11px] font-mono text-amber-400 uppercase tracking-wider">
+                Ekivalen Paid Tier
+              </span>
+              <div className="text-xl font-mono font-bold text-amber-300 tabular-nums mt-1">
+                ${Number(financialData?.summary?.total_paid_equivalent_cost_usd || 0).toFixed(4)}
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1">
+                {formatIdr(Number(financialData?.summary?.paid_equivalent_cost_idr || 0))}
+              </span>
+            </div>
+
+            <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
+              <span className="text-[11px] font-mono text-indigo-400 uppercase tracking-wider">
+                Subsidi Google
+              </span>
+              <div className="text-xl font-mono font-bold text-indigo-300 tabular-nums mt-1">
+                {formatIdr(Number(financialData?.summary?.free_tier_subsidy_idr || 0))}
+              </div>
+              <span className="text-[10px] text-slate-500 mt-1">Penghematan Biaya</span>
+            </div>
+
+            <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
+              <span className="text-[11px] font-mono text-emerald-400 uppercase tracking-wider">
+                Laba Kotor &amp; Margin
+              </span>
+              <div className="text-xl font-mono font-bold text-emerald-400 tabular-nums mt-1">
+                {financialData?.summary?.gross_margin_percent !== undefined
+                  ? `${financialData.summary.gross_margin_percent}%`
+                  : '100%'}
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1">
+                {formatIdr(financialData?.summary?.gross_profit_idr || metrics?.mrrIdr || 0)}
+              </span>
+            </div>
+
+            <div className="p-3.5 bg-slate-950/60 border border-slate-800 flex flex-col justify-between">
+              <span className="text-[11px] font-mono text-purple-400 uppercase tracking-wider">
+                Token Termetering
+              </span>
+              <div className="text-xl font-mono font-bold text-purple-300 tabular-nums mt-1">
+                {Number(financialData?.summary?.total_tokens || 0).toLocaleString()}
+              </div>
+              <span className="text-[10px] text-slate-500 mt-1">
+                {Number(financialData?.summary?.total_requests || 0)} Permintaan AI
+              </span>
+            </div>
+          </div>
+
+          {/* Tier Profitability & Sensitivity Analysis */}
+          <div className="p-5 bg-slate-950/60 border border-slate-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-cyan-400" />
+                <h4 className="text-sm font-bold text-white">
+                  Analisis Profitabilitas 4 Tier Berlangganan AMF
+                </h4>
+              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                Kurs Referensi: $1 = Rp 16.000 | Baseline Langganan Tetap
+              </span>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-800">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-900/80 text-slate-400 font-mono text-[11px] uppercase tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th className="p-3">Paket Berlangganan</th>
+                    <th className="p-3 text-right">Harga Bulanan</th>
+                    <th className="p-3 text-right">Kredit Bulanan</th>
+                    <th className="p-3 text-right">Nilai / Kredit (IDR)</th>
+                    <th className="p-3 text-right">Biaya Billed Aktual</th>
+                    <th className="p-3 text-right">Ekivalen Paid Biaya</th>
+                    <th className="p-3 text-center">Margin Laba Kotor</th>
+                    <th className="p-3 text-center">Status Keuangan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80 text-xs font-mono">
+                  <tr className="hover:bg-slate-900/40">
+                    <td className="p-3 font-sans font-semibold text-white">Free Creator</td>
+                    <td className="p-3 text-right text-slate-400">Rp0</td>
+                    <td className="p-3 text-right text-amber-400">150</td>
+                    <td className="p-3 text-right text-slate-500">Rp 0</td>
+                    <td className="p-3 text-right text-emerald-400">Rp 0</td>
+                    <td className="p-3 text-right text-slate-400">~Rp 120</td>
+                    <td className="p-3 text-center text-slate-400">0%</td>
+                    <td className="p-3 text-center">
+                      <span className="px-2 py-0.5 bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 text-[10px]">
+                        Freemium (Subsidi Free Tier)
+                      </span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-900/40">
+                    <td className="p-3 font-sans font-semibold text-white">Creator Indie</td>
+                    <td className="p-3 text-right text-emerald-400 font-bold">Rp 149.000</td>
+                    <td className="p-3 text-right text-amber-400">1.500</td>
+                    <td className="p-3 text-right text-slate-300">Rp 99.33</td>
+                    <td className="p-3 text-right text-emerald-400">Rp 0</td>
+                    <td className="p-3 text-right text-slate-400">~Rp 1.200</td>
+                    <td className="p-3 text-center text-emerald-400 font-bold">&gt; 98%</td>
+                    <td className="p-3 text-center">
+                      <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[10px]">
+                        Sangat Menguntungkan
+                      </span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-900/40">
+                    <td className="p-3 font-sans font-semibold text-white">Pro Studio</td>
+                    <td className="p-3 text-right text-emerald-400 font-bold">Rp 499.000</td>
+                    <td className="p-3 text-right text-amber-400">6.000</td>
+                    <td className="p-3 text-right text-slate-300">Rp 83.17</td>
+                    <td className="p-3 text-right text-emerald-400">Rp 0</td>
+                    <td className="p-3 text-right text-slate-400">~Rp 4.800</td>
+                    <td className="p-3 text-center text-emerald-400 font-bold">&gt; 98%</td>
+                    <td className="p-3 text-center">
+                      <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[10px]">
+                        Sangat Menguntungkan
+                      </span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-900/40">
+                    <td className="p-3 font-sans font-semibold text-white">Production House</td>
+                    <td className="p-3 text-right text-emerald-400 font-bold">Rp 1.499.000</td>
+                    <td className="p-3 text-right text-amber-400">20.000</td>
+                    <td className="p-3 text-right text-slate-300">Rp 74.95</td>
+                    <td className="p-3 text-right text-emerald-400">Rp 0</td>
+                    <td className="p-3 text-right text-slate-400">~Rp 16.000</td>
+                    <td className="p-3 text-center text-emerald-400 font-bold">&gt; 98%</td>
+                    <td className="p-3 text-center">
+                      <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[10px]">
+                        Sangat Menguntungkan
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Interactive Pricing & Sensitivity Simulator */}
+          <div className="p-5 bg-slate-950/60 border border-slate-800 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Calculator className="w-4 h-4 text-amber-400" />
+                <h4 className="text-sm font-bold text-white">
+                  Simulator Sensitivitas &amp; Biaya Provider (Phase 5)
+                </h4>
+              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                Uji Ketahanan Margin Pada Berbagai Kondisi Penggunaan
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-[11px] font-mono text-slate-300">Skenario Sensitivitas</label>
+                <select
+                  value={simScenario}
+                  onChange={e => setSimScenario(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 px-3 py-2 font-mono focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="normal">Normal (Baseline ~800 tokens/agent, 5% retry)</option>
+                  <option value="conservative">Konservatif (~400 tokens/agent, 2% retry)</option>
+                  <option value="heavy_usage">Penggunaan Intensif (~1500 tokens/agent, 10% retry)</option>
+                  <option value="high_video">Beban Media Tinggi (~2.5 min video per batch)</option>
+                  <option value="high_retry">Tingkat Kegagalan Tinggi (25% retry rate)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-mono text-slate-300">Mode Provider Google Gemini</label>
+                <select
+                  value={simProviderMode}
+                  onChange={e => setSimProviderMode(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 px-3 py-2 font-mono focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="gemini_free">Gemini Free Tier (Billed $0.00 / 100% Subsidi)</option>
+                  <option value="gemini_paid">Gemini Paid Tier ($0.075/1M input, $0.30/1M output)</option>
+                </select>
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  onClick={handleRunSimulation}
+                  disabled={isSimulating}
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-semibold text-xs tracking-wide flex items-center justify-center gap-2 transition-colors shadow-lg shadow-indigo-950/40"
+                >
+                  <Zap className="w-4 h-4 text-amber-300" />
+                  {isSimulating ? 'Menghitung Simulasi...' : 'Jalankan Simulasi Skenario'}
+                </button>
+              </div>
+            </div>
+
+            {/* Simulation Results Display */}
+            {simulationResult && (
+              <div className="p-4 bg-slate-900/60 border border-slate-800 space-y-3 mt-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white uppercase font-mono">
+                    Hasil Simulasi: {simulationResult.scenarioName || simulationResult.scenario_name} ({(simulationResult.providerMode || simulationResult.provider_mode) === 'gemini_free' ? 'Gemini Free Tier' : 'Gemini Paid Tier'})
+                  </span>
+                  <span className={`text-xs font-bold font-mono px-2 py-0.5 border ${
+                    (simulationResult.overallGrossMarginPercent ?? simulationResult.gross_margin_percent ?? 100) >= 70
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                      : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                  }`}>
+                    Gross Margin: {simulationResult.overallGrossMarginPercent ?? simulationResult.gross_margin_percent ?? 100}%
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                  <div className="p-2.5 bg-slate-950/80 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">Total Pendapatan Terproyeksi</span>
+                    <span className="text-white font-bold">{formatIdr(simulationResult.totalGrossRevenueIdr ?? simulationResult.total_revenue_idr ?? 0)}</span>
+                  </div>
+                  <div className="p-2.5 bg-slate-950/80 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">Biaya Provider AI (USD)</span>
+                    <span className="text-cyan-300 font-bold">${Number(simulationResult.total_provider_cost_usd ?? ((simulationResult.totalProviderBilledCostIdr || 0) / 16000)).toFixed(4)}</span>
+                  </div>
+                  <div className="p-2.5 bg-slate-950/80 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">Biaya Provider AI (IDR)</span>
+                    <span className="text-cyan-300 font-bold">{formatIdr(simulationResult.totalProviderBilledCostIdr ?? simulationResult.total_provider_cost_idr ?? 0)}</span>
+                  </div>
+                  <div className="p-2.5 bg-slate-950/80 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">Laba Bersih Terproyeksi</span>
+                    <span className="text-emerald-400 font-bold">{formatIdr(simulationResult.overallGrossProfitIdr ?? simulationResult.net_profit_idr ?? 0)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Financial Anomaly Detection & Alerts */}
+          {financialData?.anomalies && financialData.anomalies.length > 0 && (
+            <div className="p-5 bg-rose-950/20 border border-rose-900/40 space-y-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-rose-400" />
+                <h4 className="text-sm font-bold text-rose-200">
+                  Peringatan Deteksi Anomali Finansial &amp; Penggunaan
+                </h4>
+              </div>
+              <div className="space-y-2">
+                {financialData.anomalies.map((ano: any, idx: number) => (
+                  <div key={idx} className="p-2.5 bg-slate-950/60 border border-rose-900/30 flex justify-between items-center text-xs">
+                    <div>
+                      <span className="font-semibold text-rose-300">{ano.reason}</span>
+                      <span className="text-slate-500 font-mono text-[10px] ml-2">
+                        Op: {ano.operation} | Model: {ano.model}
+                      </span>
+                    </div>
+                    <span className="text-slate-400 font-mono text-[10px]">
+                      {new Date(ano.timestamp).toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recent AI Usage Records Table */}
+          <div className="p-5 bg-slate-950/60 border border-slate-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-purple-400" />
+                <h4 className="text-sm font-bold text-white">
+                  Pencatatan Telemetri Penggunaan AI Terbaru
+                </h4>
+              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                Tercatat pada public.ai_usage_records (Supabase Cloud)
+              </span>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-800">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-900/80 text-slate-400 font-mono text-[11px] uppercase tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th className="p-3">Waktu &amp; ID</th>
+                    <th className="p-3">Operasi &amp; Model</th>
+                    <th className="p-3 text-right">Total Token</th>
+                    <th className="p-3 text-right">Prompt / Output</th>
+                    <th className="p-3 text-right">Durasi (ms)</th>
+                    <th className="p-3 text-right">Biaya Billed</th>
+                    <th className="p-3 text-right">Ekivalen Paid</th>
+                    <th className="p-3 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80 text-xs font-mono">
+                  {(!financialData?.recent_usage || financialData.recent_usage.length === 0) ? (
+                    <tr>
+                      <td colSpan={8} className="p-6 text-center text-slate-500 font-sans">
+                        Belum ada telemetri penggunaan AI yang tercatat. Panggilan AI baru akan otomatis termetering di sini.
+                      </td>
+                    </tr>
+                  ) : (
+                    financialData.recent_usage.map((rec: any) => (
+                      <tr key={rec.id} className="hover:bg-slate-900/40">
+                        <td className="p-3 text-slate-400 text-[10px]">
+                          <div>{new Date(rec.created_at).toLocaleString('id-ID')}</div>
+                          <div className="text-slate-600 truncate max-w-[100px]">{rec.id}</div>
+                        </td>
+                        <td className="p-3 font-sans">
+                          <div className="text-white font-semibold">{rec.operation}</div>
+                          <div className="text-[10px] text-cyan-400 font-mono">{rec.model}</div>
+                        </td>
+                        <td className="p-3 text-right font-bold text-purple-300">
+                          {Number(rec.total_tokens || 0).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-right text-slate-400 text-[11px]">
+                          {Number(rec.prompt_tokens || 0).toLocaleString()} / {Number(rec.candidates_tokens || 0).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-right text-slate-400">
+                          {rec.execution_duration_ms ? `${rec.execution_duration_ms}ms` : '-'}
+                        </td>
+                        <td className="p-3 text-right text-emerald-400">
+                          ${Number(rec.billed_cost_usd || 0).toFixed(5)}
+                        </td>
+                        <td className="p-3 text-right text-amber-300">
+                          ${Number(rec.paid_equivalent_cost_usd || 0).toFixed(5)}
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className={`px-1.5 py-0.5 border text-[10px] uppercase ${
+                            rec.status === 'completed'
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                              : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                          }`}>
+                            {rec.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

@@ -174,11 +174,22 @@ async function runVercelGoLiveTests() {
   }
   console.log('✔ POST /api/payment-webhook verified signed settlement payload (200 OK)');
 
-  console.log('\n=== TEST 4: Verify POST /api/ai-generate Validation & Server Key Protection ===');
+  console.log('\n=== TEST 4: Verify POST /api/ai-generate Security & Input Validation ===');
+  const unauthRes = createMockRes();
+  await aiGenerateHandler({ method: 'POST', body: { prompt: '   ' } }, unauthRes);
+  if (unauthRes.getStatusCode() !== 401) {
+    throw new Error('Expected 401 Unauthorized for unauthenticated call on /api/ai-generate');
+  }
+  console.log('✔ POST /api/ai-generate strictly rejects unauthenticated caller (401 Unauthorized)');
+
   const emptyPromptRes = createMockRes();
-  await aiGenerateHandler({ method: 'POST', body: { prompt: '   ' } }, emptyPromptRes);
+  await aiGenerateHandler({
+    method: 'POST',
+    body: { prompt: '   ' },
+    _testUser: { id: 'usr_test_readiness' }
+  }, emptyPromptRes);
   if (emptyPromptRes.getStatusCode() !== 400) {
-    throw new Error('Expected 400 Bad Request for empty prompt on /api/ai-generate');
+    throw new Error(`Expected 400 Bad Request for empty prompt on /api/ai-generate, got ${emptyPromptRes.getStatusCode()}`);
   }
   console.log('✔ POST /api/ai-generate properly rejected empty prompt (400 Bad Request)');
 

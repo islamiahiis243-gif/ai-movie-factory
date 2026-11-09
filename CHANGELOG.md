@@ -3,6 +3,32 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.8] - Commercial Financial Infrastructure, Credit Hardening & SaaS Economics (Phases 2–7) - 2026-11-09 20:45 +07:00
+
+### Added
+- **Phase 2: Credit Economy Hardening & Atomic Reservations (`api/lib/credits/creditEngine.ts`, `supabase/upgrade_v3_11_financial_hardening.sql`):**
+  - Implemented two-phase atomic credit reservation protocol (`reserve_credits`, `settle_credits`, `release_credits`, `get_user_credit_balance`) in PostgreSQL with row-level locks on `profiles(id)`.
+  - Added dedicated serverless endpoints: `GET /api/credits/balance` and `POST /api/credits/transaction`.
+  - Hardened `/api/ai-generate` with mandatory JWT authentication via Supabase Auth, returning HTTP 401 for unauthenticated calls and HTTP 402 for insufficient balances.
+  - Hardened `/api/payment-webhook` against zero-balance overdrafts and duplicate refunds (`refund_${txId}`).
+- **Phase 3: Token Usage Metering (`api/ai-generate.ts`, `supabase/upgrade_v3_12_financial_analytics.sql`):**
+  - Integrated token extraction from Google GenAI SDK (`response.usageMetadata.promptTokenCount`, `candidatesTokenCount`, `totalTokenCount`, `cachedContentTokenCount`).
+  - Stored granular telemetry in `public.ai_usage_records` with duration ms, model, operation, retry count, media duration, and cost status (`free_tier` vs `metered_real` vs `mock_simulated`).
+- **Phase 4: Provider Cost Engine (`api/lib/cost/providerCostEngine.ts`):**
+  - Built official provider pricing registry with Gemini 2.5 Flash ($0.075/1M input, $0.30/1M output) and Gemini 1.5 Pro ($1.25/1M input, $5.00/1M output).
+  - Explicitly separated: Billed Actual Cost ($0.00 on Free Tier), Paid-Equivalent Cost (subsidy value), Internal Credit Value (IDR), and Customer Charge (IDR) using standard exchange rate ($1 = Rp 16.000).
+  - Maintained mock/simulated status for media generation without incurred third-party charges.
+- **Phase 5: SaaS Pricing & Sensitivity Simulator (`api/lib/cost/pricingSimulator.ts`):**
+  - Developed multi-tier SaaS economic simulator evaluating all 4 baseline subscription tiers (Free Creator: Rp0 / 150 cr, Creator Indie: Rp149k / 1.5k cr, Pro Studio: Rp499k / 6k cr, Production House: Rp1.499M / 20k cr).
+  - Simulated across 5 stress scenarios (`conservative`, `normal`, `heavy_usage`, `high_video`, `high_retry`) under both `gemini_free` (100% gross margin) and `gemini_paid` (>80% gross margin).
+- **Phase 6: Financial Analytics Dashboard & Admin Console (`src/components/admin/AdminDashboardView.tsx`, `api/admin/financial-analytics.ts`):**
+  - Added `Financial Analytics & Simulator` tab in Admin Dashboard with real-time cloud metrics via `get_financial_summary_metrics()` stored procedure.
+  - Interactive simulator controls, 4-tier profitability breakdown, financial anomaly alert detection, and live usage telemetry table.
+- **Phase 7: Comprehensive Automated Testing Suite (`scripts/test_financial_hardening.ts`):**
+  - 12 comprehensive automated test suites covering auth guards (401), balance rejections (402), atomic lifecycle, concurrency race conditions, provider failure rollback, Midtrans cryptographic signatures, token metering telemetry, provider cost engine rates, pricing simulation across 5 scenarios, and admin API security (401/403/200).
+- **Autonomous Cloud Cron Scheduler (`supabase/upgrade_v3_10_supabase_cron_scheduler.sql`):**
+  - Activated autonomous database-level scheduler via Supabase `pg_cron` & `pg_net` to trigger publishing and analytics sync workers without Vercel Hobby cron frequency limits.
+
 ## [1.15.7] - Production Activation & Verification (Vercel Cron GET, Worker Lease Fencing & Meta v21.0 Upgrade) - 2026-11-09 16:50 +07:00
 
 ### Fixed

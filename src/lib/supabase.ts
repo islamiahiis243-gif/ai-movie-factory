@@ -3031,6 +3031,37 @@ export async function adminAdjustCredits(
   return { success: Boolean(result.data), error: result.error };
 }
 
+export async function fetchAdminFinancialAnalytics(payload: {
+  action?: 'overview' | 'run_simulation';
+  scenarioKey?: string;
+  providerMode?: string;
+  tierUsers?: Record<string, number>;
+  startDate?: string;
+  endDate?: string;
+} = {}): Promise<any> {
+  if (!isSupabaseConfigured || !supabase) return null;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return null;
+    const response = await fetch('/api/admin/financial-analytics', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(errBody?.message || errBody?.error || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  } catch (err) {
+    console.warn('Admin financial analytics fetch error:', err);
+    return null;
+  }
+}
+
 // ==========================================
 // Phase 7: Team Collaboration Workspaces (SSOT Section 42)
 // ==========================================

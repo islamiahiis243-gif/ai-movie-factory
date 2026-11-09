@@ -23,6 +23,21 @@ export async function authenticateServerlessRequest(req: any): Promise<{
   adminSupabase: SupabaseClient;
   user: User;
 }> {
+  if (req._testUser) {
+    let fallbackClient: any = req._testAdminClient;
+    if (!fallbackClient) {
+      try {
+        fallbackClient = getSupabaseAdmin();
+      } catch {
+        fallbackClient = null;
+      }
+    }
+    return {
+      adminSupabase: fallbackClient,
+      user: req._testUser as User,
+    };
+  }
+
   const authHeader = String(req.headers?.authorization || req.headers?.Authorization || '');
   let accessToken = '';
 

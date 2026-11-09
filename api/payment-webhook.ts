@@ -585,7 +585,15 @@ export default async function handler(req: any, res: any) {
       if (action === 'record_usage') {
         const creditsToDeduct = Math.abs(Number(body.amount || 0));
         const currentBalance = await getCurrentBalance(adminSupabase, userId);
-        const newBalance = Math.max(0, currentBalance - creditsToDeduct);
+
+        if (currentBalance < creditsToDeduct) {
+          return res.status(402).json({
+            error: 'INSUFFICIENT_CREDITS',
+            message: `Saldo kredit tidak mencukupi (Tersedia: ${currentBalance}, Diperlukan: ${creditsToDeduct}). Silakan lakukan top-up kredit.`,
+          });
+        }
+
+        const newBalance = currentBalance - creditsToDeduct;
 
         const { data: newTx, error: txErr } = await adminSupabase
           .from('credit_transactions')
@@ -621,6 +629,22 @@ export default async function handler(req: any, res: any) {
 
       if (action === 'refund_tx') {
         const txId = String(body.tx_id || '');
+
+        // Double-refund prevention check
+        const { data: alreadyRefunded } = await adminSupabase
+          .from('credit_transactions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('transaction_type', 'refund')
+          .eq('idempotency_key', `refund_${txId}`)
+          .maybeSingle();
+
+        if (alreadyRefunded) {
+          return res.status(400).json({
+            error: 'ALREADY_REFUNDED',
+            message: 'Transaksi ini sudah pernah dikembalikan (refund) sebelumnya.',
+          });
+        }
         const { data: targetTx } = await adminSupabase
           .from('credit_transactions')
           .select('*')
