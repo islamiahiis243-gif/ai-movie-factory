@@ -33,6 +33,7 @@ import {
   StorageBucketObject,
   StorageUploadResult,
   CreatorMilestone,
+  CreatorMediaKitSettings,
 } from '../types/database';
 import {
   INITIAL_DEMO_PROJECTS,
@@ -3964,4 +3965,102 @@ export async function deleteCreatorMilestone(milestoneId: string): Promise<boole
   const filtered = all.filter((m) => m.id !== milestoneId);
   saveLocalCreatorMilestones(filtered);
   return true;
+}
+
+// ============================================================================
+// PHASE 15 SPRINT 3: CREATOR MEDIA KIT & COMMERCIAL PROPOSAL SETTINGS
+// ============================================================================
+
+const LOCAL_STORAGE_MEDIA_KIT_PREFIX = 'amf_creator_media_kit_settings_v1_';
+
+export function getLocalMediaKitSettings(userId: string): CreatorMediaKitSettings | null {
+  if (typeof window === 'undefined' || !userId) return null;
+  try {
+    const raw = localStorage.getItem(`${LOCAL_STORAGE_MEDIA_KIT_PREFIX}${userId}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function saveLocalMediaKitSettings(userId: string, settings: CreatorMediaKitSettings): void {
+  if (typeof window === 'undefined' || !userId) return;
+  try {
+    localStorage.setItem(`${LOCAL_STORAGE_MEDIA_KIT_PREFIX}${userId}`, JSON.stringify(settings));
+  } catch (err) {
+    console.warn('Failed to save local media kit settings:', err);
+  }
+}
+
+export async function fetchCreatorMediaKitSettings(
+  userId: string,
+  fallbackDefaults?: Partial<CreatorMediaKitSettings>
+): Promise<{ data: CreatorMediaKitSettings; error: string | null }> {
+  const defaults: CreatorMediaKitSettings = {
+    user_id: userId,
+    studio_name: fallbackDefaults?.studio_name || 'AMF Film Studio',
+    bio: fallbackDefaults?.bio || 'Kreator film independen bertenaga AI generasi baru, memproduksi konten naratif sinematik 4K berkualitas layar lebar.',
+    contact_email: fallbackDefaults?.contact_email || 'creator@aimoviefactory.com',
+    contact_phone: fallbackDefaults?.contact_phone || '+62 812-3456-7890',
+    primary_niche: fallbackDefaults?.primary_niche || 'Sci-Fi Cyberpunk & Misteri Folklor',
+    location: fallbackDefaults?.location || 'Indonesia (Global Remote Production)',
+    rate_card_tier1: fallbackDefaults?.rate_card_tier1 || 2500000,
+    rate_card_tier2: fallbackDefaults?.rate_card_tier2 || 5000000,
+    rate_card_tier3: fallbackDefaults?.rate_card_tier3 || 12500000,
+    custom_pitch_hook: fallbackDefaults?.custom_pitch_hook || 'Menghadirkan penempatan merek yang memikat secara alami ke dalam alur cerita film sinematik AI beresolusi 4K.',
+    updated_at: new Date().toISOString(),
+  };
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('creator_media_kits')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!error && data) {
+        return { data: { ...defaults, ...data }, error: null };
+      }
+    } catch (err: any) {
+      console.warn('Supabase fetchCreatorMediaKitSettings failed, using local/defaults:', err);
+    }
+  }
+
+  const local = getLocalMediaKitSettings(userId);
+  if (local) {
+    return { data: { ...defaults, ...local }, error: null };
+  }
+
+  return { data: defaults, error: null };
+}
+
+export async function saveCreatorMediaKitSettings(
+  settings: CreatorMediaKitSettings
+): Promise<{ data: CreatorMediaKitSettings; error: string | null }> {
+  const updated = {
+    ...settings,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('creator_media_kits')
+        .upsert(updated, { onConflict: 'user_id' })
+        .select()
+        .single();
+
+      if (!error && data) {
+        saveLocalMediaKitSettings(settings.user_id, data as CreatorMediaKitSettings);
+        return { data: data as CreatorMediaKitSettings, error: null };
+      }
+    } catch (err: any) {
+      console.warn('Supabase saveCreatorMediaKitSettings failed, saving local:', err);
+    }
+  }
+
+  saveLocalMediaKitSettings(settings.user_id, updated);
+  return { data: updated, error: null };
 }

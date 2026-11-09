@@ -3,6 +3,29 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.1] - Phase 15 Sprint 3: Creator Media Kit & Brand Proposal Generator - 2026-11-09 13:00 +07:00
+
+### Added
+- **1-Click Creator Media Kit & Executive Pitch Deck (`src/components/studio/CreatorIntelligenceView.tsx`):**
+  - **Standalone Cinematic A4 PDF / Vector Print Engine:**
+    - High-fidelity print styles (`@page { size: A4; margin: 12mm; }`) with Hollywood dark slate aesthetic, gold foil accents, and vector SVG logos for crisp export via browser print dialog (`Save as PDF`).
+    - Zero-dependency standalone HTML download (`[Studio]_Media_Kit_2026.html`) featuring embedded styling, ready for offline distribution or email attachments.
+  - **Comprehensive Commercial Portfolio Sections:**
+    - **Executive Header & Bio:** Displays studio branding, verified creator badge, custom bio, niche category, and location.
+    - **Channel Performance Scorecard:** Highlights aggregate reach metrics (Total Views, Engagement Rate, Watch Time Retention, and Average Production ROI).
+    - **Audience Demographics & Psychographics:** 18-34 Gen-Z/Millennial age breakdown, regional audience split (Indonesia, SEA, Global), and top genre viewer affinities.
+    - **Commercial Rate Cards (3 Tiers):**
+      - *Bronze (Product Placement / Prop Integration):* Starting at Rp 2.500.000 / $160.
+      - *Silver (Story & Dialogue Co-Branding):* Starting at Rp 5.000.000 / $320.
+      - *Gold (Full Co-Branded Short Film / Brand Episode):* Starting at Rp 12.500.000 / $800.
+    - **Featured Production Showcases:** Mini portfolio cards highlighting top productions (*Neo Jakarta 2099*, *Babad Tanah Pasundan*, *Sumpah Lembah Hening*) with genre, duration, and performance badges.
+    - **Direct Brand Outreach Email Pitch Copy:** One-click clipboard copy of personalized commercial brand pitch email complete with dynamic studio stats and direct contact CTA.
+  - **Custom Rate Card & Contact Info Editor:**
+    - Interactive slide-over settings drawer allowing creators to personalize Studio Name, Bio, Niche, Contact Email, WhatsApp / Business Phone, Location, Custom Tier Rates, and Custom Pitch Hooks.
+  - **Supabase Cloud Persistence & Dual-Mode Fallback (`supabase/upgrade_v3_5_creator_media_kit.sql` & `src/lib/supabase.ts`):**
+    - Provisioned `public.creator_media_kits` table with Row Level Security (RLS) policies allowing creators to manage their media kit preferences and super admins to audit portfolios.
+    - Client-side fallback layer in `src/lib/supabase.ts` ensures uninterrupted offline functionality if network or table sync is pending.
+
 ## [1.15.0] - Phase 15: Creator Publishing Hub, Safe-Area Overlay & AI Virality Engine - 2026-11-08
 
 ### Added

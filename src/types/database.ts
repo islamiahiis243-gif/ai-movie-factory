@@ -1087,3 +1087,19 @@ export interface RetentionHookAnalysis {
     actionableTip: string;
   };
 }
+
+export interface CreatorMediaKitSettings {
+  id?: string;
+  user_id: string;
+  studio_name: string;
+  bio: string;
+  contact_email: string;
+  contact_phone?: string;
+  primary_niche: string;
+  location: string;
+  rate_card_tier1: number;
+  rate_card_tier2: number;
+  rate_card_tier3: number;
+  custom_pitch_hook?: string;
+  updated_at?: string;
+}

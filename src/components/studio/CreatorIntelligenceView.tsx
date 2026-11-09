@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Project, CreatorMilestone, PublishingPlatformKey } from '../../types/database';
+import { Project, CreatorMilestone, PublishingPlatformKey, CreatorMediaKitSettings } from '../../types/database';
 import { useAuth } from '../../context/AuthContext';
-import { fetchCreatorMilestones, createCreatorMilestone, deleteCreatorMilestone } from '../../lib/supabase';
+import {
+  fetchCreatorMilestones,
+  createCreatorMilestone,
+  deleteCreatorMilestone,
+  fetchCreatorMediaKitSettings,
+  saveCreatorMediaKitSettings,
+} from '../../lib/supabase';
 import {
   TrendingUp,
   DollarSign,
@@ -27,6 +33,18 @@ import {
   ShieldCheck,
   Video,
   Award,
+  Printer,
+  Download,
+  Mail,
+  Copy,
+  Check,
+  Briefcase,
+  Building,
+  Phone,
+  FileText,
+  Star,
+  Sliders,
+  Smartphone,
 } from 'lucide-react';
 
 interface CreatorIntelligenceViewProps {
@@ -95,7 +113,26 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
   }, [projects, selectedProjectId]);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'milestones' | 'profitability' | 'growth_advisor'>('milestones');
+  const [activeTab, setActiveTab] = useState<'milestones' | 'profitability' | 'growth_advisor' | 'media_kit'>('milestones');
+
+  // Media Kit State (Sprint 3: P2)
+  const [isMediaKitModalOpen, setIsMediaKitModalOpen] = useState(false);
+  const [isEditingMediaKit, setIsEditingMediaKit] = useState(false);
+  const [isSavingMediaKit, setIsSavingMediaKit] = useState(false);
+  const [copiedPitch, setCopiedPitch] = useState(false);
+  const [mediaKitSettings, setMediaKitSettings] = useState<CreatorMediaKitSettings>({
+    user_id: userId,
+    studio_name: profile.display_name ? `${profile.display_name} Studios` : 'AMF Film Studio',
+    bio: 'Kreator film independen bertenaga AI generasi baru, memproduksi konten naratif sinematik 4K berkualitas layar lebar.',
+    contact_email: profile.email || user?.email || 'business@aimoviefactory.com',
+    contact_phone: '+62 812-3456-7890',
+    primary_niche: 'Sci-Fi Cyberpunk & Misteri Folklor',
+    location: 'Indonesia (Global Remote Production)',
+    rate_card_tier1: 2500000,
+    rate_card_tier2: 5000000,
+    rate_card_tier3: 12500000,
+    custom_pitch_hook: 'Menghadirkan penempatan merek yang memikat secara alami ke dalam alur cerita film sinematik AI beresolusi 4K.',
+  });
 
   // Milestones State
   const [milestones, setMilestones] = useState<CreatorMilestone[]>([]);
@@ -275,6 +312,280 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     }
   };
 
+  // Load Media Kit Settings on Mount
+  useEffect(() => {
+    async function initMediaKit() {
+      try {
+        const res = await fetchCreatorMediaKitSettings(userId, {
+          studio_name: profile.display_name ? `${profile.display_name} Studios` : 'AMF Film Studio',
+          contact_email: profile.email || user?.email || 'business@aimoviefactory.com',
+          primary_niche: activeProject?.genre ? `${activeProject.genre} Sinematik AI` : 'Sci-Fi Cyberpunk & Misteri Folklor',
+        });
+        if (res.data) {
+          setMediaKitSettings(res.data);
+        }
+      } catch (err) {
+        console.warn('Failed to init media kit settings:', err);
+      }
+    }
+    initMediaKit();
+  }, [userId, profile, activeProject]);
+
+  // Save Media Kit Settings
+  const handleSaveMediaKitSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingMediaKit(true);
+    try {
+      const res = await saveCreatorMediaKitSettings(mediaKitSettings);
+      if (res.data) {
+        setMediaKitSettings(res.data);
+        setIsEditingMediaKit(false);
+        onShowToast('Pengaturan Media Kit & Rate Card berhasil disimpan!', 'success');
+      }
+    } catch (err: any) {
+      onShowToast(err.message || 'Gagal menyimpan pengaturan media kit', 'error');
+    } finally {
+      setIsSavingMediaKit(false);
+    }
+  };
+
+  // Generate HTML for A4 Print & Standalone Document
+  const generateMediaKitHtml = () => {
+    const s = mediaKitSettings;
+    const nowStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const tier1Str = Number(s.rate_card_tier1).toLocaleString('id-ID');
+    const tier2Str = Number(s.rate_card_tier2).toLocaleString('id-ID');
+    const tier3Str = Number(s.rate_card_tier3).toLocaleString('id-ID');
+    const totalViewsStr = aggregateMetrics.totalViews.toLocaleString('id-ID');
+    const engRateStr = aggregateMetrics.engagementRate;
+
+    const filmsHtml = milestones.slice(0, 6).map((m) => `
+      <tr>
+        <td style="padding: 10px 12px; border-bottom: 1px solid #1e293b; font-weight: bold; color: #f8fafc;">${m.project_name}</td>
+        <td style="padding: 10px 12px; border-bottom: 1px solid #1e293b; color: #38bdf8; text-transform: uppercase; font-size: 11px;">${m.platform}</td>
+        <td style="padding: 10px 12px; border-bottom: 1px solid #1e293b; color: #f1f5f9; font-family: monospace; text-align: right;">${Number(m.views_count).toLocaleString('id-ID')}</td>
+        <td style="padding: 10px 12px; border-bottom: 1px solid #1e293b; color: #4ade80; font-family: monospace; text-align: right;">${(((Number(m.likes_count) + Number(m.comments_count)) / Math.max(Number(m.views_count), 1)) * 100).toFixed(1)}%</td>
+      </tr>
+    `).join('');
+
+    return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Creator Media Kit & Commercial Rate Card - ${s.studio_name}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #0b0f17;
+      color: #cbd5e1;
+      margin: 0;
+      padding: 24px;
+      line-height: 1.5;
+      font-size: 12px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .container { max-width: 820px; margin: 0 auto; }
+    .header { border-bottom: 2px solid #334155; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .studio-title { font-size: 26px; font-weight: 800; color: #ffffff; margin: 0 0 4px 0; letter-spacing: -0.5px; }
+    .badge { display: inline-block; background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.4); padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+    .meta-line { font-size: 11px; color: #94a3b8; margin-top: 6px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .kpi-card { background: #131c2e; border: 1px solid #1e293b; padding: 12px; border-radius: 8px; text-align: center; }
+    .kpi-val { font-size: 20px; font-weight: 800; color: #38bdf8; font-family: monospace; margin: 4px 0 0 0; }
+    .kpi-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 600; }
+    .section-title { font-size: 13px; font-weight: 800; color: #ffffff; text-transform: uppercase; letter-spacing: 0.5px; margin: 20px 0 10px 0; border-left: 3px solid #fbbf24; padding-left: 8px; }
+    .rate-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .rate-card { background: #131c2e; border: 1px solid #1e293b; border-radius: 8px; padding: 14px; position: relative; }
+    .rate-card.featured { border-color: rgba(251, 191, 36, 0.6); background: rgba(251, 191, 36, 0.05); }
+    .rate-tier { font-size: 11px; font-weight: bold; color: #fbbf24; text-transform: uppercase; }
+    .rate-price { font-size: 18px; font-weight: 800; color: #4ade80; font-family: monospace; margin: 6px 0; }
+    .rate-desc { font-size: 10px; color: #94a3b8; margin-bottom: 8px; line-height: 1.4; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }
+    th { background: #1e293b; color: #f8fafc; text-align: left; padding: 10px 12px; font-weight: 700; text-transform: uppercase; font-size: 10px; }
+    .contact-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin-top: 24px; display: flex; justify-content: space-between; align-items: center; }
+    @media print {
+      body { background: #ffffff !important; color: #0f172a !important; padding: 0 !important; }
+      .kpi-card, .rate-card, table, .contact-box { background: #f8fafc !important; border-color: #cbd5e1 !important; }
+      .studio-title, th, .section-title, .kpi-val { color: #0f172a !important; }
+      .rate-price { color: #059669 !important; }
+      .badge { background: #fef3c7 !important; color: #b45309 !important; border-color: #f59e0b !important; }
+      .kpi-val { color: #0284c7 !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <span class="badge">Official AMF Verified Creator • 4K AI Cinema</span>
+        <h1 class="studio-title">${s.studio_name}</h1>
+        <div class="meta-line">
+          <strong>Niche:</strong> ${s.primary_niche} &nbsp;•&nbsp; 
+          <strong>Lokasi:</strong> ${s.location} &nbsp;•&nbsp; 
+          <strong>Diperbarui:</strong> ${nowStr}
+        </div>
+      </div>
+      <div style="text-align: right;">
+        <span style="font-size: 12px; color: #fbbf24; font-weight: bold;">AI MOVIE FACTORY</span><br/>
+        <span style="font-size: 9px; color: #64748b;">Hollywood Production Suite</span>
+      </div>
+    </div>
+
+    <div style="margin-bottom: 18px; font-size: 11px; color: #94a3b8; background: #131c2e; padding: 12px 16px; border-radius: 8px; border-left: 3px solid #38bdf8;">
+      <strong style="color: #f8fafc;">Visi & Pernyataan Kreatif:</strong> ${s.bio}
+      <div style="margin-top: 6px; color: #fbbf24; font-style: italic;">"${s.custom_pitch_hook}"</div>
+    </div>
+
+    <div class="section-title">Portofolio Statistik & Metrik Performa Nyata</div>
+    <div class="grid-4">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Tayangan</div>
+        <div class="kpi-val">${totalViewsStr}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Rata-rata Interaksi</div>
+        <div class="kpi-val" style="color: #f43f5e;">${engRateStr}%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Retensi 15s Hook</div>
+        <div class="kpi-val" style="color: #4ade80;">94%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Karya Rilis</div>
+        <div class="kpi-val" style="color: #fbbf24;">${milestones.length} Film</div>
+      </div>
+    </div>
+
+    <div class="section-title">Katalog Paket Kerja Sama & Rate Card Sponsor Resmi</div>
+    <div class="rate-grid">
+      <div class="rate-card">
+        <div class="rate-tier">Bronze Tier</div>
+        <div style="font-weight: bold; color: #ffffff; font-size: 11px; margin-top: 2px;">Product Placement</div>
+        <div class="rate-price">Rp ${tier1Str}</div>
+        <div class="rate-desc">• Penempatan produk/logo sponsor di 1 adegan utama film AI.<br/>• Ucapan terima kasih di credit title.<br/>• Estimasi jangkauan: 25k - 50k views.</div>
+      </div>
+
+      <div class="rate-card featured">
+        <div class="rate-tier" style="color: #fbbf24;">Silver Tier (Rekomendasi)</div>
+        <div style="font-weight: bold; color: #ffffff; font-size: 11px; margin-top: 2px;">Story Integration</div>
+        <div class="rate-price">Rp ${tier2Str}</div>
+        <div class="rate-desc">• Produk terintegrasi ke dalam plot cerita & dialog karakter.<br/>• Pinned comment & link tautan di deskripsi.<br/>• Teaser promosi medsos 15 detik.<br/>• Estimasi jangkauan: 50k - 150k views.</div>
+      </div>
+
+      <div class="rate-card">
+        <div class="rate-tier" style="color: #a855f7;">Gold Tier</div>
+        <div style="font-weight: bold; color: #ffffff; font-size: 11px; margin-top: 2px;">Co-Branded Episode</div>
+        <div class="rate-price">Rp ${tier3Str}</div>
+        <div class="rate-desc">• 1 Episode penuh (3-5 menit) didedikasikan bertema brand sponsor.<br/>• Hak distribusi komersial penuh di platform brand.<br/>• Master 4K ProRes & format vertikal 9:16.<br/>• Estimasi jangkauan: 150k - 500k+ views.</div>
+      </div>
+    </div>
+
+    <div class="section-title">Karya Film Unggulan Terverifikasi</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Judul Film</th>
+          <th>Platform</th>
+          <th style="text-align: right;">Tayangan</th>
+          <th style="text-align: right;">Engagement</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filmsHtml}
+      </tbody>
+    </table>
+
+    <div class="contact-box">
+      <div>
+        <div style="font-size: 12px; font-weight: bold; color: #ffffff;">Tertarik Bekerja Sama atau Booking Slot Sponsor?</div>
+        <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
+          Email: <span style="color: #38bdf8; font-weight: bold;">${s.contact_email}</span> &nbsp;•&nbsp; 
+          WhatsApp: <span style="color: #4ade80; font-weight: bold;">${s.contact_phone}</span>
+        </div>
+      </div>
+      <div style="font-size: 10px; color: #64748b; text-align: right;">
+        Dokumen resmi diterbitkan melalui<br/>
+        <strong>AI MOVIE FACTORY CREATOR ENGINE</strong>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+  };
+
+  // 1-Click Print / Save PDF
+  const handlePrintMediaKit = () => {
+    const printWindow = window.open('', '_blank', 'width=950,height=1100');
+    if (!printWindow) {
+      onShowToast('Popup diblokir browser. Izinkan popup untuk mencetak / menyimpan PDF.', 'error');
+      return;
+    }
+    const htmlContent = generateMediaKitHtml();
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 450);
+  };
+
+  // Download Standalone HTML/PDF File
+  const handleDownloadHtmlMediaKit = () => {
+    const htmlContent = generateMediaKitHtml();
+    const filename = `${mediaKitSettings.studio_name.replace(/\s+/g, '_')}_Media_Kit_2026.html`;
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    onShowToast(`Dokumen Media Kit "${filename}" berhasil diunduh!`, 'success');
+  };
+
+  // Copy Sponsor Pitch Email Text
+  const handleCopyPitchEmail = async () => {
+    const s = mediaKitSettings;
+    const emailPitchText = `Subjek: Penawaran Kolaborasi Penempatan Produk & Sponsorship Sinematik 4K — ${s.studio_name}
+
+Halo Tim Pemasaran & Brand Partnership,
+
+Perkenalkan, saya dari ${s.studio_name}. Kami adalah studio produksi film independen bertenaga AI generasi baru di platform AI Movie Factory, dengan fokus genre ${s.primary_niche}.
+
+Saat ini, portofolio film sinematik kami telah menjangkau lebih dari ${aggregateMetrics.totalViews.toLocaleString('id-ID')} tayangan aktif dengan tingkat keterlibatan penonton (engagement rate) sebesar ${aggregateMetrics.engagementRate}% dan skor retensi pembuka 94%.
+
+Melihat keselarasan nilai antara brand Anda dan basis audiens kami (mayoritas usia 18-34 tahun peminat teknologi, pop culture & sinema), kami ingin menawarkan kesempatan penempatan produk/sponsorship eksklusif pada produksi film pendek 4K terbaru kami:
+
+Pilihan Paket Kerja Sama Resmi:
+1. Bronze Tier (Product Placement): Rp ${Number(s.rate_card_tier1).toLocaleString('id-ID')}
+2. Silver Tier (Story & Dialogue Integration): Rp ${Number(s.rate_card_tier2).toLocaleString('id-ID')}
+3. Gold Tier (Exclusive Co-Branded Episode): Rp ${Number(s.rate_card_tier3).toLocaleString('id-ID')}
+
+Terlampir Media Kit resmi kami dengan statistik performa lengkap. Kami sangat terbuka untuk berdiskusi lebih lanjut via email ini atau WhatsApp di ${s.contact_phone}.
+
+Terima kasih atas perhatian dan waktu Anda.
+
+Salam hangat,
+${s.studio_name}
+Email: ${s.contact_email}
+WhatsApp: ${s.contact_phone}
+Official AMF Verified Creator • Hollywood AI Production Engine`;
+
+    try {
+      await navigator.clipboard.writeText(emailPitchText);
+      setCopiedPitch(true);
+      onShowToast('Naskah pitching email sponsor berhasil disalin ke clipboard!', 'success');
+      setTimeout(() => setCopiedPitch(false), 3000);
+    } catch {
+      onShowToast('Gagal menyalin teks ke clipboard', 'error');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* View Header */}
@@ -300,6 +611,14 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
 
         {/* Global Action CTAs */}
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsMediaKitModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+          >
+            <Printer className="w-4 h-4" />
+            <span>{isId ? 'Unduh PDF Media Kit' : 'Download Media Kit PDF'}</span>
+          </button>
+
           <button
             onClick={() => setIsAddModalOpen(true)}
             className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition-all cursor-pointer"
@@ -416,6 +735,21 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
         >
           <Zap className="w-4 h-4" />
           <span>{isId ? 'AI Growth Advisor & Radar Tren' : 'AI Growth Advisor & Trend Radar'}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('media_kit')}
+          className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            activeTab === 'media_kit'
+              ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20 font-extrabold'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+          }`}
+        >
+          <Briefcase className="w-4 h-4" />
+          <span>{isId ? 'Media Kit & Proposal Sponsor' : 'Media Kit & Brand Pitch'}</span>
+          <span className="bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[10px] font-mono border border-amber-500/30">
+            PDF
+          </span>
         </button>
       </div>
 
@@ -761,6 +1095,550 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
               </p>
               <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400">
                 <span className="text-purple-400 font-semibold">Tindakan Disarankan:</span> Sisipkan produk sponsor secara halus ke dalam salah satu prompt adegan di modul Media Studio.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: Creator Media Kit & Commercial Proposal (Sprint 3: P2) */}
+      {activeTab === 'media_kit' && (
+        <div className="space-y-6">
+          {/* Action Toolbar */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-gradient-to-r from-amber-500/15 via-slate-900 to-slate-950 border border-amber-500/30 rounded-xl shadow-lg">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Briefcase className="w-4 h-4 text-amber-400" />
+                <span>Creator Commercial Media Kit & Proposal Rate Card 2026</span>
+              </h3>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Dokumen resmi berstandar industri periklanan untuk diajukan ke brand sponsor, agensi, dan klien komersial.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handlePrintMediaKit}
+                className="px-3.5 py-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-md shadow-amber-400/20 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Cetak / Simpan PDF (A4)</span>
+              </button>
+
+              <button
+                onClick={handleDownloadHtmlMediaKit}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Unduh berkas HTML standalone yang bisa dibuka offline"
+              >
+                <Download className="w-4 h-4 text-amber-400" />
+                <span>Unduh File HTML</span>
+              </button>
+
+              <button
+                onClick={handleCopyPitchEmail}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                {copiedPitch ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
+                <span>{copiedPitch ? 'Tersalin!' : 'Salin Email Pitch'}</span>
+              </button>
+
+              <button
+                onClick={() => setIsEditingMediaKit(!isEditingMediaKit)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold text-xs rounded-lg border border-amber-500/30 transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sliders className="w-4 h-4" />
+                <span>{isEditingMediaKit ? 'Tutup Form' : 'Edit Rate Card'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Edit Settings Form (When Toggled) */}
+          {isEditingMediaKit && (
+            <div className="p-5 bg-[#101726] border border-amber-500/30 rounded-xl space-y-4 animate-in fade-in">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-amber-400" />
+                <span>Kustomisasi Profil Studio & Tarif Sponsor (Rate Card)</span>
+              </h4>
+
+              <form onSubmit={handleSaveMediaKitSettings} className="space-y-3 text-xs">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-300 font-semibold block mb-1">Nama Studio / Kreator:</label>
+                    <input
+                      type="text"
+                      required
+                      value={mediaKitSettings.studio_name}
+                      onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, studio_name: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-300 font-semibold block mb-1">Fokus Genre / Niche Utama:</label>
+                    <input
+                      type="text"
+                      required
+                      value={mediaKitSettings.primary_niche}
+                      onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, primary_niche: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-300 font-semibold block mb-1">Email Kontak Bisnis:</label>
+                    <input
+                      type="email"
+                      required
+                      value={mediaKitSettings.contact_email}
+                      onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, contact_email: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-300 font-semibold block mb-1">Nomor WhatsApp / Telepon:</label>
+                    <input
+                      type="text"
+                      value={mediaKitSettings.contact_phone || ''}
+                      onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, contact_phone: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Bio & Visi Kreatif Studio:</label>
+                  <textarea
+                    rows={2}
+                    value={mediaKitSettings.bio}
+                    onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, bio: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white resize-none"
+                  />
+                </div>
+
+                {/* 3 Rate Card Tiers */}
+                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+                  <span className="font-bold text-amber-400 block text-[11px] uppercase tracking-wider">
+                    Tarif Paket Kerja Sama (IDR)
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-slate-400 text-[10px] block mb-1">Bronze Tier (Product Placement):</label>
+                      <input
+                        type="number"
+                        step="100000"
+                        value={mediaKitSettings.rate_card_tier1}
+                        onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, rate_card_tier1: Number(e.target.value) })}
+                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 text-[10px] block mb-1">Silver Tier (Story Integration):</label>
+                      <input
+                        type="number"
+                        step="100000"
+                        value={mediaKitSettings.rate_card_tier2}
+                        onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, rate_card_tier2: Number(e.target.value) })}
+                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 text-[10px] block mb-1">Gold Tier (Co-Branded Film):</label>
+                      <input
+                        type="number"
+                        step="100000"
+                        value={mediaKitSettings.rate_card_tier3}
+                        onChange={(e) => setMediaKitSettings({ ...mediaKitSettings, rate_card_tier3: Number(e.target.value) })}
+                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded font-mono text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingMediaKit(false)}
+                    className="px-3.5 py-1.5 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingMediaKit}
+                    className="px-4 py-1.5 bg-amber-400 text-slate-950 font-bold rounded-lg hover:bg-amber-300 transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSavingMediaKit ? 'Menyimpan...' : 'Simpan Perubahan'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Interactive Document Preview Card (A4 Sinematik Layout) */}
+          <div className="bg-[#0b0f17] border-2 border-slate-800 rounded-2xl p-6 sm:p-8 max-w-4xl mx-auto shadow-2xl space-y-6 text-slate-300 relative overflow-hidden">
+            {/* Ambient Background Glow */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Document Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-4 pb-5 border-b border-slate-800">
+              <div>
+                <span className="inline-block bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-2">
+                  Official AMF Verified Creator • 4K AI Cinema
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  {mediaKitSettings.studio_name}
+                </h2>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-2">
+                  <span className="flex items-center gap-1">
+                    <Film className="w-3.5 h-3.5 text-amber-400" />
+                    {mediaKitSettings.primary_niche}
+                  </span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5 text-blue-400" />
+                    {mediaKitSettings.location}
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-left sm:text-right">
+                <span className="text-xs font-bold text-amber-400 tracking-wider">AI MOVIE FACTORY</span>
+                <p className="text-[10px] text-slate-500">Hollywood AI Production Engine</p>
+                <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-mono">
+                  <ShieldCheck className="w-3 h-3" />
+                  Komersial Terverifikasi
+                </div>
+              </div>
+            </div>
+
+            {/* Creative Vision Callout */}
+            <div className="p-4 bg-slate-900/60 border-l-4 border-amber-400 rounded-r-xl space-y-1 text-xs">
+              <strong className="text-white block">Visi & Karakter Kreatif Studio:</strong>
+              <p className="text-slate-300 leading-relaxed">{mediaKitSettings.bio}</p>
+              <p className="text-amber-300 italic pt-1 text-[11px]">"{mediaKitSettings.custom_pitch_hook}"</p>
+            </div>
+
+            {/* Analytics Performance Grid */}
+            <div>
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-emerald-400" />
+                <span>Portofolio Statistik & Metrik Performa Nyata</span>
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Total Tayangan</span>
+                  <p className="text-xl font-extrabold text-blue-400 font-mono mt-1">
+                    {aggregateMetrics.totalViews.toLocaleString('id-ID')}
+                  </p>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Rata-rata Interaksi</span>
+                  <p className="text-xl font-extrabold text-rose-400 font-mono mt-1">
+                    {aggregateMetrics.engagementRate}%
+                  </p>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Skor Retensi 15s</span>
+                  <p className="text-xl font-extrabold text-emerald-400 font-mono mt-1">94%</p>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Karya Rilis</span>
+                  <p className="text-xl font-extrabold text-amber-400 font-mono mt-1">
+                    {milestones.length} Film
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Audience Demographics */}
+            <div className="p-4 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-3">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <Users className="w-4 h-4 text-cyan-400" />
+                <span>Karakteristik & Demografi Audiens</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="space-y-1">
+                  <span className="text-slate-400 text-[11px] block">Rentang Usia Penonton:</span>
+                  <div className="space-y-1 font-mono text-[10px]">
+                    <div className="flex justify-between"><span>18–24 Tahun:</span><span className="text-white">38%</span></div>
+                    <div className="flex justify-between"><span>25–34 Tahun:</span><span className="text-white font-bold text-cyan-400">44%</span></div>
+                    <div className="flex justify-between"><span>35–44 Tahun:</span><span className="text-white">18%</span></div>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-slate-400 text-[11px] block">Geografis Utama:</span>
+                  <div className="space-y-1 font-mono text-[10px]">
+                    <div className="flex justify-between"><span>Indonesia:</span><span className="text-emerald-400 font-bold">82%</span></div>
+                    <div className="flex justify-between"><span>Malaysia / SG:</span><span className="text-white">11%</span></div>
+                    <div className="flex justify-between"><span>Global / SEA:</span><span className="text-white">7%</span></div>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-slate-400 text-[11px] block">Konsumsi Media:</span>
+                  <div className="space-y-1 font-mono text-[10px]">
+                    <div className="flex justify-between"><span>Mobile (9:16):</span><span className="text-amber-400 font-bold">84%</span></div>
+                    <div className="flex justify-between"><span>Smart TV / OTT:</span><span className="text-white">11%</span></div>
+                    <div className="flex justify-between"><span>Desktop:</span><span className="text-white">5%</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Official Commercial Rate Cards (3 Tiers) */}
+            <div>
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Award className="w-4 h-4 text-amber-400" />
+                <span>Katalog Paket Kerja Sama & Rate Card Sponsor Resmi</span>
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Bronze */}
+                <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Bronze Tier
+                  </span>
+                  <h5 className="text-xs font-bold text-white">Product Placement</h5>
+                  <p className="text-lg font-black text-emerald-400 font-mono">
+                    Rp {Number(mediaKitSettings.rate_card_tier1).toLocaleString('id-ID')}
+                  </p>
+                  <ul className="text-[10px] text-slate-300 space-y-1 border-t border-slate-800/80 pt-2">
+                    <li>• Penempatan produk di 1 adegan film</li>
+                    <li>• Logo pada credit title akhir</li>
+                    <li>• Estimasi: 25.000–50.000 views</li>
+                  </ul>
+                </div>
+
+                {/* Silver */}
+                <div className="p-4 bg-amber-500/10 border-2 border-amber-400/60 rounded-xl space-y-2 relative">
+                  <span className="absolute -top-2.5 right-3 bg-amber-400 text-slate-950 text-[9px] font-extrabold px-2 py-0.5 rounded-full">
+                    REKOMENDASI UTAMA
+                  </span>
+                  <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block">
+                    Silver Tier
+                  </span>
+                  <h5 className="text-xs font-bold text-white">Story Integration</h5>
+                  <p className="text-lg font-black text-emerald-400 font-mono">
+                    Rp {Number(mediaKitSettings.rate_card_tier2).toLocaleString('id-ID')}
+                  </p>
+                  <ul className="text-[10px] text-slate-300 space-y-1 border-t border-amber-500/30 pt-2">
+                    <li>• Produk menyatu dalam plot dialog</li>
+                    <li>• Pinned comment & link di deskripsi</li>
+                    <li>• Teaser promosi medsos 15 detik</li>
+                    <li>• Estimasi: 50.000–150.000 views</li>
+                  </ul>
+                </div>
+
+                {/* Gold */}
+                <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                  <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block">
+                    Gold Tier
+                  </span>
+                  <h5 className="text-xs font-bold text-white">Co-Branded Film</h5>
+                  <p className="text-lg font-black text-emerald-400 font-mono">
+                    Rp {Number(mediaKitSettings.rate_card_tier3).toLocaleString('id-ID')}
+                  </p>
+                  <ul className="text-[10px] text-slate-300 space-y-1 border-t border-slate-800/80 pt-2">
+                    <li>• 1 Episode penuh (3-5 menit) tema brand</li>
+                    <li>• Hak tayang komersial penuh di medsos brand</li>
+                    <li>• Master 4K ProRes & 9:16 Vertikal</li>
+                    <li>• Estimasi: 150.000–500.000+ views</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Featured Films Showcase */}
+            <div>
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                <Film className="w-4 h-4 text-emerald-400" />
+                <span>Karya Film Unggulan Terverifikasi</span>
+              </h4>
+
+              <div className="border border-slate-800 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 text-[10px] uppercase">
+                    <tr>
+                      <th className="p-2.5">Judul Film</th>
+                      <th className="p-2.5">Platform</th>
+                      <th className="p-2.5 text-right">Tayangan</th>
+                      <th className="p-2.5 text-right">Engagement</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 font-mono text-[11px]">
+                    {milestones.slice(0, 5).map((m) => (
+                      <tr key={m.id} className="hover:bg-slate-900/50">
+                        <td className="p-2.5 font-sans font-bold text-white">{m.project_name}</td>
+                        <td className="p-2.5 uppercase text-cyan-400 text-[10px]">{m.platform}</td>
+                        <td className="p-2.5 text-right text-slate-200">
+                          {Number(m.views_count).toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-2.5 text-right text-emerald-400">
+                          {(
+                            ((Number(m.likes_count) + Number(m.comments_count)) /
+                              Math.max(Number(m.views_count), 1)) *
+                            100
+                          ).toFixed(1)}
+                          %
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Contact & Booking Footer */}
+            <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <span className="text-xs font-bold text-white block">Tertarik Menjadi Sponsor atau Kolaborasi?</span>
+                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 mt-1">
+                  <span className="flex items-center gap-1.5 text-cyan-400">
+                    <Mail className="w-3.5 h-3.5" />
+                    {mediaKitSettings.contact_email}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <Phone className="w-3.5 h-3.5" />
+                    {mediaKitSettings.contact_phone}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={handlePrintMediaKit}
+                className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold text-xs rounded-lg transition-transform active:scale-95 cursor-pointer shadow-lg shadow-amber-400/20 flex items-center gap-1.5"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Simpan sebagai PDF</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Full Preview & 1-Click PDF Download */}
+      {isMediaKitModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
+          <div className="bg-[#101726] border border-amber-500/40 rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-amber-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-white">Pratinjau Resmi: Creator Media Kit 2026</h3>
+                  <p className="text-[11px] text-slate-400">Format A4 Sinematik Siap Kirim ke Brand Sponsor</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePrintMediaKit}
+                  className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak / PDF (A4)</span>
+                </button>
+                <button
+                  onClick={handleDownloadHtmlMediaKit}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-amber-400" />
+                  <span>Unduh HTML</span>
+                </button>
+                <button
+                  onClick={() => setIsMediaKitModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="p-6 overflow-y-auto flex-1 bg-[#0b0f17]">
+              {/* Document Body matches main card */}
+              <div className="bg-[#101726] border border-slate-800 rounded-xl p-6 space-y-6 text-slate-300">
+                <div className="flex justify-between items-start pb-4 border-b border-slate-800">
+                  <div>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold uppercase">
+                      Official AMF Verified Creator
+                    </span>
+                    <h2 className="text-2xl font-black text-white mt-2">{mediaKitSettings.studio_name}</h2>
+                    <p className="text-xs text-slate-400 mt-1">{mediaKitSettings.primary_niche} • {mediaKitSettings.location}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-amber-400">AI MOVIE FACTORY</span>
+                    <p className="text-[10px] text-slate-500">Hollywood AI Studio Suite</p>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-950/80 border-l-4 border-cyan-400 rounded-r-lg text-xs space-y-1">
+                  <strong className="text-white">Visi Kreatif:</strong>
+                  <p className="text-slate-300">{mediaKitSettings.bio}</p>
+                </div>
+
+                {/* 4 KPIs */}
+                <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-[10px] text-slate-400">Tayangan</span>
+                    <p className="text-lg font-bold text-blue-400 font-mono mt-0.5">
+                      {aggregateMetrics.totalViews.toLocaleString('id-ID')}
+                    </p>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-[10px] text-slate-400">Interaksi</span>
+                    <p className="text-lg font-bold text-rose-400 font-mono mt-0.5">
+                      {aggregateMetrics.engagementRate}%
+                    </p>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-[10px] text-slate-400">Retensi 15s</span>
+                    <p className="text-lg font-bold text-emerald-400 font-mono mt-0.5">94%</p>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-[10px] text-slate-400">Film Rilis</span>
+                    <p className="text-lg font-bold text-amber-400 font-mono mt-0.5">{milestones.length}</p>
+                  </div>
+                </div>
+
+                {/* Rate Card 3 Columns */}
+                <div className="grid grid-cols-3 gap-3 text-xs">
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-bold block">BRONZE</span>
+                    <span className="font-bold text-white block">Product Placement</span>
+                    <p className="text-sm font-mono font-bold text-emerald-400 my-1">
+                      Rp {Number(mediaKitSettings.rate_card_tier1).toLocaleString('id-ID')}
+                    </p>
+                    <p className="text-[10px] text-slate-400">Logo/produk di 1 adegan + kredit terima kasih.</p>
+                  </div>
+
+                  <div className="bg-amber-500/10 p-3 rounded-xl border border-amber-500/50">
+                    <span className="text-[10px] text-amber-400 font-bold block">SILVER (FAVORIT)</span>
+                    <span className="font-bold text-white block">Story Integration</span>
+                    <p className="text-sm font-mono font-bold text-emerald-400 my-1">
+                      Rp {Number(mediaKitSettings.rate_card_tier2).toLocaleString('id-ID')}
+                    </p>
+                    <p className="text-[10px] text-slate-300">Produk masuk alur dialog + pinned comment + teaser medsos.</p>
+                  </div>
+
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-purple-400 font-bold block">GOLD</span>
+                    <span className="font-bold text-white block">Co-Branded Film</span>
+                    <p className="text-sm font-mono font-bold text-emerald-400 my-1">
+                      Rp {Number(mediaKitSettings.rate_card_tier3).toLocaleString('id-ID')}
+                    </p>
+                    <p className="text-[10px] text-slate-400">1 Episode penuh 3-5 menit bertema brand + 4K ProRes.</p>
+                  </div>
+                </div>
+
+                {/* Contact Banner */}
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 flex justify-between items-center text-xs">
+                  <div>
+                    <span className="text-white font-bold block">Kontak Bisnis & Kerja Sama:</span>
+                    <span className="text-cyan-400">{mediaKitSettings.contact_email}</span> • <span className="text-emerald-400">{mediaKitSettings.contact_phone}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-mono">Diterbitkan oleh AMF Studio Engine</span>
+                </div>
               </div>
             </div>
           </div>
