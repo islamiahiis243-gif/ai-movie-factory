@@ -4,7 +4,7 @@
  * balance verification with row-level locks, and usage records.
  */
 
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 export interface CreditBalanceResult {
   settledBalance: number;

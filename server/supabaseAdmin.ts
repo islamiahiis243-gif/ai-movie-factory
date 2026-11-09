@@ -3,7 +3,8 @@
  * Authenticates user bearer tokens and provides service_role database client.
  */
 
-import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 export function getSupabaseAdmin(): SupabaseClient {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
