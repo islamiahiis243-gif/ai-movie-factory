@@ -31,11 +31,11 @@ export default function handler(req: any, res: any) {
   const payload = {
     status: 'ok',
     service: 'ai-movie-factory',
-    version: '1.15.7',
+    version: '1.15.8',
     runtime: 'vercel-serverless-node',
     timestamp: new Date().toISOString(),
     ssotCompliance: {
-      schemaVersion: 'V3.9 Live Analytics Sync',
+      schemaVersion: 'V3.12 Financial Hardening & Live Analytics',
       protectedTablesCount: 24,
       storageBuckets: ['character-avatars', 'project-assets'],
       serverSideSecretsProtected: true,

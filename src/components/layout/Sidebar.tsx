@@ -141,8 +141,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           )}
         </div>
         <div className="mt-2 pt-2 border-t border-slate-900 flex items-center justify-between text-[10px] font-mono text-slate-500">
-          <span>AMF Engine</span>
-          <span>v3.3.0 (Production)</span>
+          <span>AMF Release</span>
+          <span className="text-emerald-400 font-semibold">v1.15.8 (Live)</span>
         </div>
       </div>
     </aside>
