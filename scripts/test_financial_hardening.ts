@@ -23,8 +23,10 @@ import {
   recordAiUsage,
 } from '../api/lib/credits/creditEngine';
 import aiGenerateHandler from '../api/ai-generate';
-import creditBalanceHandler from '../api/credits/balance';
-import creditTransactionHandler from '../api/credits/transaction';
+import {
+  balanceHandler as creditBalanceHandler,
+  transactionHandler as creditTransactionHandler
+} from '../api/credits/[action]';
 import paymentWebhookHandler, { verifyMidtransSignature } from '../api/payment-webhook';
 import {
   calculateProviderCost,

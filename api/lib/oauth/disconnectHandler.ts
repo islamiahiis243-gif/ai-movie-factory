@@ -9,9 +9,9 @@
  * - Zero token value logging
  */
 
-import { authenticateServerlessRequest } from '../lib/supabaseAdmin';
-import { getProviderConfig } from '../lib/oauthProviders';
-import { decryptOAuthToken } from '../lib/oauthCrypto';
+import { authenticateServerlessRequest } from '../supabaseAdmin';
+import { getProviderConfig } from '../oauthProviders';
+import { decryptOAuthToken } from '../oauthCrypto';
 
 export type RemoteRevocationStatus = 'success' | 'failed' | 'unsupported' | 'pending';
 

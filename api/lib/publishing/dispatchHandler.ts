@@ -1,10 +1,11 @@
 /**
- * Vercel Serverless Function: POST /api/publishing/cancel
- * AI Movie Factory — Publishing Job Cancellation Endpoint (T9.4)
+ * Vercel Serverless Function: POST /api/publishing/dispatch
+ * AI Movie Factory — Publishing Job Dispatcher Endpoint (T9.4)
+ * Authenticates creator, validates job ownership, enforces idempotency, and executes publishing.
  */
 
-import { authenticateServerlessRequest } from '../lib/supabaseAdmin';
-import { PublishingDispatcher } from '../lib/publishing/dispatcher';
+import { authenticateServerlessRequest } from '../supabaseAdmin';
+import { PublishingDispatcher } from './dispatcher';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -14,15 +15,16 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { user } = await authenticateServerlessRequest(req);
-    const { jobId } = req.body || {};
+    const { jobId, idempotencyKey } = req.body || {};
 
     if (!jobId || typeof jobId !== 'string') {
       return res.status(400).json({ error: 'Parameter "jobId" diperlukan.' });
     }
 
-    const job = await PublishingDispatcher.cancelJob({
+    const job = await PublishingDispatcher.dispatchJob({
       jobId,
       userId: user.id,
+      idempotencyKey,
     });
 
     return res.status(200).json({
@@ -37,7 +39,7 @@ export default async function handler(req: any, res: any) {
       : 500;
 
     return res.status(status).json({
-      error: err.message || 'Gagal membatalkan job publikasi.',
+      error: err.message || 'Gagal memproses dispatch publikasi.',
     });
   }
 }

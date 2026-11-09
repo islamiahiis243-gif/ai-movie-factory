@@ -4,8 +4,8 @@
  * Returns authenticated user's time-series analytics snapshots.
  */
 
-import { authenticateServerlessRequest } from '../lib/supabaseAdmin';
-import { AnalyticsService } from '../lib/analytics/analyticsService';
+import { authenticateServerlessRequest } from '../supabaseAdmin';
+import { AnalyticsService } from './analyticsService';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {

@@ -4,8 +4,8 @@
  * Authenticates creator, validates job ownership, pulls real-time metrics, and records snapshot.
  */
 
-import { authenticateServerlessRequest } from '../lib/supabaseAdmin';
-import { AnalyticsService } from '../lib/analytics/analyticsService';
+import { authenticateServerlessRequest } from '../supabaseAdmin';
+import { AnalyticsService } from './analyticsService';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {

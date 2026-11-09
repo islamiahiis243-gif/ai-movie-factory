@@ -87,10 +87,16 @@ async function runVercelGoLiveTests() {
   }
 
   // Ensure worker files exist and are ready for cron / external trigger
-  const publishingWorkerFile = path.join(rootDir, 'api', 'publishing', 'worker.ts');
-  const analyticsWorkerFile = path.join(rootDir, 'api', 'analytics', 'sync-worker.ts');
-  if (!fs.existsSync(publishingWorkerFile)) throw new Error('Missing api/publishing/worker.ts');
-  if (!fs.existsSync(analyticsWorkerFile)) throw new Error('Missing api/analytics/sync-worker.ts');
+  const hasPublishingWorker =
+    fs.existsSync(path.join(rootDir, 'api', 'publishing', 'worker.ts')) ||
+    fs.existsSync(path.join(rootDir, 'api', 'publishing', '_worker.ts')) ||
+    fs.existsSync(path.join(rootDir, 'api', 'publishing', '[action].ts'));
+  const hasAnalyticsWorker =
+    fs.existsSync(path.join(rootDir, 'api', 'analytics', 'sync-worker.ts')) ||
+    fs.existsSync(path.join(rootDir, 'api', 'analytics', '_sync-worker.ts')) ||
+    fs.existsSync(path.join(rootDir, 'api', 'analytics', '[action].ts'));
+  if (!hasPublishingWorker) throw new Error('Missing publishing worker endpoint in api/publishing/');
+  if (!hasAnalyticsWorker) throw new Error('Missing analytics worker endpoint in api/analytics/');
 
   if (Array.isArray(vercelConfig.crons)) {
     for (const cron of vercelConfig.crons) {

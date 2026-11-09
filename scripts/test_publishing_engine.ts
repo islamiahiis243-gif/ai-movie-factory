@@ -17,10 +17,12 @@ import {
 } from '../api/lib/publishing/jobProcessor';
 import { PublishingDispatcher } from '../api/lib/publishing/dispatcher';
 import { PublishJobRecord } from '../api/lib/publishing/types';
-import dispatchHandler from '../api/publishing/dispatch';
-import statusHandler from '../api/publishing/status';
-import cancelHandler from '../api/publishing/cancel';
-import workerHandler from '../api/publishing/worker';
+import {
+  dispatchHandler,
+  statusHandler,
+  cancelHandler,
+  workerHandler,
+} from '../api/publishing/[action]';
 
 function createMockRes() {
   const headers: Record<string, string> = {};

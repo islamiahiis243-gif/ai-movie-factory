@@ -1,18 +1,17 @@
 /**
- * Vercel Serverless Function: POST /api/credits/transaction
+ * Serverless Handler: POST /api/credits/transaction
  * AI Movie Factory — Dedicated Credit Transaction Operations
- * Decoupled from payment-webhook. Handles reserve, settle, release, and refund.
  */
 
-import { authenticateServerlessRequest } from '../lib/supabaseAdmin';
+import { authenticateServerlessRequest } from '../supabaseAdmin';
 import {
   reserveUserCredits,
   settleUserCredits,
   releaseUserCredits,
   getUserCreditBalance,
-} from '../lib/credits/creditEngine';
+} from './creditEngine';
 
-export default async function handler(req: any, res: any) {
+export default async function transactionHandler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });

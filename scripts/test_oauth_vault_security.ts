@@ -31,9 +31,11 @@ import {
   _resetMemoryTransactionStore,
 } from '../api/lib/oauthTransactionStore';
 import { getProviderConfig } from '../api/lib/oauthProviders';
-import connectHandler from '../api/oauth/connect';
-import connectionsHandler from '../api/oauth/connections';
-import disconnectHandler from '../api/oauth/disconnect';
+import {
+  connectHandler,
+  connectionsHandler,
+  disconnectHandler,
+} from '../api/oauth/[action]';
 
 function createMockRes() {
   const headers: Record<string, string> = {};

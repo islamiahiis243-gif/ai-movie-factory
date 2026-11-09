@@ -5,8 +5,8 @@
  * Protected by CRON_SECRET or SUPABASE_SECRET_KEY.
  */
 
-import { getSupabaseAdmin } from '../lib/supabaseAdmin';
-import { AnalyticsService } from '../lib/analytics/analyticsService';
+import { getSupabaseAdmin } from '../supabaseAdmin';
+import { AnalyticsService } from './analyticsService';
 
 export default async function handler(req: any, res: any) {
   // Support both GET (invoked by Vercel Cron) and POST (manual/webhook runners)

@@ -20,8 +20,10 @@ import {
 } from '../api/lib/analytics/analyticsService';
 import { _setMemoryJob } from '../api/lib/publishing/jobProcessor';
 import { PublishJobRecord } from '../api/lib/publishing/types';
-import syncHandler from '../api/analytics/sync';
-import syncWorkerHandler from '../api/analytics/sync-worker';
+import {
+  syncHandler,
+  syncWorkerHandler,
+} from '../api/analytics/[action]';
 
 function createMockRes() {
   const headers: Record<string, string> = {};
