@@ -1625,6 +1625,48 @@ export async function approveSceneScript(
   return { success: false, error: 'Scene not found' };
 }
 
+export async function invalidateSceneApproval(
+  sceneId: string,
+  _reason?: string
+): Promise<{ success: boolean; error: string | null }> {
+  const now = new Date().toISOString();
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { error } = await supabase
+        .from('scenes')
+        .update({
+          approval_status: 'draft',
+          approved_at: null,
+          approved_by: null,
+          updated_at: now,
+        })
+        .eq('id', sceneId);
+
+      if (error) throw error;
+      return { success: true, error: null };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to invalidate scene approval' };
+    }
+  }
+
+  // Local fallback
+  const all = getLocalScenes();
+  const idx = all.findIndex(s => s.id === sceneId);
+  if (idx !== -1) {
+    all[idx] = {
+      ...all[idx],
+      approval_status: 'draft',
+      approved_at: undefined,
+      approved_by: undefined,
+      updated_at: now,
+    };
+    saveLocalScenes(all);
+    return { success: true, error: null };
+  }
+  return { success: false, error: 'Scene not found' };
+}
+
 export async function createScriptVersionRecord(
   sceneId: string,
   data: {

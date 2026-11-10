@@ -10,8 +10,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test_vercel_golive_readiness.ts && tsx scripts/test_oauth_vault_security.ts && tsx scripts/test_publishing_engine.ts && tsx scripts/test_analytics_sync.ts",
-    "verify:golive": "tsx scripts/test_vercel_golive_readiness.ts && tsx scripts/test_oauth_vault_security.ts && tsx scripts/test_publishing_engine.ts && tsx scripts/test_analytics_sync.ts"
+    "test": "tsx scripts/test_milestone_gates_enforcement.ts && tsx scripts/test_vercel_golive_readiness.ts && tsx scripts/test_oauth_vault_security.ts && tsx scripts/test_publishing_engine.ts && tsx scripts/test_analytics_sync.ts",
+    "verify:golive": "tsx scripts/test_milestone_gates_enforcement.ts && tsx scripts/test_vercel_golive_readiness.ts && tsx scripts/test_oauth_vault_security.ts && tsx scripts/test_publishing_engine.ts && tsx scripts/test_analytics_sync.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

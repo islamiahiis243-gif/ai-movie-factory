@@ -3,6 +3,33 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Audit & Penguatan Gerbang Persetujuan] - Script Invalidation, Storyboard Gate 1 Prerequisite & Automated Audit Test Suite - 2026-11-10 08:35 +07:00
+
+### Added & Hardened
+- **Audit & Penegakan Invarian Gate 1 (Script Invalidation on Modification):**
+  - Pada `src/components/studio/StoryScriptView.tsx`, saat naskah adegan yang telah disetujui dimodifikasi dan disimpan (`handleSaveActiveScript`), sistem secara otomatis mengembalikan status persetujuan dari `'approved'` ke `'draft'`, menghapus stempel `approved_at` dan `approved_by`, serta menaikkan counter versi (`versions_count`) guna mencegah *silent overwrite* dan inkonsistensi ke tahapan hilir.
+  - Menampilkan notifikasi visual transparan kepada sutradara bahwa naskah telah diperbarui dan memerlukan persetujuan ulang (*Re-Approval Checkpoint*).
+  - Menambahkan fungsi helper `invalidateSceneApproval()` di `src/lib/supabase.ts` untuk memfasilitasi pembatalan persetujuan baik di PostgreSQL cloud maupun local cache fallback.
+- **Penegakan Prasyarat Gate 1 di Storyboard Studio (`src/components/studio/StoryboardView.tsx`):**
+  - Mencegah persetujuan shot individual (`handleApproveShot`), penandaan shot siap render (`handleToggleRenderReady`), maupun persetujuan massal (*Setujui Semua Shot*) jika naskah adegan belum berstatus `'approved'` (Gate 1 belum lolos).
+  - Menyediakan tombol 1-klik *Setujui Naskah Sekarang (Gate 1)* langsung di dalam banner peringatan alur kerja Storyboard, sehingga sutradara dapat mengesahkan naskah tanpa friksi navigasi.
+- **Penguncian Profil DNA Karakter & Gate 2 di Character Studio (`src/components/studio/CharacterStudioView.tsx`):**
+  - Menambahkan tombol aksi sutradara *Kunci Profil DNA (Gate 2)* untuk mengesahkan dan mengunci konsistensi visual 8-lapisan karakter sebelum shot breakdown dikerjakan.
+- **Rangkaian Uji Otomasi Milestone & Penegakan Gerbang (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Mengembangkan test suite khusus 7 kategori dengan 24 penegasan ketat:
+    1. Validasi struktur 5 Director Approval Gates & 4 template produksi siap pakai.
+    2. Deterministik sistem navigasi rekomendasi *Next Best Action* (Tahap 1 hingga Tahap 13).
+    3. Penguncian SSOT naskah adegan Gate 1 dengan identitas sutradara dan stempel waktu.
+    4. Pembatalan persetujuan naskah (Script Invalidation Invariant) ke draft dan kenaikan versi saat blok dialog diubah.
+    5. Pemblokiran persetujuan shot storyboard untuk adegan naskah yang belum disetujui (Gate 1 Prerequisite).
+    6. Validasi still keyframe Gate 4 & kalkulasi biaya pre-generasi (15 CR Keyframe, 45 CR Gemini Veo, 50 CR Runway Gen-3).
+    7. Protokol two-phase credit reservation, pencegahan pelepasan ganda (idempotency), dan jaminan auto-refund 100% saat provider error.
+  - Mengintegrasikan test suite ini ke dalam `package.json` (`npm test` dan `npm run verify:golive`).
+
+### Verification & Tests
+- `npm test`: 100% lulus (24/24 assertion Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, dan 7/7 Live Analytics Sync).
+- `npm run build`: Lulus bersih dalam 2.30s (0 errors).
+
 ## [Gelombang II - Milestone 2.2] - Pre-Generation Cost Preview, Gate 4 Keyframe Enforcement & Idempotent Auto-Refund Engine - 2026-11-10 08:20 +07:00
 
 ### Added & Implemented

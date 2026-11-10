@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Project, SceneItem, Character } from '../../types/database';
-import { fetchProjectScenes, fetchCharacters, updateSceneRecord } from '../../lib/supabase';
+import { fetchProjectScenes, fetchCharacters, updateSceneRecord, approveSceneScript } from '../../lib/supabase';
 
 interface StoryboardShot {
   id: string;
@@ -228,12 +228,29 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
     onShowToast('Prompt visual storyboard berhasil disalin ke clipboard.', 'success');
   };
 
+  const activeScene = scenes.find(s => s.id === selectedSceneId);
+  const currentProject = projects.find(p => p.id === selectedProjectId);
+
   const handleApproveShot = (shotId: string) => {
+    if (activeScene && activeScene.approval_status !== 'approved') {
+      onShowToast(
+        `Naskah Adegan #${activeScene.scene_number} belum disetujui (Gate 1 belum lolos). Setujui naskah adegan terlebih dahulu sebelum menyetujui shot storyboard.`,
+        'error'
+      );
+      return;
+    }
     setShots(prev => prev.map(s => s.id === shotId ? { ...s, status: 'approved' } : s));
-    onShowToast('Shot storyboard disetujui untuk produksi!', 'success');
+    onShowToast('Shot storyboard disetujui untuk produksi (Gate 3)!', 'success');
   };
 
   const handleToggleRenderReady = (shotId: string) => {
+    if (activeScene && activeScene.approval_status !== 'approved') {
+      onShowToast(
+        `Naskah Adegan #${activeScene.scene_number} belum disetujui (Gate 1 belum lolos). Setujui naskah adegan terlebih dahulu.`,
+        'error'
+      );
+      return;
+    }
     setShots(prev => prev.map(s => s.id === shotId ? { 
       ...s, 
       status: s.status === 'render_ready' ? 'approved' : 'render_ready' 
@@ -241,8 +258,17 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
     onShowToast('Status shot diperbarui.', 'info');
   };
 
-  const activeScene = scenes.find(s => s.id === selectedSceneId);
-  const currentProject = projects.find(p => p.id === selectedProjectId);
+  const handleApproveAllShots = () => {
+    if (activeScene && activeScene.approval_status !== 'approved') {
+      onShowToast(
+        `Naskah Adegan #${activeScene.scene_number} belum disetujui (Gate 1). Setujui naskah adegan terlebih dahulu sebelum meloloskan Gate 3 Storyboard.`,
+        'error'
+      );
+      return;
+    }
+    setShots((prev) => prev.map((s) => ({ ...s, status: 'approved' })));
+    onShowToast('Seluruh shot storyboard adegan ini disetujui (Gate 3 Lulus)!', 'success');
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6 animate-fadeIn">
@@ -359,15 +385,30 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left 2 Cols: Shot List Cards */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Gate 1 Dependency Notice */}
+            {/* Gate 1 Dependency Notice with Inline 1-Click Approval */}
             {activeScene && activeScene.approval_status !== 'approved' && (
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-3">
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>
-                    <strong>Peringatan Alur Kerja (Gate 1):</strong> Naskah adegan #{activeScene.scene_number} ini berstatus <em>'{activeScene.approval_status}'</em>. Pastikan naskah disetujui di Cerita & Naskah sebelum eksekusi render riil di Media Studio.
+                    <strong>Peringatan Alur Kerja (Gate 1 Prerequisite):</strong> Naskah adegan #{activeScene.scene_number} ini berstatus <em>'{activeScene.approval_status}'</em>. Persetujuan Gate 1 diperlukan sebelum shot storyboard dapat disetujui (Gate 3).
                   </span>
                 </div>
+                <button
+                  onClick={async () => {
+                    const res = await approveSceneScript(activeScene.id, 'Director via Storyboard');
+                    if (res.error) {
+                      onShowToast(res.error, 'error');
+                    } else {
+                      setScenes(prev => prev.map(s => s.id === activeScene.id ? { ...s, approval_status: 'approved' } : s));
+                      onShowToast(`Naskah Adegan #${activeScene.scene_number} telah disetujui (Gate 1 Lolos)!`, 'success');
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-xs transition-colors cursor-pointer shrink-0 shadow flex items-center gap-1.5"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Setujui Naskah Sekarang (Gate 1)</span>
+                </button>
               </div>
             )}
 
@@ -381,10 +422,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
                 </span>
               </div>
               <button
-                onClick={() => {
-                  setShots((prev) => prev.map((s) => ({ ...s, status: 'approved' })));
-                  onShowToast('Seluruh shot storyboard adegan ini disetujui (Gate 3 Lulus)!', 'success');
-                }}
+                onClick={handleApproveAllShots}
                 className="px-2.5 py-1 bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 border border-amber-400/30 rounded text-xs font-medium transition-colors cursor-pointer"
               >
                 Setujui Semua Shot (Gate 3)

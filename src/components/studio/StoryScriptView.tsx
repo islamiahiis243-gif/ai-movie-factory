@@ -309,11 +309,24 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
     data: Omit<SceneItem, 'id' | 'created_at' | 'updated_at'>
   ) => {
     if (editingScene) {
-      const res = await updateSceneRecord(editingScene.id, data);
+      const wasApproved = editingScene.approval_status === 'approved';
+      const payload: Partial<SceneItem> = {
+        ...data,
+      };
+      if (wasApproved) {
+        payload.approval_status = 'draft';
+        payload.approved_at = undefined;
+        payload.approved_by = undefined;
+      }
+      const res = await updateSceneRecord(editingScene.id, payload);
       if (res.error) {
         onShowToast(res.error, 'error');
       } else {
-        onShowToast('Data adegan berhasil diperbarui.', 'success');
+        if (wasApproved) {
+          onShowToast('Data adegan diperbarui. Persetujuan (Gate 1) dikembalikan ke status Draft untuk ditinjau ulang.', 'info');
+        } else {
+          onShowToast('Data adegan berhasil diperbarui.', 'success');
+        }
         setIsSceneModalOpen(false);
         setEditingScene(null);
         await reloadScenes();
@@ -416,17 +429,38 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
 
   const handleSaveActiveScript = async () => {
     if (!activeScene) return;
-    const res = await updateSceneRecord(activeScene.id, {
+
+    const wasApproved = activeScene.approval_status === 'approved';
+    const nextVer = wasApproved ? (activeScene.versions_count || 1) + 1 : activeScene.versions_count;
+
+    const payload: Partial<SceneItem> = {
       blocks: activeScene.blocks,
       visual_continuity_seed: activeScene.visual_continuity_seed,
       camera_notes: activeScene.camera_notes,
       audio_sound_notes: activeScene.audio_sound_notes,
-    });
+    };
+
+    if (wasApproved) {
+      // Invalidation Invariant: Modifying script blocks of an approved scene invalidates Gate 1
+      payload.approval_status = 'draft';
+      payload.approved_at = undefined;
+      payload.approved_by = undefined;
+      payload.versions_count = nextVer;
+    }
+
+    const res = await updateSceneRecord(activeScene.id, payload);
 
     if (res.error) {
       onShowToast(res.error, 'error');
     } else {
-      onShowToast('Naskah adegan berhasil disimpan.', 'success');
+      if (wasApproved) {
+        onShowToast(
+          `Naskah telah diubah. Status persetujuan (Gate 1) otomatis dikembalikan ke "Draft" dan versi dinaikkan ke v${nextVer}. Memerlukan persetujuan sutradara ulang.`,
+          'info'
+        );
+      } else {
+        onShowToast('Naskah adegan berhasil disimpan.', 'success');
+      }
       await reloadScenes();
     }
   };

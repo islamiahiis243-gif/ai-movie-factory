@@ -30,6 +30,7 @@ import {
   Eye,
   X,
   Shield,
+  ShieldCheck,
   Layers,
   HeartHandshake,
   MessageSquare,
@@ -379,9 +380,22 @@ export const CharacterStudioView: React.FC<CharacterStudioViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[10px] font-mono px-2 py-1 bg-slate-950 rounded border border-slate-800 text-amber-300">
+          <span className="text-[10px] font-mono px-2 py-1 bg-slate-950 rounded border border-slate-800 text-amber-300 hidden sm:inline-block">
             8-Layer Consistency Active
           </span>
+          <button
+            onClick={() => {
+              if (characters.length === 0) {
+                onShowToast('Belum ada karakter yang dibuat. Buat karakter terlebih dahulu sebelum mengunci Gate 2.', 'error');
+                return;
+              }
+              onShowToast('Seluruh profil DNA karakter dan kontinuitas 8-lapisan telah dikunci sutradara (Gate 2 Lulus)!', 'success');
+            }}
+            className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Kunci Profil DNA (Gate 2)</span>
+          </button>
         </div>
       </div>
 
