@@ -159,6 +159,11 @@ export interface LocationEntry {
   description: string;
   controlling_faction?: string;
   danger_level?: 'peaceful' | 'moderate' | 'perilous' | 'forbidden';
+  is_approved?: boolean;
+  approval_status?: 'draft' | 'approved';
+  approved_at?: string;
+  approved_by?: string;
+  visual_reference_url?: string;
 }
 
 export interface TimelineEvent {
@@ -184,6 +189,10 @@ export interface WorldBible {
   locations: LocationEntry[];
   timeline: TimelineEvent[];
   reference_notes?: string;
+  is_approved?: boolean;
+  approval_status?: 'draft' | 'approved';
+  approved_at?: string;
+  approved_by?: string;
   created_at: string;
   updated_at: string;
 }

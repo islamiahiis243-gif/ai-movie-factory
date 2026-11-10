@@ -18,6 +18,7 @@ interface AuthContextType {
   signIn: (email: string, pass: string) => Promise<{ error: string | null }>;
   signUp: (email: string, pass: string, name: string) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
+  signInWithGithub: () => Promise<{ error: string | null }>;
   resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   updateProfileData: (updates: Partial<UserProfile>) => Promise<{ error: string | null }>;
@@ -254,6 +255,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error: 'Layanan OAuth memerlukan koneksi cloud Supabase.' };
   };
 
+  const signInWithGithub = async (): Promise<{ error: string | null }> => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'github',
+          options: {
+            redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined
+          }
+        });
+        if (error) return { error: translateAuthError(error.message) };
+        return { error: null };
+      } catch (err: any) {
+        return { error: translateAuthError(err.message || 'Gagal menghubungkan GitHub OAuth.') };
+      }
+    }
+    return { error: 'Layanan OAuth memerlukan koneksi cloud Supabase.' };
+  };
+
   const resetPasswordForEmail = async (email: string): Promise<{ error: string | null }> => {
     const cleanEmail = email.trim().toLowerCase();
     if (isSupabaseConfigured && supabase) {
@@ -317,6 +336,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signIn,
         signUp,
         signInWithGoogle,
+        signInWithGithub,
         resetPasswordForEmail,
         signOut,
         updateProfileData,

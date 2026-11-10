@@ -16,6 +16,8 @@ import {
   AlertCircle,
   FolderKanban,
   Shield,
+  ShieldCheck,
+  Check,
   Layers,
   ChevronRight,
 } from 'lucide-react';
@@ -271,6 +273,59 @@ export const WorldBuilderView: React.FC<WorldBuilderViewProps> = ({
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Gate 2: World & Environment Approval Banner */}
+          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-white">Gate 2: World & Environment Approval Gate</span>
+                <span className="text-[11px] font-mono text-slate-400">
+                  ({bible.locations.length} Lokasi Terdaftar)
+                </span>
+                {bible.locations.length > 0 && (
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                    bible.approval_status === 'approved'
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                  }`}>
+                    {bible.approval_status === 'approved' ? 'Gate 2: World Approved' : 'Siap Disetujui'}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Kunci master environment, lokasi semesta, dan aturan dunia sebelum breakdown shot di Storyboard Studio.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  if (bible.locations.length === 0) {
+                    onShowToast('Belum ada lokasi terdaftar. Tambahkan minimal 1 lokasi semesta sebelum mengunci Gate 2.', 'error');
+                    return;
+                  }
+                  const updatedLocations = bible.locations.map(l => ({ ...l, is_approved: true, approval_status: 'approved' as const }));
+                  const now = new Date().toISOString();
+                  const updatedBible = {
+                    ...bible,
+                    locations: updatedLocations,
+                    approval_status: 'approved' as const,
+                    is_approved: true,
+                    approved_at: now,
+                    approved_by: 'Master Director / Creator'
+                  };
+                  setBible(updatedBible);
+                  saveWorldBibleRecord(selectedProjectId, updatedBible);
+                  onShowToast('Seluruh master lokasi & environment semesta telah disahkan sutradara (Gate 2 World Lulus)!', 'success');
+                }}
+                className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Kunci Master Environment (Gate 2)</span>
+              </button>
+            </div>
+          </div>
+
           {/* Sub-tab Navigation (Segmented Control - Buttons Allowed) */}
           <div className="flex items-center gap-1 p-1 bg-slate-900/80 border border-slate-800/80 rounded-lg overflow-x-auto">
             <button
@@ -659,7 +714,18 @@ export const WorldBuilderView: React.FC<WorldBuilderViewProps> = ({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <h4 className="text-sm font-semibold text-slate-100">{loc.name}</h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-semibold text-slate-100">{loc.name}</h4>
+                            <span
+                              className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                                loc.is_approved
+                                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-slate-800 text-slate-400'
+                              }`}
+                            >
+                              {loc.is_approved ? 'G2 APPROVED' : 'DRAFT'}
+                            </span>
+                          </div>
                           <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                             <span>{loc.region || 'Wilayah Umum'}</span>
                             <span aria-hidden="true">·</span>
@@ -667,6 +733,33 @@ export const WorldBuilderView: React.FC<WorldBuilderViewProps> = ({
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              const newApproved = !loc.is_approved;
+                              const updatedLocations = bible.locations.map((l) =>
+                                l.id === loc.id
+                                  ? {
+                                      ...l,
+                                      is_approved: newApproved,
+                                      approval_status: newApproved ? ('approved' as const) : ('draft' as const),
+                                    }
+                                  : l
+                              );
+                              handleFieldChange('locations', updatedLocations);
+                              onShowToast(
+                                newApproved
+                                  ? `Lokasi "${loc.name}" disetujui sebagai Master Environment!`
+                                  : `Status lokasi "${loc.name}" dikembalikan ke Draft.`,
+                                'success'
+                              );
+                            }}
+                            className={`p-1 text-xs rounded transition-colors cursor-pointer ${
+                              loc.is_approved ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-500 hover:text-amber-400'
+                            }`}
+                            title={loc.is_approved ? 'Kunci Master Terverifikasi' : 'Klik untuk Menyetujui Lokasi (Gate 2)'}
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             onClick={() => {
                               setEditingLocation(loc);

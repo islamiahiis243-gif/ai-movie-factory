@@ -364,11 +364,22 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
 
   // Approve Scene Script (SSOT Section 10 & 37)
   const handleApproveScene = async (sceneId: string) => {
+    const targetScene = scenes.find((s) => s.id === sceneId) || activeScene;
+    const currentVer = targetScene?.versions_count || 1;
     const res = await approveSceneScript(sceneId, 'Master Director AI / Creator');
     if (res.error) {
       onShowToast(res.error, 'error');
     } else {
-      onShowToast('Naskah adegan telah disetujui (Approved Checkpoint verified).', 'success');
+      // Record immutable audit trail snapshot (LOCKED_V{n}) in script_versions
+      if (targetScene && targetScene.blocks && targetScene.blocks.length > 0) {
+        await createScriptVersionRecord(sceneId, {
+          version_number: currentVer,
+          changelog_note: `LOCKED_V${currentVer} - Gate 1 Director Script Approval Checkpoint`,
+          blocks: targetScene.blocks,
+          created_by: 'Master Director AI / Creator',
+        });
+      }
+      onShowToast(`Naskah adegan telah dikunci sebagai LOCKED_V${currentVer} (Gate 1 Approved & Audit Trail tercatat).`, 'success');
       await reloadScenes();
     }
   };

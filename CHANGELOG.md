@@ -3,6 +3,39 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Audit Adopsi & Rebuttal] - 18 Master Workflow Stages, Gate 2 World & Character Terpadu, LOCKED_V1 Audit Trail, Google & GitHub OAuth, & Schema Reconciliation - 2026-11-10 16:55 +07:00
+
+### Added, Hardened & Reconciled
+- **Registri Resmi 18 Tahapan Produksi Master Workflow (`src/lib/workflowGates.ts`):**
+  - Mengekspor array terstruktur `MASTER_WORKFLOW_STAGES` yang mendefinisikan 18 tahapan produksi lengkap dari Proyek Setup hingga Monetisasi & Intelijen Bisnis, dengan kode unik, modul target, dan pemetaan eksplisit ke 5 Director Approval Gates.
+- **Penguatan Gate 2 Terpadu: World Builder & Character Studio (`src/components/studio/WorldBuilderView.tsx`, `src/types/database.ts`):**
+  - Menambahkan banner audit sutradara *Gate 2: World & Environment Approval Gate* dan tombol *Kunci Master Environment (Gate 2)* pada World Builder.
+  - Menambahkan metadata status persetujuan (`is_approved`, `approval_status`, `approved_at`, `approved_by`) pada setiap item `LocationEntry` dan `WorldBible`, lengkap dengan tombol toggle persetujuan lokasi individual.
+  - Mengintegrasikan banner audit prasyarat Gate 2 di Storyboard Studio (`src/components/studio/StoryboardView.tsx`).
+- **Audit Trail Imutabel & Penguncian Versi Naskah LOCKED_V1 (`src/components/studio/StoryScriptView.tsx`):**
+  - Saat naskah disetujui (`handleApproveScene`), sistem secara otomatis membuat snapshot versi imutabel di tabel `script_versions` dengan catatan audit resmi: `LOCKED_V{n} - Gate 1 Director Script Approval Checkpoint`, menghasilkan riwayat audit permanen tanpa risiko modifikasi diam-diam.
+- **Autentikasi Identitas Google & GitHub OAuth (`src/context/AuthContext.tsx`, `src/components/auth/AuthModal.tsx`):**
+  - Mengimplementasikan `signInWithGithub` melengkapi `signInWithGoogle` yang telah ada di `AuthContext`.
+  - Menambahkan tombol aksi *Lanjutkan dengan Akun GitHub* di modal autentikasi (`AuthModal.tsx`) berdampingan dengan Google Sign-In.
+- **Rekonsiliasi Skema Database (Penjelasan 24 Tabel Terlindungi):**
+  - Mengonfirmasi secara faktual 24 tabel terlindungi di database schema PostgreSQL V3.12 (termasuk `credit_reservations`, `platform_oauth_tokens`, `publishing_jobs`, dan `creator_analytics_snapshots`), sesuai pelaporan resmi di `api/health.ts`.
+- **Ekspansi Rangkaian Uji Otomasi (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Memperluas skrip pengujian hingga 10 kategori dengan 37 penegasan lulus 100%:
+    1. Validasi 18 tahapan produksi berurutan tanpa jeda & pemetaan 5 Gates.
+    2. Rekomendasi Next Best Action dari Tahap 1 hingga Tahap 13.
+    3. Gate 1 SSOT locking, status `LOCKED_V1`, dan pembuatan audit trail snapshot.
+    4. Gate 1 Invalidation Invariant ke status Draft saat blok naskah diedit.
+    5. Gate 2 penegakan terpadu (kunci DNA karakter + persetujuan master lokasi).
+    6. Gate 3 pemblokiran shot storyboard pada adegan unapproved.
+    7. Gate 4 validasi still keyframe & kalkulasi tarif estimasi biaya.
+    8. Two-phase credit reservation atomik & auto-refund tanpa double release.
+    9. Autentikasi Google dan GitHub OAuth di UI dan auth provider.
+    10. Rekonsiliasi arsitektur 24 tabel database pada `api/health.ts`.
+
+### Verification & Tests
+- `npm test`: 100% lulus seluruh rangkaian pengujian (37/37 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 61 assertions).
+- `npm run build`: Lulus bersih dalam 2.69s (0 TypeScript errors).
+
 ## [Gelombang II - Audit & Penguatan Gerbang Persetujuan] - Script Invalidation, Storyboard Gate 1 Prerequisite & Automated Audit Test Suite - 2026-11-10 08:35 +07:00
 
 ### Added & Hardened

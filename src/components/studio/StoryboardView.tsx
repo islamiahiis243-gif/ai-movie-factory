@@ -412,6 +412,18 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
               </div>
             )}
 
+            {/* Gate 2 Dependency Notice */}
+            {characters.length === 0 && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Peringatan Alur Kerja (Gate 2 Prerequisite):</strong> Belum ada profil DNA karakter terdaftar. Kunci DNA karakter di Character Studio dan master environment di World Builder (Gate 2).
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Gate 3 Storyboard Approval Bar */}
             <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
               <div className="flex items-center gap-2">

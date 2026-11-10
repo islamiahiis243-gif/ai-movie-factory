@@ -74,6 +74,37 @@ export const DIRECTOR_APPROVAL_GATES: DirectorGate[] = [
   }
 ];
 
+export interface ProductionStage {
+  stageNumber: number;
+  code: string;
+  nameId: string;
+  nameEn: string;
+  targetModule: string;
+  gateId?: 1 | 2 | 3 | 4 | 5;
+  descriptionId: string;
+}
+
+export const MASTER_WORKFLOW_STAGES: ProductionStage[] = [
+  { stageNumber: 1, code: '01_project_setup', nameId: '01. Inisialisasi Proyek & Template', nameEn: 'Project Setup & Templates', targetModule: 'projects', descriptionId: 'Setup format produksi dan spesifikasi teknis.' },
+  { stageNumber: 2, code: '02_story_dev', nameId: '02. Story Development', nameEn: 'Story Development', targetModule: 'story_script', descriptionId: 'Ide, logline, sinopsis, treatment, dan naskah adegan.' },
+  { stageNumber: 3, code: '03_gate_1_script', nameId: '03. [Gate 1] Script Approval', nameEn: 'Gate 1: Script Approval', targetModule: 'story_script', gateId: 1, descriptionId: 'Kunci SSOT naskah dan version lock.' },
+  { stageNumber: 4, code: '04a_world_builder', nameId: '04A. World Builder', nameEn: 'World Builder', targetModule: 'world_builder', descriptionId: 'Pembangunan semesta, lokasi master, dan pencahayaan atmosfer.' },
+  { stageNumber: 5, code: '04b_char_studio', nameId: '04B. Character Studio', nameEn: 'Character Studio', targetModule: 'character_studio', descriptionId: 'DNA karakter, profil wajah, dan master sheet 4-sudut.' },
+  { stageNumber: 6, code: '05_gate_2_world_char', nameId: '05. [Gate 2] World & Character Approval', nameEn: 'Gate 2: World & Character Approval', targetModule: 'character_studio', gateId: 2, descriptionId: 'Kunci aset master karakter dan environment.' },
+  { stageNumber: 7, code: '06_storyboard', nameId: '06. Storyboard Studio', nameEn: 'Storyboard Studio', targetModule: 'storyboard', descriptionId: 'Scene breakdown, shot list, framing, dan arah kamera.' },
+  { stageNumber: 8, code: '07_gate_3_storyboard', nameId: '07. [Gate 3] Storyboard Approval', nameEn: 'Gate 3: Storyboard Approval', targetModule: 'storyboard', gateId: 3, descriptionId: 'Kunci komposisi shot visual sutradara.' },
+  { stageNumber: 9, code: '08_image_gen', nameId: '08. Image Generation', nameEn: 'Image Generation', targetModule: 'media_studio', descriptionId: 'Sintesis keyframe visual per shot.' },
+  { stageNumber: 10, code: '09_gate_4_keyframe', nameId: '09. [Gate 4] Keyframe Approval', nameEn: 'Gate 4: Keyframe Approval', targetModule: 'media_studio', gateId: 4, descriptionId: 'Validasi still keyframe visual sebelum komputasi video.' },
+  { stageNumber: 11, code: '10_video_gen', nameId: '10. Video Generation', nameEn: 'Video Generation', targetModule: 'media_studio', descriptionId: 'Motion synthesis video dari storyboard dan keyframe.' },
+  { stageNumber: 12, code: '11a_voice_dialogue', nameId: '11A. Voice & Dialogue', nameEn: 'Voice & Dialogue', targetModule: 'media_studio', descriptionId: 'Karakter suara TTS, audio emosi, dan lip-sync.' },
+  { stageNumber: 13, code: '11b_sound_music', nameId: '11B. Music & Sound Design', nameEn: 'Music & Sound Design', targetModule: 'media_studio', descriptionId: 'Background music sinematik dan sound effect foley.' },
+  { stageNumber: 14, code: '12_quality_control', nameId: '12. Quality Control & Kontinuitas', nameEn: 'Quality Control & Continuity', targetModule: 'quality_control', descriptionId: 'Inspeksi 15 parameter QC kontinuitas multi-shot.' },
+  { stageNumber: 15, code: '13_editing_post', nameId: '13. Editing & Post-Produksi', nameEn: 'Editing & Post-Production', targetModule: 'editing_post', descriptionId: 'NLE timeline assembly, multi-track sync, dan color grading.' },
+  { stageNumber: 16, code: '14_gate_5_master', nameId: '14. [Gate 5] Final Master Approval', nameEn: 'Gate 5: Final Master Approval', targetModule: 'editing_post', gateId: 5, descriptionId: 'Pemeriksaan assembly utuh dan persetujuan ekspor master.' },
+  { stageNumber: 17, code: '15_master_export', nameId: '15. Master Render & Export', nameEn: 'Master Render & Export', targetModule: 'editing_post', descriptionId: 'Rendering final multi-preset (H.264 MP4 / ProRes).' },
+  { stageNumber: 18, code: '16_distribution_biz', nameId: '16. Distribusi, Analitik & Monetisasi', nameEn: 'Distribution & Monetization', targetModule: 'creator_intelligence', descriptionId: 'Multi-platform publishing, real analytics, dan OTT store.' },
+];
+
 export interface ProjectTemplate {
   id: string;
   nameId: string;
