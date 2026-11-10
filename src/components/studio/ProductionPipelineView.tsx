@@ -253,6 +253,38 @@ export const ProductionPipelineView: React.FC<ProductionPipelineViewProps> = ({
     setJobs(prev => prev.map(j => (j.id === jobId ? { ...j, status: 'cancelled' } : j)));
   };
 
+  const handleRetryJob = async (jobId: string) => {
+    const targetJob = jobs.find(j => j.id === jobId);
+    if (!targetJob) return;
+
+    const currentRetries = targetJob.retry_count || 0;
+    const maxRetries = targetJob.max_retries || 3;
+
+    if (currentRetries >= maxRetries) {
+      onShowToast(`Batas maksimal percobaan ulang (${maxRetries}x) telah tercapai untuk job ini.`, 'error');
+      return;
+    }
+
+    const nextRetry = currentRetries + 1;
+    await updatePipelineJob(currentProjectId, jobId, {
+      status: 'running',
+      progress: 25,
+      retry_count: nextRetry,
+      error_message: undefined,
+    });
+
+    await addJobLog(jobId, {
+      job_id: jobId,
+      project_id: currentProjectId,
+      stage: targetJob.current_stage,
+      level: 'action',
+      message: `Sutradara memicu Percobaan Ulang (Retry #${nextRetry}/${maxRetries}). Mengalokasikan ulang worker.`,
+    });
+
+    setJobs(prev => prev.map(j => (j.id === jobId ? { ...j, status: 'running', progress: 25, retry_count: nextRetry, error_message: undefined } : j)));
+    onShowToast(`Job #${jobId.slice(0, 8)} dijadwalkan ulang untuk eksekusi (Retry ${nextRetry}/${maxRetries})!`, 'success');
+  };
+
   const handleApprove = async (jobId: string) => {
     await approvePipelineJob(currentProjectId, jobId, 'Director Master');
     setJobs(prev =>
@@ -747,13 +779,24 @@ export const ProductionPipelineView: React.FC<ProductionPipelineViewProps> = ({
                           </button>
                         )}
 
-                        {!isCompleted && (
+                        {!isCompleted && !isFailed && (
                           <button
                             onClick={() => handleCancel(job.id)}
-                            className="p-1.5 text-slate-500 hover:text-rose-400 transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
                             title="Cancel Job"
                           >
                             <XCircle className="w-4 h-4" />
+                          </button>
+                        )}
+
+                        {isFailed && (
+                          <button
+                            onClick={() => handleRetryJob(job.id)}
+                            className="px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer rounded"
+                            title="Coba Ulang Job (Maksimal 3x)"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Retry ({job.retry_count || 0}/{job.max_retries || 3})</span>
                           </button>
                         )}
 

@@ -671,6 +671,9 @@ export interface PipelineJob {
   generated_asset_ids: string[];
   credit_cost: number;
   error_message?: string;
+  retry_count?: number;
+  max_retries?: number;
+  idempotency_key?: string;
   is_approved: boolean;
   approved_by?: string;
   approved_at?: string;

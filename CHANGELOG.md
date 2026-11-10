@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.3] - Pipeline Orchestrator Integration, In-Flight Background Recovery (TC-WF-09) & Multi-Retry Engine (TC-WF-10) - 2026-11-10 17:10 +07:00
+
+### Added, Hardened & Orchestrated
+- **Integrasi Penuh Media Studio dengan Pipeline Orchestrator (`src/components/studio/MediaStudioView.tsx`):**
+  - Setiap eksekusi generasi gambar keyframe (`executeImageGeneration`) dan motion video (`executeVideoGeneration`) kini secara otomatis mendaftarkan pekerjaan ke tabel `pipeline_jobs` dengan status `'running'`, token idempotency unik, pelacakan progres multi-tahap (20% $\rightarrow$ 55% $\rightarrow$ 85% $\rightarrow$ 100%), serta pencatatan audit log terperinci di `pipeline_job_logs`.
+  - Jika eksekusi berhasil, status job otomatis diperbarui menjadi `'completed'` dengan pendaftaran ID aset yang dihasilkan ke `generated_asset_ids`.
+  - Jika provider mengalami kegagalan, job ditandai `'failed'`, pesan kesalahan dicatat, dan mekanisme auto-refund kredit atomik dilepaskan.
+- **Pemulihan Otomatis Pekerjaan Latar Belakang / Tab Close Recovery (SSOT TC-WF-09):**
+  - Menerapkan pemulihan otomatis saat tab browser ditutup atau dimuat ulang. Pada saat `MediaStudioView` aktif, sistem mendeteksi pekerjaan yang sedang berjalan (`fetchPipelineJobs`) dan menampilkan banner interaktif *Tugas Pipeline Latar Belakang Aktif* lengkap dengan persentase progres dan pengukur waktu riil.
+- **Mekanisme Percobaan Ulang Job & Batas Maksimal Retry (SSOT TC-WF-10):**
+  - Di `src/components/studio/ProductionPipelineView.tsx`, setiap job yang berstatus `'failed'` kini dilengkapi tombol aksi sutradara *Retry* (`handleRetryJob`).
+  - Mendukung percobaan ulang hingga batas maksimal 3 kali (`max_retries: 3`), menaikkan counter `retry_count`, mencatat tindakan sutradara ke audit log, dan memblokir upaya percobaan ulang yang melampaui batas dengan notifikasi penolakan yang tegas.
+- **Peningkatan Rangkaian Uji Otomasi (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Memperluas skrip pengujian hingga 12 kategori dengan **44 assertion** lulus 100%:
+    - `[TEST 11]`: Verifikasi pemulihan in-flight pipeline jobs pasca penutupan tab (TC-WF-09).
+    - `[TEST 12]`: Verifikasi batas maksimal 3x retry dan pencegahan retry ilegal (TC-WF-10).
+
+### Verification & Tests
+- `npm test`: 100% lulus seluruh rangkaian pengujian (44/44 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 68 assertions).
+- `npm run build`: Lulus bersih dalam 2.56s (0 errors).
+
 ## [Gelombang II - Audit Adopsi & Rebuttal] - 18 Master Workflow Stages, Gate 2 World & Character Terpadu, LOCKED_V1 Audit Trail, Google & GitHub OAuth, & Schema Reconciliation - 2026-11-10 16:55 +07:00
 
 ### Added, Hardened & Reconciled

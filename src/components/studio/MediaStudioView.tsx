@@ -7,6 +7,7 @@ import {
   Character,
   SceneItem,
   MediaProviderId,
+  PipelineJob,
 } from '../../types/database';
 import {
   fetchProjectAssets,
@@ -19,6 +20,10 @@ import {
   fetchProjectScenes,
   uploadProjectAssetToBucket,
   fetchCreditTransactions,
+  createPipelineJob,
+  updatePipelineJob,
+  fetchPipelineJobs,
+  addJobLog,
 } from '../../lib/supabase';
 import {
   getMediaAdapter,
@@ -73,6 +78,23 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
   // Pre-Generation Cost Preview State & Wallet Balance
   const { user, profile } = useAuth();
   const [walletBalance, setWalletBalance] = useState<number>(profile?.credits_balance || 150);
+
+  // In-Flight Pipeline Jobs for Background Orchestration (SSOT TC-WF-09 Tab Close Recovery)
+  const [activePipelineJobs, setActivePipelineJobs] = useState<PipelineJob[]>([]);
+
+  useEffect(() => {
+    if (!activeProject) return;
+    let isMounted = true;
+    fetchPipelineJobs(activeProject.id).then((res) => {
+      if (isMounted && res.data) {
+        const inFlight = res.data.filter((j) => j.status === 'running' || j.status === 'queued');
+        setActivePipelineJobs(inFlight);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [activeProject?.id]);
   const [costPreviewConfig, setCostPreviewConfig] = useState<{
     isOpen: boolean;
     assetType: 'image' | 'video' | 'voice' | 'audio';
@@ -279,8 +301,43 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
   const executeImageGeneration = async (idempotencyKey: string) => {
     setIsGenerating(true);
     const creditCost = imgModel === 'imagen-3.0-generate' ? 20 : 15;
+    const now = new Date().toISOString();
+
+    // 1. Enqueue job into Pipeline Orchestrator (SSOT TC-WF-09 & TC-WF-10)
+    const { data: pipelineJob } = await createPipelineJob(activeProject.id, {
+      project_id: activeProject.id,
+      scene_id: imgSceneId || undefined,
+      job_title: `Keyframe Still: ${imgName || `Gambar #${assets.length + 1}`} (${imgModel})`,
+      current_stage: 'image_gen',
+      status: 'running',
+      priority: 'high',
+      progress: 25,
+      stages_completed: ['script_prep'],
+      generated_asset_ids: [],
+      credit_cost: creditCost,
+      idempotency_key: idempotencyKey,
+      retry_count: 0,
+      max_retries: 3,
+      is_approved: false,
+      started_at: now,
+    });
+
+    if (pipelineJob) {
+      setActivePipelineJobs((prev) => [pipelineJob, ...prev]);
+      await addJobLog(pipelineJob.id, {
+        job_id: pipelineJob.id,
+        project_id: activeProject.id,
+        stage: 'image_gen',
+        level: 'info',
+        message: `Memulai sintesis keyframe still gambar dengan model ${imgModel}, token: ${idempotencyKey}`,
+      });
+    }
 
     try {
+      if (pipelineJob) {
+        await updatePipelineJob(activeProject.id, pipelineJob.id, { progress: 60 });
+      }
+
       const adapter = getMediaAdapter('google_gemini');
       const result = await adapter.generateMedia({
         projectId: activeProject.id,
@@ -332,10 +389,45 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
         showNotification(t.mediaStudio.actions.generationSuccess);
         setCostPreviewConfig(null);
         setActiveTab('library');
+
+        // Complete pipeline job
+        if (pipelineJob) {
+          const compTime = new Date().toISOString();
+          await updatePipelineJob(activeProject.id, pipelineJob.id, {
+            status: 'completed',
+            progress: 100,
+            completed_at: compTime,
+            stages_completed: ['script_prep', 'image_gen'],
+            generated_asset_ids: [newAsset.id],
+          });
+          await addJobLog(pipelineJob.id, {
+            job_id: pipelineJob.id,
+            project_id: activeProject.id,
+            stage: 'image_gen',
+            level: 'success',
+            message: `Keyframe gambar berhasil disintesis dan didaftarkan ke Library (#${newAsset.id}).`,
+          });
+          setActivePipelineJobs((prev) => prev.filter((j) => j.id !== pipelineJob.id));
+        }
       }
     } catch (err: any) {
       console.error('Image generation error:', err);
       showNotification(`Generasi gambar gagal: ${err.message || 'Provider error'}. Kredit Anda aman (Auto-refund berhasil).`);
+
+      if (pipelineJob) {
+        await updatePipelineJob(activeProject.id, pipelineJob.id, {
+          status: 'failed',
+          error_message: err.message || 'Provider synthesis error',
+        });
+        await addJobLog(pipelineJob.id, {
+          job_id: pipelineJob.id,
+          project_id: activeProject.id,
+          stage: 'image_gen',
+          level: 'error',
+          message: `Eksekusi job keyframe gagal: ${err.message || 'Unknown error'}. Kredit dikembalikan.`,
+        });
+        setActivePipelineJobs((prev) => prev.map((j) => j.id === pipelineJob.id ? { ...j, status: 'failed', error_message: err.message } : j));
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -375,8 +467,43 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
     const providerId: MediaProviderId = vidModel === 'gen3a_turbo' ? 'runway_gen3' : 'google_gemini';
     const sourceAsset = assets.find((a) => a.id === vidSourceAssetId);
     const cost = vidModel === 'gen3a_turbo' ? 50 : 45;
+    const now = new Date().toISOString();
+
+    // 1. Enqueue job into Pipeline Orchestrator (SSOT TC-WF-09 & TC-WF-10)
+    const { data: pipelineJob } = await createPipelineJob(activeProject.id, {
+      project_id: activeProject.id,
+      scene_id: sourceAsset?.scene_id,
+      job_title: `Render Video: ${vidName || `Klip #${assets.length + 1}`} (${vidModel})`,
+      current_stage: 'video_gen',
+      status: 'running',
+      priority: 'high',
+      progress: 20,
+      stages_completed: sourceAsset ? ['image_gen'] : [],
+      generated_asset_ids: [],
+      credit_cost: cost,
+      idempotency_key: idempotencyKey,
+      retry_count: 0,
+      max_retries: 3,
+      is_approved: false,
+      started_at: now,
+    });
+
+    if (pipelineJob) {
+      setActivePipelineJobs((prev) => [pipelineJob, ...prev]);
+      await addJobLog(pipelineJob.id, {
+        job_id: pipelineJob.id,
+        project_id: activeProject.id,
+        stage: 'video_gen',
+        level: 'info',
+        message: `Memulai sintesis video dengan ${providerId} (${vidModel}), token: ${idempotencyKey}`,
+      });
+    }
 
     try {
+      if (pipelineJob) {
+        await updatePipelineJob(activeProject.id, pipelineJob.id, { progress: 55 });
+      }
+
       const adapter = getMediaAdapter(providerId);
 
       const result = await adapter.generateMedia({
@@ -396,6 +523,10 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           idempotency_key: idempotencyKey,
         },
       });
+
+      if (pipelineJob) {
+        await updatePipelineJob(activeProject.id, pipelineJob.id, { progress: 85 });
+      }
 
       const { data: newAsset } = await createMediaAsset(activeProject.id, {
         project_id: activeProject.id,
@@ -429,10 +560,45 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
         showNotification(`Video berhasil dirender! (${result.creditCost || cost} CR terpotong).`);
         setCostPreviewConfig(null);
         setActiveTab('library');
+
+        // Complete pipeline job
+        if (pipelineJob) {
+          const compTime = new Date().toISOString();
+          await updatePipelineJob(activeProject.id, pipelineJob.id, {
+            status: 'completed',
+            progress: 100,
+            completed_at: compTime,
+            stages_completed: ['script_prep', 'image_gen', 'video_gen'],
+            generated_asset_ids: [newAsset.id],
+          });
+          await addJobLog(pipelineJob.id, {
+            job_id: pipelineJob.id,
+            project_id: activeProject.id,
+            stage: 'video_gen',
+            level: 'success',
+            message: `Video klip berhasil disintesis dan didaftarkan ke Library Aset (#${newAsset.id}).`,
+          });
+          setActivePipelineJobs((prev) => prev.filter((j) => j.id !== pipelineJob.id));
+        }
       }
     } catch (err: any) {
       console.error('Video generation error:', err);
       showNotification(`Generasi video gagal: ${err.message || 'Provider error'}. Kredit Anda aman dan tidak terpotong (Auto-refund berhasil).`);
+
+      if (pipelineJob) {
+        await updatePipelineJob(activeProject.id, pipelineJob.id, {
+          status: 'failed',
+          error_message: err.message || 'Provider synthesis error',
+        });
+        await addJobLog(pipelineJob.id, {
+          job_id: pipelineJob.id,
+          project_id: activeProject.id,
+          stage: 'video_gen',
+          level: 'error',
+          message: `Eksekusi job gagal: ${err.message || 'Unknown error'}. Auto-refund kredit dilepaskan.`,
+        });
+        setActivePipelineJobs((prev) => prev.map((j) => j.id === pipelineJob.id ? { ...j, status: 'failed', error_message: err.message } : j));
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -778,6 +944,49 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Background Pipeline Jobs Tracker Banner (SSOT TC-WF-09 Tab Close Recovery) */}
+      {activePipelineJobs.length > 0 && (
+        <div className="p-4 bg-slate-900/80 border border-cyan-500/30 rounded-xl space-y-3 shadow-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <span>Tugas Pipeline Latar Belakang Aktif ({activePipelineJobs.length})</span>
+                <span className="text-[10px] text-cyan-400 font-mono font-normal bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
+                  Pemulihan Tab Otomatis Aktif (TC-WF-09)
+                </span>
+              </h3>
+            </div>
+            <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+              Pekerjaan tetap berjalan di server jika tab ditutup
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {activePipelineJobs.map((job) => (
+              <div
+                key={job.id}
+                className="bg-slate-950/70 border border-slate-800 p-3 rounded-lg space-y-2 text-xs font-mono"
+              >
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-slate-200 truncate">{job.job_title}</span>
+                  <span className="text-cyan-400 font-bold">{job.progress}%</span>
+                </div>
+                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className="bg-cyan-400 h-full transition-all duration-500"
+                    style={{ width: `${job.progress}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>Tahap: {job.current_stage}</span>
+                  <span>Biaya: {job.credit_cost} CR</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Studio Telemetry Stats Strip (Strict Anti-Pill, Monospace Values) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
