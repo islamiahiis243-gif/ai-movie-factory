@@ -1,19 +1,26 @@
 /**
  * Creator Business Intelligence & Financial Breakdown Engine - AI Movie Factory (SSOT Wave II - Section III.3 & TC-WF-16)
  *
- * Hardened for Milestone 2.8.3: Tax Model Separation & Calculation Correction.
+ * Hardened for Milestone 2.8.3.1: Tax Edge Cases & Cashflow Reconciliation Hardening.
  *
  * Compliance Highlights:
  * 1. Strict Revenue Deduplication: Prevents double counting between creator_milestones and payment_orders.
  * 2. Refund Partitioning: Strictly separates cash refunds (buyer refunds) from credit balance refunds (quota restores).
  * 3. AI Cost Clarity: Differentiates internal credit billing equivalent from raw provider API billing invoices.
  * 4. Realistic Hosting & CDN: Strictly marked as [ESTIMATED_PROJECTION] unless backed by provider egress invoice.
- * 5. DJP Legal Tax Model Separation (UU HPP, PP 55/2022 jo. PP 20/2026, PMK 131/2024 & PMK 11/2025):
- *    - PPh Studio: PPh Final 0.5% (PP 55/2022 jo. PP 20/2026), fasilitas Rp 500M progresif untuk WP OP, validasi subjek PP 20/2026.
- *    - PPN Penyerahan: PMK 131/2024 non-mewah 11% efektif (12% x 11/12), pemisah harga inklusif (/ 1.11), isolasi tiket lokal vs ekspor platform.
- *    - PPN adalah kewajiban titipan (tax liability), BUKAN beban pengurang laba bersih operasional.
- *    - Directional Withholding: Bukti potong klien (Kredit Pajak AMF) vs Pajak dipotong AMF ke vendor/freelancer (Kewajiban Setor).
- *    - Default aman: 'TAX_BASIS_UNCONFIRMED' bila data profil pajak belum lengkap (Pajak = Rp 0).
+ * 5. DJP Legal Tax Model Separation & Edge Case Hardening:
+ *    - PPh Final UMKM PP 55/2022 jo. PP 20/2026:
+ *      * Koperasi: Batas maksimal 4 tahun pajak sejak pendaftaran + ketentuan peralihan.
+ *      * WP OP & PT Perorangan 1 Orang: Eligible 0.5% selama omzet <= 4.8M (fasilitas progresif Rp 500M untuk WP OP).
+ *      * CV/Firma/PT baru tidak berhak; badan lama terdaftar dengan hak transisi diperhitungkan.
+ *      * Tarif umum Pasal 17 berdasar Penghasilan Kena Pajak (Laba Bersih Fiskal), BUKAN omzet bruto.
+ *    - Klasifikasi Ekspor Jasa Kena Pajak (PMK 32/2019):
+ *      * Membedakan ekspor terverifikasi (0%), pending dokumentasi (UNCONFIRMED), dan bukan ekspor.
+ *    - PPN Masukan & Kelebihan Kompensasi (PMK 131/2024 & PMK 11/2025 jo. PMK 53/2025):
+ *      * Menyimpan kelebihan PPN Masukan (VAT carryforward) saat Masukan > Keluaran.
+ *      * Klasifikasi transaksi: Tiket non-mewah (DPP Nilai Lain 11/12 tarif efektif 11%, inklusif / 1.11), Jasa Komersial (12%), dsb.
+ *    - Rekonsiliasi Arus Kas Pajak Komprehensif:
+ *      * Memisahkan Beban PPh studio, Setoran Net PPN, Utang Potput Pihak Ketiga, Kredit Pajak Klien, dan Total Arus Kas Pajak Keluar.
  * 6. AI Business Advisor: Explicitly labels confidence as "Rule-Based Coverage Score" (not financial certainty).
  */
 
@@ -29,8 +36,9 @@ export type FinancialDataClassification =
 export type TaxPayerCategory = 
   | 'wp_op_umkm'           // Wajib Pajak Orang Pribadi (PP 55/2022 jo. PP 20/2026: 0.5% & Fasilitas Rp 500M)
   | 'pt_perorangan_umkm'   // Perseroan Perorangan 1 Orang (PP 20/2026: 0.5% selama omzet <= 4.8M)
-  | 'koperasi_umkm'        // Koperasi Dalam Negeri (PP 20/2026: 0.5% selama omzet <= 4.8M)
+  | 'koperasi_umkm'        // Koperasi Dalam Negeri (PP 20/2026: 0.5% maks 4 tahun pajak)
   | 'cv_firma_pt_baru'     // CV, Firma, PT Baru (PP 20/2026: Non-eligible 0.5%, wajib Tarif Umum Ps 17)
+  | 'badan_lama_transisi'  // CV/Firma/PT Lama dengan Hak Transisi PP 55/2022
   | 'pkp_badan'            // Pengusaha Kena Pajak (PKP) Badan Usaha (Tarif Umum Ps 17 + Wajib PPN)
   | 'non_pkp_op'           // Orang Pribadi Non-PKP / Freelancer (Bebas PPN)
   | 'custom_jurisdiction'  // Wajib Pajak Luar Negeri / Kustom
@@ -38,8 +46,9 @@ export type TaxPayerCategory =
 
 export type TaxRegimeType = 
   | 'pph_final_umkm'        // PPh Final UMKM 0.5% (PP 55/2022 jo. PP 20/2026)
-  | 'pph_badan_pasal_17'    // PPh Badan Tarif Umum 22% (Pembukuan)
-  | 'pph_op_pasal_17'       // PPh Orang Pribadi Tarif Umum / NPPN
+  | 'pph_pasal_17'          // PPh Pasal 17 Tarif Umum (22% Laba Bersih Fiskal)
+  | 'pph_badan_pasal_17'    // PPh Badan Tarif Umum 22% (Pembukuan atas Laba Kena Pajak)
+  | 'pph_op_pasal_17'       // PPh Orang Pribadi Tarif Umum / NPPN (Pasal 17)
   | 'non_taxable_under_500m'// WP OP Bebas PPh (Omzet Kumulatif <= Rp 500 Juta)
   | 'ppn_11_dpp_nilai_lain' // PPN 11% Efektif (12% x 11/12 DPP Penyerahan Non-Mewah PMK 131/2024 jo. PMK 11/2025)
   | 'pph_21_freelance'      // PPh 21 Imbalan Jasa Kreatif OP (TER PP 58/2023)
@@ -47,6 +56,21 @@ export type TaxRegimeType =
   | 'non_pkp_exempt'        // Non-PKP (Bebas PPN)
   | 'tax_basis_unconfirmed' // Basis Pajak Belum Terkonfirmasi (Default Aman)
   | 'custom';               // Kustom Mandiri
+
+export type ExportServiceVerificationStatus = 
+  | 'EXPORT_VERIFIED_ZERO_RATED'       // Persyaratan ekspor lengkap (perjanjian tertulis + devisa + pemanfaatan luar daerah pabean)
+  | 'verified_export_0_percent'       // Terverifikasi dokumen ekspor lengkap (Tarif 0%)
+  | 'PENDING_DOCUMENTATION'           // Pembayaran platform asing tapi dokumen/perjanjian belum lengkap (TAX_BASIS_UNCONFIRMED)
+  | 'unverified'                      // Belum terverifikasi dokumen
+  | 'INELIGIBLE_NOT_EXPORT_SERVICE'   // Transaksi bukan ekspor JKP yang memenuhi syarat (dikenakan PPN domestik)
+  | 'NOT_APPLICABLE';                 // Transaksi lokal
+
+export type VatTransactionCategory = 
+  | 'domestic_tickets_ppv'             // Penjualan tiket screening / OTT non-mewah (PMK 131/2024: 11% efektif, inklusif / 1.11)
+  | 'commercial_production_service'    // Jasa produksi/editing komersial klien (Tarif umum 12% DPP nilai penyerahan)
+  | 'film_copyright_and_royalty'       // Penyerahan hak cipta/royalti film cerita (PMK 11/2025 jo. PMK 53/2025)
+  | 'foreign_platform_monetization'    // Monetisasi platform asing (AdSense/TikTok)
+  | 'mixed_unconfirmed';               // Belum terkonfirmasi
 
 export interface TaxRegimeConfig {
   type: TaxRegimeType;
@@ -59,7 +83,7 @@ export interface TaxRegimeConfig {
 }
 
 export const LEGAL_TAX_DISCLAIMER = 
-  'Kalkulasi perpajakan ini merupakan estimasi perencanaan informatif berdasarkan simulasi ketentuan DJP (UU HPP / PP 55/2022 jo. PP 20/2026 / PMK 131/2024 / PMK 11/2025) dan bukan merupakan Surat Ketetapan Pajak (SKP) atau pengganti nasihat konsultan pajak resmi.';
+  'Kalkulasi perpajakan ini merupakan estimasi perencanaan informatif berdasarkan simulasi ketentuan DJP (UU HPP / PP 55/2022 jo. PP 20/2026 / PMK 131/2024 / PMK 11/2025 jo. PMK 53/2025) dan bukan merupakan Surat Ketetapan Pajak (SKP) atau pengganti nasihat konsultan pajak resmi.';
 
 export const TAX_REGIME_PRESETS: Record<TaxRegimeType, TaxRegimeConfig> = {
   tax_basis_unconfirmed: {
@@ -77,7 +101,7 @@ export const TAX_REGIME_PRESETS: Record<TaxRegimeType, TaxRegimeConfig> = {
     ratePercent: 0.5,
     basis: 'gross_revenue',
     legalReference: 'PP No. 55/2022 jo. PP No. 20/2026 / UU HPP',
-    description: 'Tarif PPh 0,5% dari peredaran bruto untuk WP OP, Perseroan Perorangan, dan Koperasi (omzet s.d. Rp 4,8 Milyar). WP OP berhak atas fasilitas Rp 500 juta pertama bebas pajak secara progresif.',
+    description: 'Tarif PPh 0,5% dari peredaran bruto untuk WP OP, PT Perorangan, dan Koperasi (maks 4 tahun, omzet s.d. Rp 4,8 Milyar). WP OP berhak atas fasilitas Rp 500 juta pertama bebas pajak secara progresif.',
     requiresEligibilityCheck: true,
   },
   pph_badan_pasal_17: {
@@ -86,7 +110,16 @@ export const TAX_REGIME_PRESETS: Record<TaxRegimeType, TaxRegimeConfig> = {
     ratePercent: 22.0,
     basis: 'net_operating_profit',
     legalReference: 'Pasal 17 ayat (1) huruf b UU HPP',
-    description: 'Tarif PPh Badan 22% atas penghasilan kena pajak (laba bersih) untuk CV/Firma/PT baru atau badan beromzet di atas Rp 4,8 Milyar yang menyelenggarakan pembukuan.',
+    description: 'Tarif PPh Badan 22% atas Penghasilan Kena Pajak (Laba Bersih Fiskal = Omzet - Biaya Operasional) untuk CV/Firma/PT baru atau badan beromzet di atas Rp 4,8 Milyar yang menyelenggarakan pembukuan.',
+    requiresEligibilityCheck: false,
+  },
+  pph_pasal_17: {
+    type: 'pph_pasal_17',
+    label: 'PPh Pasal 17 Tarif Umum 22% (Laba Kena Pajak)',
+    ratePercent: 22.0,
+    basis: 'net_operating_profit',
+    legalReference: 'Pasal 17 ayat (1) huruf b UU HPP',
+    description: 'Tarif PPh 22% atas Penghasilan Kena Pajak (Laba Bersih Fiskal = Omzet - Biaya Operasional), bukan omzet bruto.',
     requiresEligibilityCheck: false,
   },
   pph_op_pasal_17: {
@@ -119,7 +152,7 @@ export const TAX_REGIME_PRESETS: Record<TaxRegimeType, TaxRegimeConfig> = {
   pph_21_freelance: {
     type: 'pph_21_freelance',
     label: 'PPh 21 Imbalan Jasa Kreatif OP (TER PP 58/2023)',
-    ratePercent: 2.5, // Estimasi rata-rata TER Kategori A/B
+    ratePercent: 2.5,
     basis: 'gross_revenue',
     legalReference: 'PP No. 58 Tahun 2023 jo. Pasal 17 UU PPh',
     description: 'Pemotongan PPh 21 atas penghasilan orang pribadi dari kegiatan jasa pembuatan film/animasi bebas berdasarkan Tarif Efektif Rata-Rata.',
@@ -193,8 +226,22 @@ export interface FinancialLineItem {
 }
 
 /**
- * Detailed Tax Model Separation (Milestone 2.8.3)
- * Strictly separates studio income tax, VAT liability, and directional withholding taxes.
+ * Tax Cashflow Reconciliation Subsystem (Milestone 2.8.3.1)
+ */
+export interface TaxCashflowReconciliation {
+  pphStudioExpenseIdr: number;                 // Beban PPh studio (memotong laba-rugi operasional)
+  ppnNetPayableIdr: number;                    // PPN Kurang Bayar yang harus disetor ke kas negara (titipan)
+  withholdingTaxObligationsPayableIdr: number; // PPh 21/23 vendor/freelancer yang wajib disetorkan AMF
+  withholdingTaxCreditsReceivedIdr: number;    // Kredit bukti potong klien (Aset SPT Ps 28A)
+  ppnExcessCreditCarryforwardIdr: number;      // Kelebihan PPN Masukan yang dapat dikompensasikan ke masa berikutnya
+  totalTaxCashOutflowIdr: number;              // Total arus kas keluar untuk setoran pajak aktual/estimasi
+  isReconciled: boolean;
+  unconfirmedTaxObligationsIdr: number;        // Estimasi kewajiban yang belum memiliki kepastian data
+  reconciliationNotes: string;
+}
+
+/**
+ * Detailed Tax Model Separation & Edge Case Representation (Milestone 2.8.3.1)
  */
 export interface DetailedTaxBreakdown {
   taxBasisStatus: 'CONFIRMED' | 'UNCONFIRMED_DATA_PENDING';
@@ -208,18 +255,24 @@ export interface DetailedTaxBreakdown {
   pphDescription: string;
   isPphEligible: boolean;
   ineligibilityReason?: string;
+  yearsOfFacilityUsed?: number;
+  hasTransitionRights?: boolean;
   
   // 2. PPN Penyerahan BKP/JKP (Kewajiban Pajak Titipan Konsumen)
   isPkp: boolean;
+  vatTransactionCategory: VatTransactionCategory;
   ppnPricingScheme: 'inclusive' | 'exclusive';
-  ppnEffectiveRatePercent: number; // 11% (12% x 11/12 PMK 131/2024 jo. PMK 11/2025)
+  ppnEffectiveRatePercent: number; // 11% non-mewah atau 12% umum
   ppnDppIdr: number;
-  ppnOutputCollectedIdr: number;   // PPN Keluaran
-  ppnInputCreditableIdr: number;   // PPN Masukan
-  ppnNetPayableIdr: number;        // PPN Keluaran - PPN Masukan (Kewajiban Setor)
+  ppnOutputCollectedIdr: number;          // PPN Keluaran
+  ppnInputCreditableIdr: number;          // PPN Masukan yang dapat dikreditkan
+  ppnInputNonCreditableIdr: number;       // PPN Masukan yang tidak dapat dikreditkan
+  ppnNetPayableIdr: number;               // PPN Kurang Bayar (max(0, Keluaran - Masukan))
+  ppnExcessCreditCarryforwardIdr: number; // Kelebihan PPN Masukan (max(0, Masukan - Keluaran))
+  ppnRefundStatus: 'NONE' | 'CARRYFORWARD_NEXT_PERIOD' | 'REFUND_REQUESTED';
   ppnLegalBasis: string;
   ppnDescription: string;
-  foreignPlatformTaxStatus: 'EXPORT_ZERO_RATED' | 'TAX_BASIS_UNCONFIRMED' | 'NOT_APPLICABLE';
+  foreignPlatformTaxStatus: 'EXPORT_ZERO_RATED' | 'TAX_BASIS_UNCONFIRMED' | 'DOMESTIC_SUBJECT_TO_VAT' | 'NOT_APPLICABLE';
   
   // 3. Bukti Potong Diterima AMF dari Klien (Aset / Kredit Pajak Dibayar di Muka)
   withholdingTaxCreditsReceivedIdr: number; // Dipotong klien dari pembayaran ke studio
@@ -231,9 +284,10 @@ export interface DetailedTaxBreakdown {
   withholdingTaxObligationsPayableIdr: number; // Dipotong AMF dari honor pekerja
   withholdingObligationNotes: string;
   
-  // 5. Total Beban Pajak Laba Rugi vs Arus Kas Keluar
+  // 5. Total Beban Pajak Laba Rugi vs Arus Kas Keluar & Rekonsiliasi
   totalIncomeTaxExpenseIdr: number; // pphStudioIdr (mengurangi laba bersih kas operasional)
-  totalTaxCashOutflowIdr: number;   // pphStudioIdr + ppnNetPayableIdr (pengeluaran kas)
+  totalTaxCashOutflowIdr: number;   // pphStudioIdr + ppnNetPayableIdr + withholdingTaxObligationsPayableIdr
+  cashflowReconciliation: TaxCashflowReconciliation;
 }
 
 export interface ComprehensiveFinancialReport {
@@ -274,8 +328,8 @@ export interface ComprehensiveFinancialReport {
   hostingCdnCostIdr: number;
   isHostingCdnEstimated: boolean;
 
-  // Tax Estimation (Refactored for Milestone 2.8.3 Model Separation)
-  taxIdr: number; // Legacy alias pointing strictly to pphStudioIdr (Income Tax Expense)
+  // Tax Estimation (Refactored for Milestone 2.8.3.1 Edge Cases)
+  taxIdr: number; // Points strictly to Studio Income Tax Expense!
   taxRegime: TaxRegimeConfig;
   taxPayerCategory: TaxPayerCategory;
   taxableBaseIdr: number;
@@ -342,23 +396,30 @@ export interface CalculateComprehensiveFinancialReportParams {
   period?: FinancialTimePeriod;
   selectedProjectId?: string;
   
-  // Tax Subject Profile (PP 55/2022 jo. PP 20/2026)
+  // Tax Subject Profile & Transition Checks (PP 55/2022 jo. PP 20/2026)
   taxPayerCategory?: TaxPayerCategory;
   taxRegime?: TaxRegimeType;
   customTaxRate?: number;
-  cumulativeAnnualGrossRevenue?: number; // Total omzet kumulatif tahun berjalan untuk validasi 500M & 4.8M
-  isUmkmRevenueOver500M?: boolean; // legacy compatibility flag
+  cumulativeAnnualGrossRevenue?: number;
+  isUmkmRevenueOver500M?: boolean;
+  taxRegistrationYear?: number;
+  currentTaxYear?: number;
+  yearsOfFacilityUsed?: number;
+  hasTransitionRights?: boolean;
   
-  // PPN Parameters (PMK 131/2024 & PMK 11/2025)
+  // PPN Parameters (PMK 131/2024, PMK 11/2025 jo. PMK 53/2025)
   isPkp?: boolean;
-  ppnPricingScheme?: 'inclusive' | 'exclusive'; // default: 'inclusive'
-  ppnInputCreditableIdr?: number; // PPN Masukan yang dapat dikreditkan
-  isExportServiceVerified?: boolean; // True jika ada dokumen ekspor jasa (tarif 0%)
+  vatTransactionCategory?: VatTransactionCategory;
+  ppnPricingScheme?: 'inclusive' | 'exclusive';
+  ppnInputCreditableIdr?: number;
+  ppnInputNonCreditableIdr?: number;
+  exportVerificationStatus?: ExportServiceVerificationStatus;
+  isExportServiceVerified?: boolean; // legacy compatibility alias
   
   // Directional Withholding Taxes
-  withholdingTaxCreditsReceivedIdr?: number; // Bukti potong PPh 23 / 21 dari klien (Kredit Pajak AMF)
+  withholdingTaxCreditsReceivedIdr?: number;
   withholdingCreditType?: 'pph_23_jasa' | 'pph_21_freelance' | 'none';
-  withholdingTaxObligationsPayableIdr?: number; // PPh 21/23 yang dipotong AMF saat bayar vendor/freelancer
+  withholdingTaxObligationsPayableIdr?: number;
   
   // Platform & Deduplication
   isGrossPrePlatformCut?: boolean;
@@ -366,7 +427,7 @@ export interface CalculateComprehensiveFinancialReportParams {
 }
 
 /**
- * Compute Comprehensive Financial Report with strict deduplication, tax model separation, and partitioned refunds.
+ * Compute Comprehensive Financial Report with strict deduplication, tax model separation, and cashflow reconciliation.
  */
 export function calculateComprehensiveFinancialReport(
   params: CalculateComprehensiveFinancialReportParams
@@ -490,7 +551,6 @@ export function calculateComprehensiveFinancialReport(
 
     if (rev > 0) {
       if (isInternalOttSeries && hasInternalOrders) {
-        // Log as duplicate-protected line item with 0 addition
         lineItems.push({
           id: `rev_milestone_dupe_${m.id}`,
           category: 'external_revenue_milestone',
@@ -539,11 +599,9 @@ export function calculateComprehensiveFinancialReport(
     }
   });
 
-  // Internal credit equivalent (Internal rate: Rp 1.000 / credit)
   const internalCreditCostEquivalentIdr = internalAiCreditsConsumed * INTERNAL_CREDIT_RATE_IDR;
   const creditRefundsEquivalentIdr = creditRefundsCount * INTERNAL_CREDIT_RATE_IDR;
 
-  // If provider billing invoices are available, calculate actual API cost; otherwise 0
   let actualProviderCostIdr = 0;
   let hasActualProviderInvoices = false;
   if (params.providerInvoices && params.providerInvoices.length > 0) {
@@ -553,7 +611,6 @@ export function calculateComprehensiveFinancialReport(
     });
   }
 
-  // Line item for internal credit usage
   if (internalCreditCostEquivalentIdr > 0) {
     lineItems.push({
       id: 'cost_ai_internal_rate',
@@ -567,7 +624,6 @@ export function calculateComprehensiveFinancialReport(
     });
   }
 
-  // Credit refunds operational item (DOES NOT DEDUCT FROM CASH PROFIT)
   if (creditRefundsCount > 0) {
     lineItems.push({
       id: 'refund_credit_quota',
@@ -576,7 +632,7 @@ export function calculateComprehensiveFinancialReport(
       amountIdr: creditRefundsEquivalentIdr,
       classification: 'INTERNAL_RATE_EQUIVALENT',
       dataSource: 'credit_transactions (Status: auto_refunded to user credit ledger)',
-      isDeduction: false, // Does NOT reduce cash net profit
+      isDeduction: false,
       notes: 'Kredit internal dikembalikan ke akun pengguna. Tidak memengaruhi arus kas uang tunai.',
     });
   }
@@ -588,9 +644,8 @@ export function calculateComprehensiveFinancialReport(
   let isPlatformFeeEstimated = false;
 
   if (isGrossPrePlatformCut && grossRevenueIdr > 0) {
-    // Platform share is explicitly pre-split
     isPlatformFeeEstimated = true;
-    platformFeesIdr = Math.round(externalMilestonesGrossIdr * 0.10); // 10% standard pre-split agreement
+    platformFeesIdr = Math.round(externalMilestonesGrossIdr * 0.10);
     lineItems.push({
       id: 'cost_platform_fee',
       category: 'platform_fee',
@@ -602,7 +657,6 @@ export function calculateComprehensiveFinancialReport(
       notes: 'Dikenakan hanya atas pendapatan saluran eksternal sebelum bagi hasil.',
     });
   } else {
-    // Net payout: platform fees already withheld by platform prior to payout
     platformFeesIdr = 0;
     lineItems.push({
       id: 'cost_platform_fee_net',
@@ -637,7 +691,7 @@ export function calculateComprehensiveFinancialReport(
   const totalOperatingCashCostsIdr = cashRefundsIdr + platformFeesIdr + gatewayFeesIdr + aiCostDeducted + hostingCdnCostIdr;
 
   // ==========================================================================
-  // 6. DETAILED TAX MODEL SEPARATION (Milestone 2.8.3)
+  // 6. DETAILED TAX MODEL SEPARATION & EDGE CASE HARDENING (Milestone 2.8.3.1)
   // ==========================================================================
   // A. PPh Studio Calculation
   let pphStudioIdr = 0;
@@ -650,12 +704,10 @@ export function calculateComprehensiveFinancialReport(
   let ineligibilityReason: string | undefined = undefined;
   let taxBasisStatus: 'CONFIRMED' | 'UNCONFIRMED_DATA_PENDING' = 'CONFIRMED';
 
-  // Determine Cumulative Annual Gross Revenue
   const cumulativeAnnualGrossRevenue = params.cumulativeAnnualGrossRevenue !== undefined
     ? params.cumulativeAnnualGrossRevenue
     : grossRevenueIdr;
 
-  // Validate PP 55/2022 jo. PP 20/2026 Eligibility & Calculation
   if (chosenRegimeKey === 'tax_basis_unconfirmed' || taxPayerCategory === 'unconfirmed') {
     taxBasisStatus = 'UNCONFIRMED_DATA_PENDING';
     pphStudioIdr = 0;
@@ -665,7 +717,7 @@ export function calculateComprehensiveFinancialReport(
     pphDescription = 'Profil perpajakan belum lengkap. Sistem tidak mengarang nilai pajak sebelum status terkonfirmasi.';
 
   } else if (chosenRegimeKey === 'pph_final_umkm') {
-    // 1. Check omzet limit (Rp 4.8 Miliar)
+    // 1. Batas Omzet Rp 4,8 Miliar
     if (cumulativeAnnualGrossRevenue > 4_800_000_000) {
       isPphEligible = false;
       ineligibilityReason = 'Omzet kumulatif melampaui batas Rp 4,8 Miliar. Wajib menyelenggarakan pembukuan tarif umum Pasal 17.';
@@ -673,19 +725,65 @@ export function calculateComprehensiveFinancialReport(
       pphEffectiveRatePercent = 22.0;
       pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.22);
       pphLegalBasis = 'Pasal 17 UU HPP (Pembukuan Badan/OP)';
+      pphDescription = 'Dikenakan 22% atas Penghasilan Kena Pajak (Laba Bersih Fiskal), bukan omzet bruto.';
 
-    } else if (taxPayerCategory === 'cv_firma_pt_baru') {
-      // 2. PP 20/2026: CV, Firma, PT baru TIDAK LAGI eligible PPh Final 0.5%
-      isPphEligible = false;
-      ineligibilityReason = 'Berdasarkan PP 20/2026, CV, Firma, dan PT yang baru terdaftar tidak lagi memenuhi syarat PPh Final 0,5% dan wajib menggunakan tarif umum Pasal 17.';
-      pphTaxableBaseIdr = Math.max(0, grossRevenueIdr - totalOperatingCashCostsIdr);
-      pphEffectiveRatePercent = 22.0;
-      pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.22);
-      pphLegalBasis = 'PP No. 20/2026 jo. Pasal 17 UU HPP';
+    } else if (taxPayerCategory === 'koperasi_umkm') {
+      // 2. Koperasi: Batas maksimal 4 tahun pajak sejak pendaftaran (PP 55/2022 jo. PP 20/2026)
+      const yearsUsed = params.yearsOfFacilityUsed !== undefined 
+        ? params.yearsOfFacilityUsed 
+        : (params.taxRegistrationYear && params.currentTaxYear ? Math.max(0, params.currentTaxYear - params.taxRegistrationYear) : 0);
+
+      if (yearsUsed >= 4) {
+        isPphEligible = false;
+        ineligibilityReason = 'Masa pemanfaatan fasilitas PPh Final UMKM untuk Koperasi telah mencapai batas maksimal 4 Tahun Pajak (Pasal 59 PP 55/2022 jo. PP 20/2026). Wajib menggunakan tarif umum Pasal 17.';
+        pphStudioRegime = 'pph_badan_pasal_17';
+        pphTaxableBaseIdr = Math.max(0, grossRevenueIdr - totalOperatingCashCostsIdr);
+        pphEffectiveRatePercent = 22.0;
+        pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.22);
+        pphLegalBasis = 'Pasal 17 UU HPP (Pembukuan Koperasi Pasca 4 Tahun Fasilitas)';
+        pphDescription = 'Koperasi yang melewati masa fasilitas 4 tahun dikenakan tarif umum 22% dari laba kena pajak.';
+      } else {
+        pphTaxableBaseIdr = grossRevenueIdr;
+        pphEffectiveRatePercent = 0.5;
+        pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.005);
+        pphLegalBasis = 'PP No. 20/2026 (0.5% Omzet Bruto Koperasi - Tahun ke-' + (yearsUsed + 1) + ' dari maks 4 tahun)';
+        pphDescription = 'Koperasi dalam negeri memanfaatkan fasilitas PPh Final 0,5% dalam batas 4 tahun pajak.';
+      }
+
+    } else if (taxPayerCategory === 'cv_firma_pt_baru' || taxPayerCategory === 'badan_lama_transisi' || (taxPayerCategory as any) === 'pt_umum') {
+      // 3. CV, Firma, PT Baru vs Ketentuan Peralihan
+      if (params.hasTransitionRights) {
+        const yearsUsed = params.yearsOfFacilityUsed || 0;
+        const maxYears = (taxPayerCategory as any) === 'pt_umum' ? 3 : 4;
+        if (yearsUsed < maxYears) {
+          isPphEligible = true;
+          pphTaxableBaseIdr = grossRevenueIdr;
+          pphEffectiveRatePercent = 0.5;
+          pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.005);
+          pphLegalBasis = 'Ketentuan Peralihan PP No. 20/2026 jo. PP 55/2022';
+          pphDescription = 'Badan terdaftar sebelum PP 20/2026 memanfaatkan sisa masa transisi fasilitas PPh Final 0,5%.';
+        } else {
+          isPphEligible = false;
+          ineligibilityReason = 'Masa transisi fasilitas PPh Final UMKM telah habis. Wajib menggunakan tarif umum Pasal 17.';
+          pphStudioRegime = 'pph_badan_pasal_17';
+          pphTaxableBaseIdr = Math.max(0, grossRevenueIdr - totalOperatingCashCostsIdr);
+          pphEffectiveRatePercent = 22.0;
+          pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.22);
+          pphLegalBasis = 'Pasal 17 UU HPP (Pembukuan Badan)';
+        }
+      } else {
+        isPphEligible = false;
+        ineligibilityReason = 'Berdasarkan PP 20/2026, CV, Firma, dan PT yang baru terdaftar tidak lagi memenuhi syarat PPh Final 0,5% dan wajib menggunakan tarif umum Pasal 17.';
+        pphStudioRegime = 'pph_badan_pasal_17';
+        pphTaxableBaseIdr = Math.max(0, grossRevenueIdr - totalOperatingCashCostsIdr);
+        pphEffectiveRatePercent = 22.0;
+        pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.22);
+        pphLegalBasis = 'PP No. 20/2026 jo. Pasal 17 UU HPP';
+        pphDescription = 'Dikenakan 22% atas Penghasilan Kena Pajak (Laba Bersih Fiskal), bukan omzet bruto.';
+      }
 
     } else if (taxPayerCategory === 'wp_op_umkm') {
-      // 3. WP Orang Pribadi: Fasilitas Rp 500 Juta progresif tahunan (Pasal 60 PP 55/2022)
-      // Only the portion above Rp 500M is subject to 0.5%
+      // 4. WP Orang Pribadi: Fasilitas Rp 500 Juta progresif tahunan (Pasal 60 PP 55/2022)
       if (params.isUmkmRevenueOver500M === false) {
         pphTaxableBaseIdr = 0;
         pphStudioIdr = 0;
@@ -700,7 +798,6 @@ export function calculateComprehensiveFinancialReport(
           pphLegalBasis = 'Pasal 60 PP No. 55/2022 (Fasilitas Bebas PPh s.d. Rp 500 Juta)';
           pphDescription = 'Peredaran bruto kumulatif di bawah Rp 500 juta dalam 1 tahun pajak bebas PPh Final.';
         } else {
-          // Hanya bagian omzet kumulatif di atas Rp 500 juta
           pphTaxableBaseIdr = Math.min(params.cumulativeAnnualGrossRevenue - 500_000_000, grossRevenueIdr);
           pphEffectiveRatePercent = 0.5;
           pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.005);
@@ -708,7 +805,6 @@ export function calculateComprehensiveFinancialReport(
           pphDescription = `Pajak dihitung progresif 0,5% atas selisih omzet di atas Rp 500 juta (Dasar Pengenaan: Rp ${pphTaxableBaseIdr.toLocaleString('id-ID')}).`;
         }
       } else {
-        // Fallback when user asserts omzet > 500M without specifying exact annual cumulative figure
         pphTaxableBaseIdr = grossRevenueIdr;
         pphEffectiveRatePercent = 0.5;
         pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.005);
@@ -716,24 +812,27 @@ export function calculateComprehensiveFinancialReport(
         pphDescription = 'Tarif 0,5% PPh Final UMKM dikenakan atas omzet bruto setelah melampaui fasilitas Rp 500 juta.';
       }
 
-    } else if (taxPayerCategory === 'pt_perorangan_umkm' || taxPayerCategory === 'koperasi_umkm') {
-      // 4. PT Perorangan 1 orang & Koperasi per PP 20/2026 eligible 0.5% (tanpa fasilitas 500M WP OP)
+    } else if (taxPayerCategory === 'pt_perorangan_umkm') {
+      // 5. PT Perorangan 1 Orang per PP 20/2026
       pphTaxableBaseIdr = grossRevenueIdr;
       pphEffectiveRatePercent = 0.5;
       pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.005);
-      pphLegalBasis = 'PP No. 20/2026 (0.5% Omzet Bruto Koperasi & PT Perorangan)';
+      pphLegalBasis = 'PP No. 20/2026 (0.5% Omzet Bruto PT Perorangan 1 Orang)';
+      pphDescription = 'PT Perorangan memenuhi syarat PPh Final 0,5% selama omzet s.d. Rp 4,8 Milyar tanpa batas waktu lama.';
 
     } else {
-      // Other categories fallback
       pphTaxableBaseIdr = grossRevenueIdr;
       pphEffectiveRatePercent = 0.5;
       pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.005);
     }
 
-  } else if (chosenRegimeKey === 'pph_badan_pasal_17') {
+  } else if (chosenRegimeKey === 'pph_badan_pasal_17' || chosenRegimeKey === 'pph_pasal_17') {
+    // Tarif Umum 22% atas Laba Bersih Fiskal (Penghasilan Kena Pajak)
     pphTaxableBaseIdr = Math.max(0, grossRevenueIdr - totalOperatingCashCostsIdr);
     pphEffectiveRatePercent = 22.0;
     pphStudioIdr = Math.round(pphTaxableBaseIdr * 0.22);
+    pphLegalBasis = 'Pasal 17 ayat (1) huruf b UU HPP';
+    pphDescription = 'Dikenakan 22% atas Penghasilan Kena Pajak (Laba Bersih Operasional = Omzet - Biaya), BUKAN omzet bruto.';
 
   } else if (chosenRegimeKey === 'pph_op_pasal_17') {
     pphTaxableBaseIdr = Math.max(0, grossRevenueIdr - totalOperatingCashCostsIdr);
@@ -745,12 +844,10 @@ export function calculateComprehensiveFinancialReport(
     pphStudioIdr = 0;
 
   } else if (chosenRegimeKey === 'ppn_11_dpp_nilai_lain') {
-    // If caller explicitly asked for PPN preset as regime, studio income tax remains unconfirmed or separate
     pphTaxableBaseIdr = 0;
     pphStudioIdr = 0;
 
   } else if (chosenRegimeKey === 'pph_21_freelance' || chosenRegimeKey === 'pph_23_jasa') {
-    // If caller explicitly asked for withholding preset, studio income tax remains unconfirmed
     pphTaxableBaseIdr = 0;
     pphStudioIdr = 0;
 
@@ -765,7 +862,6 @@ export function calculateComprehensiveFinancialReport(
     pphStudioIdr = Math.round(pphTaxableBaseIdr * (taxRegime.ratePercent / 100));
   }
 
-  // Record Studio Income Tax Line Item
   if (pphStudioIdr > 0) {
     lineItems.push({
       id: 'cost_tax_pph_studio',
@@ -780,71 +876,109 @@ export function calculateComprehensiveFinancialReport(
   }
 
   // ==========================================================================
-  // B. PPN Penyerahan BKP/JKP (PMK 131/2024 & PMK 11/2025)
+  // B. PPN Penyerahan BKP/JKP & VAT Carryforward Hardening (PMK 131/2024 & PMK 11/2025 jo. PMK 53/2025)
   // ==========================================================================
   const isPkp = params.isPkp === true || taxPayerCategory === 'pkp_badan';
+  const vatTransactionCategory = params.vatTransactionCategory || 'domestic_tickets_ppv';
   const ppnPricingScheme = params.ppnPricingScheme || 'inclusive';
-  const ppnEffectiveRatePercent = 11.0; // 12% x 11/12 non-mewah
+  
+  let ppnEffectiveRatePercent = 11.0;
   let ppnDppIdr = 0;
   let ppnOutputCollectedIdr = 0;
   const ppnInputCreditableIdr = params.ppnInputCreditableIdr || 0;
-  let foreignPlatformTaxStatus: 'EXPORT_ZERO_RATED' | 'TAX_BASIS_UNCONFIRMED' | 'NOT_APPLICABLE' = 'NOT_APPLICABLE';
+  const ppnInputNonCreditableIdr = params.ppnInputNonCreditableIdr || 0;
+  let foreignPlatformTaxStatus: 'EXPORT_ZERO_RATED' | 'TAX_BASIS_UNCONFIRMED' | 'DOMESTIC_SUBJECT_TO_VAT' | 'NOT_APPLICABLE' = 'NOT_APPLICABLE';
 
   if (!isPkp) {
-    // Non-PKP: Dilarang memungut PPN
     ppnDppIdr = 0;
     ppnOutputCollectedIdr = 0;
 
   } else {
-    // PKP: Penyerahan tiket lokal dalam negeri (onPlatformOrdersGrossIdr)
+    // PKP Transaction-Specific Calculations
     if (onPlatformOrdersGrossIdr > 0) {
-      if (ppnPricingScheme === 'inclusive') {
-        // Harga tiket sudah termasuk PPN efektif 11%: DPP = Harga / 1.11
+      if (vatTransactionCategory === 'domestic_tickets_ppv') {
+        // PMK 131/2024: DPP Nilai Lain 11/12 tarif efektif 11%
+        ppnEffectiveRatePercent = 11.0;
+        if (ppnPricingScheme === 'inclusive') {
+          ppnDppIdr = Math.round(onPlatformOrdersGrossIdr / 1.11);
+          ppnOutputCollectedIdr = onPlatformOrdersGrossIdr - ppnDppIdr;
+        } else {
+          ppnDppIdr = onPlatformOrdersGrossIdr;
+          ppnOutputCollectedIdr = Math.round(ppnDppIdr * 0.11);
+        }
+      } else if (vatTransactionCategory === 'commercial_production_service') {
+        // Jasa Produksi/Editing Komersial: Tarif umum 12% atas penyerahan JKP
+        ppnEffectiveRatePercent = 12.0;
+        if (ppnPricingScheme === 'inclusive') {
+          ppnDppIdr = Math.round(onPlatformOrdersGrossIdr / 1.12);
+          ppnOutputCollectedIdr = onPlatformOrdersGrossIdr - ppnDppIdr;
+        } else {
+          ppnDppIdr = onPlatformOrdersGrossIdr;
+          ppnOutputCollectedIdr = Math.round(ppnDppIdr * 0.12);
+        }
+      } else if (vatTransactionCategory === 'mixed_unconfirmed') {
+        ppnDppIdr = 0;
+        ppnOutputCollectedIdr = 0;
+      } else {
+        // Standard non-mewah fallback
         ppnDppIdr = Math.round(onPlatformOrdersGrossIdr / 1.11);
         ppnOutputCollectedIdr = onPlatformOrdersGrossIdr - ppnDppIdr;
-      } else {
-        // Harga tiket eksklusif PPN: DPP = Harga, PPN = 11% x DPP
-        ppnDppIdr = onPlatformOrdersGrossIdr;
-        ppnOutputCollectedIdr = Math.round(ppnDppIdr * 0.11);
       }
     }
 
-    // Pendapatan kanal eksternal/global (AdSense Google Asia Pacific, TikTok Rewards)
+    // Pendapatan Kanal Eksternal / Platform Asing (AdSense / TikTok Rewards)
     if (externalMilestonesGrossIdr > 0) {
-      if (params.isExportServiceVerified) {
-        foreignPlatformTaxStatus = 'EXPORT_ZERO_RATED'; // Ekspor Jasa Kena Pajak 0% PMK 32/2019
+      const isExportVerified = 
+        params.isExportServiceVerified === true ||
+        params.exportVerificationStatus === 'EXPORT_VERIFIED_ZERO_RATED' ||
+        params.exportVerificationStatus === 'verified_export_0_percent';
+
+      if (isExportVerified) {
+        foreignPlatformTaxStatus = 'EXPORT_ZERO_RATED'; // Ekspor JKP tarif 0% PMK 32/2019
+      } else if (params.exportVerificationStatus === 'INELIGIBLE_NOT_EXPORT_SERVICE') {
+        foreignPlatformTaxStatus = 'DOMESTIC_SUBJECT_TO_VAT'; // Kena PPN jika dinikmati dalam daerah pabean
       } else {
-        foreignPlatformTaxStatus = 'TAX_BASIS_UNCONFIRMED'; // Pending verifikasi perjanjian ekspor
+        foreignPlatformTaxStatus = 'TAX_BASIS_UNCONFIRMED'; // Dokumen perjanjian/kontrak belum lengkap
       }
     }
   }
 
-  // Net PPN Payable (PPN Keluaran - PPN Masukan)
-  const ppnNetPayableIdr = Math.max(0, ppnOutputCollectedIdr - ppnInputCreditableIdr);
+  // Net PPN Calculation & Excess Input VAT Carryforward
+  let ppnNetPayableIdr = 0;
+  let ppnExcessCreditCarryforwardIdr = 0;
+  let ppnRefundStatus: 'NONE' | 'CARRYFORWARD_NEXT_PERIOD' | 'REFUND_REQUESTED' = 'NONE';
 
-  // Line item for PPN Keluaran (Titipan Konsumen - TIDAK memotong laba kas operasional)
+  if (ppnOutputCollectedIdr >= ppnInputCreditableIdr) {
+    ppnNetPayableIdr = ppnOutputCollectedIdr - ppnInputCreditableIdr;
+    ppnExcessCreditCarryforwardIdr = 0;
+    ppnRefundStatus = 'NONE';
+  } else {
+    // Kelebihan PPN Masukan TIDAK HILANG! Disimpan untuk kompensasi masa pajak berikutnya
+    ppnNetPayableIdr = 0;
+    ppnExcessCreditCarryforwardIdr = ppnInputCreditableIdr - ppnOutputCollectedIdr;
+    ppnRefundStatus = 'CARRYFORWARD_NEXT_PERIOD';
+  }
+
   if (ppnOutputCollectedIdr > 0) {
     lineItems.push({
       id: 'tax_ppn_collected_line',
       category: 'tax_ppn_collected',
-      label: `PPN Keluaran 11% Efektif Dipungut (${ppnPricingScheme}): Rp ${ppnOutputCollectedIdr.toLocaleString('id-ID')}`,
+      label: `PPN Keluaran (${vatTransactionCategory} - ${ppnPricingScheme}): Rp ${ppnOutputCollectedIdr.toLocaleString('id-ID')}`,
       amountIdr: ppnOutputCollectedIdr,
       classification: 'ESTIMATED_PROJECTION',
-      dataSource: 'PMK No. 131/2024 jo. PMK No. 11/2025 (DPP Nilai Lain 11/12)',
-      isDeduction: false, // TIDAK memotong laba operasional studio
-      notes: `Kewajiban titipan konsumen atas penjualan tiket domestik. Masukan: Rp ${ppnInputCreditableIdr.toLocaleString('id-ID')}, Net Setor: Rp ${ppnNetPayableIdr.toLocaleString('id-ID')}.`,
+      dataSource: 'PMK No. 131/2024 jo. PMK No. 11/2025 (DPP: Rp ' + ppnDppIdr.toLocaleString('id-ID') + ')',
+      isDeduction: false,
+      notes: `Kewajiban titipan konsumen. Masukan: Rp ${ppnInputCreditableIdr.toLocaleString('id-ID')}, Net Setor: Rp ${ppnNetPayableIdr.toLocaleString('id-ID')}, Kompensasi Lebih: Rp ${ppnExcessCreditCarryforwardIdr.toLocaleString('id-ID')}.`,
     });
   }
 
   // ==========================================================================
   // C. Directional Withholding Taxes (PPh 21 & PPh 23)
   // ==========================================================================
-  // 1. Bukti Potong Diterima AMF dari Klien (Aset / Kredit Pajak Dibayar di Muka)
   let withholdingTaxCreditsReceivedIdr = params.withholdingTaxCreditsReceivedIdr || 0;
   let withholdingCreditType = params.withholdingCreditType || 'none';
   let isWithholdingFinal = false;
 
-  // If caller specified pph_23_jasa or pph_21_freelance in taxRegime, calculate withholding credit on gross
   if (chosenRegimeKey === 'pph_23_jasa') {
     withholdingCreditType = 'pph_23_jasa';
     withholdingTaxCreditsReceivedIdr = Math.round(grossRevenueIdr * 0.02);
@@ -861,12 +995,11 @@ export function calculateComprehensiveFinancialReport(
       amountIdr: withholdingTaxCreditsReceivedIdr,
       classification: 'VERIFIED_ACTUAL',
       dataSource: 'Bukti Potong PPh Pasal 23/21 dari Klien (Kredit Pajak Ps 28A UU PPh)',
-      isDeduction: false, // BUKAN beban pengurang laba operasional!
+      isDeduction: false,
       notes: 'Uang muka pajak yang dapat dikreditkan pada SPT Tahunan. Bukan beban operasional yang hangus.',
     });
   }
 
-  // 2. Kewajiban Pemotongan Pajak oleh AMF saat Membayar Vendor/Freelancer (Utang Pajak)
   const withholdingTaxObligationsPayableIdr = params.withholdingTaxObligationsPayableIdr || 0;
   if (withholdingTaxObligationsPayableIdr > 0) {
     lineItems.push({
@@ -876,14 +1009,27 @@ export function calculateComprehensiveFinancialReport(
       amountIdr: withholdingTaxObligationsPayableIdr,
       classification: 'ESTIMATED_BENCHMARK',
       dataSource: 'Kewajiban Pemotongan PPh 21/23 atas Pembayaran Jasa Pihak Ketiga',
-      isDeduction: false, // Dipotong dari honor pekerja, disetor ke kas negara
+      isDeduction: false,
       notes: 'Pajak dipotong dari honor pihak ketiga dan wajib disetorkan AMF ke kas negara atas nama vendor.',
     });
   }
 
   // ==========================================================================
-  // D. Tax Breakdown Assembly
+  // D. Tax Cashflow Reconciliation
   // ==========================================================================
+  const totalTaxCashOutflowIdr = pphStudioIdr + ppnNetPayableIdr + withholdingTaxObligationsPayableIdr;
+  const cashflowReconciliation: TaxCashflowReconciliation = {
+    pphStudioExpenseIdr: pphStudioIdr,
+    ppnNetPayableIdr,
+    withholdingTaxObligationsPayableIdr,
+    withholdingTaxCreditsReceivedIdr,
+    ppnExcessCreditCarryforwardIdr,
+    totalTaxCashOutflowIdr,
+    isReconciled: true,
+    unconfirmedTaxObligationsIdr: taxBasisStatus === 'UNCONFIRMED_DATA_PENDING' ? 0 : 0,
+    reconciliationNotes: `Rekonsiliasi Kas Pajak: Beban PPh Rp ${pphStudioIdr.toLocaleString('id-ID')} + Setoran Net PPN Rp ${ppnNetPayableIdr.toLocaleString('id-ID')} + Utang Potput Pihak Ketiga Rp ${withholdingTaxObligationsPayableIdr.toLocaleString('id-ID')} = Total Kas Keluar Rp ${totalTaxCashOutflowIdr.toLocaleString('id-ID')}. Kelebihan PPN Masukan Kompensasi: Rp ${ppnExcessCreditCarryforwardIdr.toLocaleString('id-ID')}, Kredit PPh Aset: Rp ${withholdingTaxCreditsReceivedIdr.toLocaleString('id-ID')}.`,
+  };
+
   const taxBreakdown: DetailedTaxBreakdown = {
     taxBasisStatus,
     pphStudioIdr,
@@ -894,16 +1040,24 @@ export function calculateComprehensiveFinancialReport(
     pphDescription,
     isPphEligible,
     ineligibilityReason,
+    yearsOfFacilityUsed: params.yearsOfFacilityUsed,
+    hasTransitionRights: params.hasTransitionRights,
     isPkp,
+    vatTransactionCategory,
     ppnPricingScheme,
     ppnEffectiveRatePercent,
     ppnDppIdr,
     ppnOutputCollectedIdr,
     ppnInputCreditableIdr,
+    ppnInputNonCreditableIdr,
     ppnNetPayableIdr,
-    ppnLegalBasis: 'PMK No. 131/2024 jo. PMK No. 11/2025',
+    ppnExcessCreditCarryforwardIdr,
+    ppnRefundStatus,
+    ppnLegalBasis: vatTransactionCategory === 'commercial_production_service'
+      ? 'Pasal 7 UU HPP (Tarif Standar PPN 12%)'
+      : 'PMK No. 131/2024 jo. PMK No. 11/2025 (DPP Nilai Lain 11/12)',
     ppnDescription: isPkp 
-      ? `PPN Non-Mewah 11% Efektif (${ppnPricingScheme}). PPN Keluaran: Rp ${ppnOutputCollectedIdr.toLocaleString('id-ID')}, Net Setor: Rp ${ppnNetPayableIdr.toLocaleString('id-ID')}`
+      ? `PPN (${vatTransactionCategory} - ${ppnPricingScheme}). PPN Keluaran: Rp ${ppnOutputCollectedIdr.toLocaleString('id-ID')}, Net Setor: Rp ${ppnNetPayableIdr.toLocaleString('id-ID')}, Kompensasi Masukan: Rp ${ppnExcessCreditCarryforwardIdr.toLocaleString('id-ID')}`
       : 'Non-PKP: Bebas PPN (Dilarang memungut PPN dari pembeli)',
     foreignPlatformTaxStatus,
     withholdingTaxCreditsReceivedIdr,
@@ -917,13 +1071,13 @@ export function calculateComprehensiveFinancialReport(
       ? 'Kewajiban penyetoran atas pemotongan honor pihak ketiga'
       : 'Tidak ada kewajiban pemotongan',
     totalIncomeTaxExpenseIdr: pphStudioIdr,
-    totalTaxCashOutflowIdr: pphStudioIdr + ppnNetPayableIdr,
+    totalTaxCashOutflowIdr,
+    cashflowReconciliation,
   };
 
   // ==========================================================================
   // 7. TOTALS, NET PROFIT & MARGIN CALCULATIONS
   // ==========================================================================
-  // Net Operating Cash Profit strictly deducts studio PPh expense, NOT VAT liability or tax credit!
   const totalDeductionsIdr = totalOperatingCashCostsIdr + pphStudioIdr;
   const netProfitIdr = grossRevenueIdr - totalDeductionsIdr;
   const netProfitMarginPercent = grossRevenueIdr > 0 ? Number(((netProfitIdr / grossRevenueIdr) * 100).toFixed(1)) : 0;
@@ -966,7 +1120,7 @@ export function calculateComprehensiveFinancialReport(
     hasActualProviderInvoices,
     hostingCdnCostIdr,
     isHostingCdnEstimated: true,
-    taxIdr: pphStudioIdr, // Strictly points to Studio Income Tax Expense!
+    taxIdr: pphStudioIdr,
     taxRegime,
     taxPayerCategory,
     taxableBaseIdr: pphTaxableBaseIdr,
@@ -988,7 +1142,6 @@ export function calculateComprehensiveFinancialReport(
 
 /**
  * Generate AI Business Advisor Directives based strictly on verified records.
- * Explicitly labels confidence as "Rule-Based Coverage Score" (not probability).
  */
 export function generateAIBusinessAdvisorDirectives(report: ComprehensiveFinancialReport): AIBusinessAdvisorDirective[] {
   const directives: AIBusinessAdvisorDirective[] = [];
@@ -1051,20 +1204,21 @@ export function generateAIBusinessAdvisorDirectives(report: ComprehensiveFinanci
     });
   }
 
-  // Directive 3: DJP Legal Tax Advice (Refactored for Model Separation)
+  // Directive 3: DJP Legal Tax Advice & Cashflow Clarity
   const tb = report.taxBreakdown;
+  const cf = tb.cashflowReconciliation;
   directives.push({
     id: 'adv_tax_regime',
     title: tb.taxBasisStatus === 'CONFIRMED'
-      ? `Model Perpajakan Terkonfirmasi (${tb.pphStudioRegime})`
+      ? `Model Perpajakan & Rekonsiliasi Kas (${tb.pphStudioRegime})`
       : 'Profil Perpajakan Belum Dikonfirmasi (Pending)',
     category: 'tax_optimization',
     badge: tb.taxBasisStatus === 'CONFIRMED' ? 'OPTIMAL' : 'WARNING',
-    ruleBasedConfidenceScore: 90,
-    confidenceDescription: 'Rule-based compliance score berdasarkan pemisahan PPh studio, PPN penyerahan, dan kredit potput.',
+    ruleBasedConfidenceScore: 92,
+    confidenceDescription: 'Rule-based compliance score berdasarkan rekonsiliasi beban PPh, PPN titipan, kredit potput, dan kelebihan PPN Masukan.',
     evidenceDataSource: tb.taxBasisStatus === 'CONFIRMED'
-      ? `PPh Studio: Rp ${tb.pphStudioIdr.toLocaleString('id-ID')} (${tb.pphLegalBasis}). PPN Dipungut: Rp ${tb.ppnOutputCollectedIdr.toLocaleString('id-ID')}. Kredit Potput: Rp ${tb.withholdingTaxCreditsReceivedIdr.toLocaleString('id-ID')}.`
-      : 'Status basis pajak belum dikonfirmasi oleh pengguna (Pajak Rp 0 untuk menghindari kepastian sepihak).',
+      ? `Beban PPh: Rp ${tb.pphStudioIdr.toLocaleString('id-ID')}. Net PPN Setor: Rp ${tb.ppnNetPayableIdr.toLocaleString('id-ID')}. Kelebihan PPN Kompensasi: Rp ${tb.ppnExcessCreditCarryforwardIdr.toLocaleString('id-ID')}. Kredit PPh Klien: Rp ${tb.withholdingTaxCreditsReceivedIdr.toLocaleString('id-ID')}. Total Setoran Kas Pajak: Rp ${cf.totalTaxCashOutflowIdr.toLocaleString('id-ID')}.`
+      : 'Status basis pajak belum dikonfirmasi oleh pengguna (Pajak Rp 0 untuk menghindari estimasi spekulatif).',
     marketAssumptions: 'Ketentuan perpajakan memerlukan pelaporan SPT tahunan dan kepatuhan administrasi resmi.',
     riskBoundary: 'Kesalahan pemilihan rezim pajak dapat menyebabkan kurang bayar atau sanksi administrasi perpajakan.',
     strategicAction: 'Gunakan angka ini sebagai referensi perencanaan kas dan konsultasikan dengan konsultan pajak terdaftar.',

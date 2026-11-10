@@ -3,6 +3,42 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.8.3.1] - Tax Edge Cases, Koperasi 4-Year Limit, VAT Carryforward & Cashflow Reconciliation Hardening - 2026-11-10 23:30 +07:00
+
+### Added, Hardened & Reconciled
+- **Penetapan Batas 4 Tahun Koperasi & Masa Transisi Badan Usaha (PP 20/2026):**
+  - **Koperasi Dalam Negeri (`koperasi_umkm`):** Dibatasi maksimal 4 tahun pajak pemanfaatan fasilitas PPh Final 0,5% sejak tanggal terdaftar (`yearsOfFacilityUsed >= 4` -> diskualifikasi dari 0,5%, dialihkan otomatis ke PPh Pasal 17 tarif umum 22% atas laba bersih fiskal).
+  - **Ketentuan Peralihan CV/Firma/PT Lama (`badan_lama_transisi` / `hasTransitionRights`):** Badan usaha terdaftar sebelum berlakunya PP 20/2026 berhak menggunakan fasilitas 0,5% sampai habisnya masa transisi PP 55/2022 (CV/Firma sisa maksimal 4 tahun, PT sisa maksimal 3 tahun). Badan baru tanpa hak transisi wajib tarif umum Pasal 17.
+  - **Dasar Pengenaan PPh Umum Pasal 17:** Ditetapkan secara ketat atas **Penghasilan Kena Pajak (Laba Bersih Fiskal = Omzet Bruto - Beban Operasional)**, secara mutlak **BUKAN** peredaran bruto.
+- **Klasifikasi Ekspor Jasa Kena Pajak PMK 32/2019:**
+  - Membedakan pendapatan platform luar negeri (Google Asia Pacific / AdSense / TikTok Creator Rewards) antara yang memiliki dokumen ekspor formal lengkap (perjanjian tertulis, bukti devisa masuk ke rekening bank dalam negeri, dan pemanfaatan di luar pabean) yang dikenai tarif 0% PPN (`EXPORT_ZERO_RATED`), dengan yang belum memiliki dokumen pendukung lengkap (`TAX_BASIS_UNCONFIRMED`).
+  - Mencegah asumsi otomatis bahwa semua royalti AdSense langsung bebas PPN tanpa pembuktian kepatuhan formal PMK 32/2019.
+- **Kompensasi Kelebihan PPN Masukan (VAT Input Credit Carryforward):**
+  - Ketika PPN Masukan belanja server/operasional melebihi PPN Keluaran ($\text{PPN Masukan} > \text{PPN Keluaran}$), sistem mencatat saldo lebih bayar sebagai `ppnExcessCreditCarryforwardIdr` dengan status `CARRYFORWARD_NEXT_PERIOD`, memastikan hak restitusi/kompensasi masa pajak berikutnya tidak hilang. PPN Kurang Bayar ke kas negara dicatat tepat Rp 0.
+- **Diferensiasi Kategori Transaksi PPN (PMK 131/2024 vs Standar 12%):**
+  - Penjualan tiket screening non-mewah & OTT PPV (`domestic_tickets_ppv`) dikenakan tarif efektif 11% (DPP Nilai Lain 11/12 dengan pembagi inklusif 1,11).
+  - Jasa produksi komersial klien / iklan B2B (`commercial_production_service`) menggunakan tarif standar 12% atas DPP nilai penyerahan.
+- **Rekonsiliasi Arus Kas Pajak Komprehensif (`TaxCashflowReconciliation`):**
+  - Memisahkan secara ketat 4 komponen arus kas perpajakan:
+    1. `pphStudioExpenseIdr`: Beban PPh studio pengurang laba P&L.
+    2. `ppnNetPayableIdr`: Setoran kas PPN titipan penonton ke kas negara.
+    3. `withholdingTaxObligationsPayableIdr`: Utang setoran PPh freelancer/vendor yang telah dipotong studio saat pembayaran honor.
+    4. `withholdingTaxCreditsReceivedIdr`: Aset bukti potong PPh dari klien (kredit pajak SPT).
+  - Formula arus kas keluar pajak riil: $\text{Total Kas Keluar Pajak} = \text{Beban PPh Studio} + \text{Setoran Net PPN} + \text{Utang Potput Freelancer}$.
+- **Pembaruan Antarmuka Creator Intelligence:**
+  - Menambahkan selektor kategori transaksi PPN dan verifikasi ekspor JKP PMK 32/2019 pada Panel 2.
+  - Menampilkan kartu notifikasi Kompensasi Masa Pajak Berikutnya saat PPN Masukan lebih besar dari PPN Keluaran.
+  - Memperkaya KPI Card 4 dengan metrik "Setoran Kas Pajak" dan menyematkan banner "Rekonsiliasi Arus Kas Pajak" lengkap dengan 4 pilar rincian arus kas.
+- **Penambahan Rangkaian Uji Deterministik (`[TEST 28.1]`):**
+  - Menambahkan pengujian menyeluruh pada `scripts/test_milestone_gates_enforcement.ts` yang mencakup 7 pengujian skenario ekstrem fiskal.
+  - Total pengujian validasi sistem meningkat menjadi **202 assertions (100% PASS)** tanpa merusak baseline pengujian yang telah ada.
+- **Pembaruan Versi Produksi & Healthcheck:**
+  - Versi aplikasi ditingkatkan ke `1.15.12` (`V3.17 Tax Edge Cases & Cashflow Reconciliation Hardening`).
+
+### Verification & Tests
+- `npm test`: 100% PASS seluruh rangkaian pengujian (178/178 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 202 assertions).
+- `npm run build`: Lulus bersih dalam 7.49s (0 errors, 0 warnings).
+
 ## [Gelombang II - Milestone 2.8.3] - Tax Model Separation, Directional Withholding & VAT Liability Hardening - 2026-11-10 23:05 +07:00
 
 ### Added, Hardened & Reconciled

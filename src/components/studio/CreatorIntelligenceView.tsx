@@ -17,6 +17,8 @@ import {
   TAX_REGIME_PRESETS,
   TaxRegimeType,
   TaxPayerCategory,
+  VatTransactionCategory,
+  ExportServiceVerificationStatus,
   FinancialTimePeriod,
   ComprehensiveFinancialReport,
   AIBusinessAdvisorDirective,
@@ -214,6 +216,10 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
   const [ppnInputCreditable, setPpnInputCreditable] = useState<number>(0);
   const [withholdingCreditsReceived, setWithholdingCreditsReceived] = useState<number>(0);
   const [withholdingObligationsPayable, setWithholdingObligationsPayable] = useState<number>(0);
+  const [vatTransactionCategory, setVatTransactionCategory] = useState<VatTransactionCategory>('domestic_tickets_ppv');
+  const [exportVerificationStatus, setExportVerificationStatus] = useState<ExportServiceVerificationStatus>('PENDING_DOCUMENTATION');
+  const [hasTransitionRights, setHasTransitionRights] = useState<boolean>(false);
+  const [yearsOfFacilityUsed, setYearsOfFacilityUsed] = useState<number>(0);
   const [isGrossPrePlatformCut, setIsGrossPrePlatformCut] = useState<boolean>(false);
 
   // Load Milestones
@@ -420,6 +426,10 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       ppnInputCreditableIdr: ppnInputCreditable,
       withholdingTaxCreditsReceivedIdr: withholdingCreditsReceived,
       withholdingTaxObligationsPayableIdr: withholdingObligationsPayable,
+      vatTransactionCategory,
+      exportVerificationStatus,
+      hasTransitionRights,
+      yearsOfFacilityUsed,
     });
   }, [
     milestones,
@@ -437,6 +447,10 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     ppnInputCreditable,
     withholdingCreditsReceived,
     withholdingObligationsPayable,
+    vatTransactionCategory,
+    exportVerificationStatus,
+    hasTransitionRights,
+    yearsOfFacilityUsed,
   ]);
 
   // Dynamic AI Business Advisor Directives (Evidence-based from actual AMF metrics)
@@ -1281,14 +1295,15 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                             setTaxPayerCategory(val);
                             if (val === 'unconfirmed') setTaxRegime('tax_basis_unconfirmed');
                             else if (val === 'cv_firma_pt_baru') setTaxRegime('pph_badan_pasal_17');
-                            else if (val === 'wp_op_umkm' || val === 'pt_perorangan_umkm' || val === 'koperasi_umkm') setTaxRegime('pph_final_umkm');
+                            else if (val === 'wp_op_umkm' || val === 'pt_perorangan_umkm' || val === 'koperasi_umkm' || val === 'badan_lama_transisi') setTaxRegime('pph_final_umkm');
                           }}
                           className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
                         >
                           <option value="unconfirmed">Belum Dikonfirmasi (Pending)</option>
                           <option value="wp_op_umkm">Orang Pribadi (WP OP UMKM)</option>
                           <option value="pt_perorangan_umkm">PT Perorangan 1 Orang (PP 20/2026)</option>
-                          <option value="koperasi_umkm">Koperasi Dalam Negeri (PP 20/2026)</option>
+                          <option value="koperasi_umkm">Koperasi Dalam Negeri (Maks 4 Thn)</option>
+                          <option value="badan_lama_transisi">Badan Lama (Hak Transisi PP 55/2022)</option>
                           <option value="cv_firma_pt_baru">CV / Firma / PT Baru (Wajib Ps 17)</option>
                           <option value="pkp_badan">Badan Usaha Umum (Pasal 17)</option>
                           <option value="non_pkp_op">Non-PKP / Freelancer Bebas</option>
@@ -1320,6 +1335,34 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                           />
                           <span className="text-[10px] text-slate-300 leading-tight">
                             Omzet tahunan kumulatif &gt; Rp 500 jt (Fasilitas bebas pajak Pasal 60 PP 55/2022)
+                          </span>
+                        </label>
+                      )}
+
+                      {taxPayerCategory === 'koperasi_umkm' && (
+                        <div className="pt-1">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Tahun Fasilitas Terpakai (Maks 4):</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="10"
+                            value={yearsOfFacilityUsed}
+                            onChange={(e) => setYearsOfFacilityUsed(Number(e.target.value))}
+                            className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
+                          />
+                        </div>
+                      )}
+
+                      {(taxPayerCategory === 'cv_firma_pt_baru' || taxPayerCategory === 'badan_lama_transisi') && (
+                        <label className="flex items-start gap-1.5 pt-1 text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={hasTransitionRights}
+                            onChange={(e) => setHasTransitionRights(e.target.checked)}
+                            className="mt-0.5 rounded border-slate-700 text-blue-500 focus:ring-0 cursor-pointer"
+                          />
+                          <span className="text-[10px] text-slate-300 leading-tight">
+                            Memiliki sisa masa transisi PP 55/2022 (terdaftar sebelum PP 20/2026)
                           </span>
                         </label>
                       )}
@@ -1363,6 +1406,33 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                       {isPkp ? (
                         <div className="space-y-2 pt-1 border-t border-slate-800/60">
                           <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">Kategori Transaksi Penyerahan BKP/JKP:</label>
+                            <select
+                              value={vatTransactionCategory}
+                              onChange={(e) => setVatTransactionCategory(e.target.value as VatTransactionCategory)}
+                              className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
+                            >
+                              <option value="domestic_tickets_ppv">Tiket Pertunjukan & OTT PPV (11% Efektif - PMK 131/2024)</option>
+                              <option value="commercial_production_service">Jasa Produksi Komersial / Iklan B2B (12% Standar)</option>
+                              <option value="foreign_platform_monetization">Monetisasi Platform Luar Negeri (AdSense/YouTube)</option>
+                            </select>
+                          </div>
+
+                          {vatTransactionCategory === 'foreign_platform_monetization' && (
+                            <div>
+                              <label className="text-[10px] text-slate-400 block mb-0.5">Verifikasi Ekspor JKP (PMK 32/2019):</label>
+                              <select
+                                value={exportVerificationStatus}
+                                onChange={(e) => setExportVerificationStatus(e.target.value as ExportServiceVerificationStatus)}
+                                className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
+                              >
+                                <option value="unverified">Belum Terverifikasi Dokumen (Status Unconfirmed)</option>
+                                <option value="verified_export_0_percent">Terverifikasi Dokumen Ekspor JKP Lengkap (Tarif 0%)</option>
+                              </select>
+                            </div>
+                          )}
+
+                          <div>
                             <label className="text-[10px] text-slate-400 block mb-0.5">Skema Harga Tiket Penonton:</label>
                             <select
                               value={ppnPricingScheme}
@@ -1384,6 +1454,12 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                               className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
                             />
                           </div>
+
+                          {comprehensiveReport.taxBreakdown.ppnExcessCreditCarryforwardIdr > 0 && (
+                            <div className="p-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded text-[9px] text-emerald-300 leading-tight">
+                              <span className="font-bold">Kompensasi Masa Pajak Berikutnya:</span> Rp {comprehensiveReport.taxBreakdown.ppnExcessCreditCarryforwardIdr.toLocaleString('id-ID')} ({comprehensiveReport.taxBreakdown.ppnRefundStatus})
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <p className="text-[10px] text-slate-400 leading-relaxed">
@@ -1588,7 +1664,7 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                     {comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? `-Rp ${comprehensiveReport.taxBreakdown.pphStudioIdr.toLocaleString('id-ID')}` : 'Rp 0 (Pending)'}
                   </p>
                   <p className="text-[10px] text-slate-400 truncate">
-                    PPN Titipan: Rp {comprehensiveReport.taxBreakdown.ppnOutputCollectedIdr.toLocaleString('id-ID')} | Bupot: Rp {comprehensiveReport.taxBreakdown.withholdingTaxCreditsReceivedIdr.toLocaleString('id-ID')}
+                    Setoran Kas Pajak: Rp {comprehensiveReport.taxBreakdown.cashflowReconciliation.totalTaxCashOutflowIdr.toLocaleString('id-ID')}
                   </p>
                 </div>
 
@@ -1606,6 +1682,37 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                   <p className="text-[10px] text-slate-300">
                     ROI: <span className="font-bold text-white">{comprehensiveReport.roiPercent}%</span>
                   </p>
+                </div>
+              </div>
+
+              {/* Tax Cashflow Reconciliation Bar (SSOT Milestone 2.8.3.1) */}
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-indigo-300 uppercase tracking-wide flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                    Rekonsiliasi Arus Kas Pajak (Tax Cashflow Reconciliation)
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    Total Arus Kas Keluar: <span className="text-rose-400 font-bold">Rp {comprehensiveReport.taxBreakdown.cashflowReconciliation.totalTaxCashOutflowIdr.toLocaleString('id-ID')}</span>
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
+                  <div className="p-2 bg-slate-900/60 rounded border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">1. PPh Studio (P&L):</span>
+                    <span className="text-white font-bold">Rp {comprehensiveReport.taxBreakdown.cashflowReconciliation.pphStudioExpenseIdr.toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="p-2 bg-slate-900/60 rounded border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">2. PPN Terutang (Setoran):</span>
+                    <span className="text-amber-300 font-bold">Rp {comprehensiveReport.taxBreakdown.cashflowReconciliation.ppnNetPayableIdr.toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="p-2 bg-slate-900/60 rounded border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">3. Utang PPh Potput AMF:</span>
+                    <span className="text-purple-300 font-bold">Rp {comprehensiveReport.taxBreakdown.cashflowReconciliation.withholdingTaxObligationsPayableIdr.toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="p-2 bg-slate-900/60 rounded border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">4. Kredit Bupot Klien:</span>
+                    <span className="text-emerald-300 font-bold">Rp {comprehensiveReport.taxBreakdown.cashflowReconciliation.withholdingTaxCreditsReceivedIdr.toLocaleString('id-ID')}</span>
+                  </div>
                 </div>
               </div>
 

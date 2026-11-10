@@ -2130,6 +2130,205 @@ async function runMilestoneGatesAudit() {
   );
 
   // --------------------------------------------------------------------------
+  // [TEST 28.1] Milestone 2.8.3.1: Tax Edge Cases & Cashflow Reconciliation Hardening
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 28.1] Verifying Tax Edge Cases & Cashflow Reconciliation Hardening (Milestone 2.8.3.1)');
+
+  // 1. Koperasi 4-Year Facility Usage Limit (PP 20/2026)
+  const reportKoperasiWithinLimit = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-kop-2yr', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 100000000, currency: 'IDR' }],
+    creditTransactions: [],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'koperasi_umkm',
+    yearsOfFacilityUsed: 2,
+  });
+  assert(
+    reportKoperasiWithinLimit.taxBreakdown.isPphEligible === true && reportKoperasiWithinLimit.taxBreakdown.pphStudioIdr === 500000,
+    'Koperasi using facility for 2 years (<= 4 years) is eligible for 0.5% PPh Final UMKM',
+    `Expected eligible with 500.000 tax, got ${reportKoperasiWithinLimit.taxBreakdown.pphStudioIdr}`
+  );
+
+  const reportKoperasiExpired = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-kop-4yr', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 100000000, currency: 'IDR' }],
+    creditTransactions: [],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'koperasi_umkm',
+    yearsOfFacilityUsed: 4, // Reached 4 years limit -> must use Pasal 17
+  });
+  assert(
+    reportKoperasiExpired.taxBreakdown.isPphEligible === false,
+    'Koperasi with 4 years of facility used is strictly ineligible for PPh Final UMKM per PP 20/2026',
+    `Expected ineligible, got ${reportKoperasiExpired.taxBreakdown.isPphEligible}`
+  );
+  assert(
+    reportKoperasiExpired.taxBreakdown.pphStudioRegime === 'pph_badan_pasal_17' && reportKoperasiExpired.taxBreakdown.pphEffectiveRatePercent === 22,
+    'Koperasi exceeding 4-year limit is redirected to PPh Pasal 17 Badan (22% on net profit)',
+    `Expected pph_badan_pasal_17 with 22%, got ${reportKoperasiExpired.taxBreakdown.pphStudioRegime} (${reportKoperasiExpired.taxBreakdown.pphEffectiveRatePercent}%)`
+  );
+
+  // 2. CV / Firma / PT Transition Rights (PP 20/2026)
+  const reportCvWithTransition = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-cv-trans', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 100000000, currency: 'IDR' }],
+    creditTransactions: [],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'cv_firma_pt_baru',
+    hasTransitionRights: true,
+    yearsOfFacilityUsed: 2, // Within 4 years for CV/Firma
+  });
+  assert(
+    reportCvWithTransition.taxBreakdown.isPphEligible === true && reportCvWithTransition.taxBreakdown.pphStudioIdr === 500000,
+    'CV with grandfathered transition rights and remaining years is eligible for 0.5% PPh Final UMKM',
+    `Expected eligible with 500.000 tax, got ${reportCvWithTransition.taxBreakdown.pphStudioIdr}`
+  );
+
+  const reportPtTransitionExpired = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-pt-exp', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 100000000, currency: 'IDR' }],
+    creditTransactions: [],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'pt_umum',
+    hasTransitionRights: true,
+    yearsOfFacilityUsed: 3, // PT transition period is max 3 years under PP 55/2022
+  });
+  assert(
+    reportPtTransitionExpired.taxBreakdown.isPphEligible === false,
+    'PT with 3 years of facility used has exhausted its transition rights and must use Pasal 17',
+    `Expected ineligible, got ${reportPtTransitionExpired.taxBreakdown.isPphEligible}`
+  );
+
+  // 3. Corporate Income Tax (Pasal 17) Tax Basis = Net Fiscal Profit (Penghasilan Kena Pajak), NOT Gross Revenue
+  const reportPasal17NetProfitBasis = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-p17', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 100000000, currency: 'IDR' }], // Gross: 100M
+    creditTransactions: [
+      { id: 'ct-ai', user_id: 'u1', amount: 20000, transaction_type: 'usage', description: 'Production AI quota', created_at: new Date().toISOString() }, // Cost: 20M
+    ],
+    taxRegime: 'pph_pasal_17',
+    taxPayerCategory: 'pt_umum',
+  });
+  // Gross = 100.000.000, AI Cost = 20.000.000 -> Net Fiscal Profit = 80.000.000. 22% of 80M = 17.600.000 (NOT 22% of 100M = 22M)
+  assert(
+    reportPasal17NetProfitBasis.taxBreakdown.pphTaxableBaseIdr === 80000000,
+    'PPh Pasal 17 tax base is strictly Net Fiscal Profit (Gross - Costs = Rp 80.000.000), never gross turnover',
+    `Expected DPP 80.000.000, got ${reportPasal17NetProfitBasis.taxBreakdown.pphTaxableBaseIdr}`
+  );
+  assert(
+    reportPasal17NetProfitBasis.taxBreakdown.pphStudioIdr === 17600000,
+    'PPh Pasal 17 tax expense is 22% x 80.000.000 = Rp 17.600.000',
+    `Expected PPh 17.600.000, got ${reportPasal17NetProfitBasis.taxBreakdown.pphStudioIdr}`
+  );
+
+  // 4. Foreign Platform Monetization & Export Service Classification (PMK 32/2019)
+  const reportUnverifiedForeignPlatform = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-yt-unver', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 50000000, currency: 'IDR' }],
+    creditTransactions: [],
+    isPkp: true,
+    vatTransactionCategory: 'foreign_platform_monetization',
+    exportVerificationStatus: 'unverified',
+  });
+  assert(
+    reportUnverifiedForeignPlatform.taxBreakdown.foreignPlatformTaxStatus === 'TAX_BASIS_UNCONFIRMED',
+    'Unverified foreign platform payouts are classified as TAX_BASIS_UNCONFIRMED, never assumed to be 0% export VAT',
+    `Expected TAX_BASIS_UNCONFIRMED, got ${reportUnverifiedForeignPlatform.taxBreakdown.foreignPlatformTaxStatus}`
+  );
+
+  const reportVerifiedForeignExport = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-yt-ver', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 50000000, currency: 'IDR' }],
+    creditTransactions: [],
+    isPkp: true,
+    vatTransactionCategory: 'foreign_platform_monetization',
+    exportVerificationStatus: 'verified_export_0_percent',
+  });
+  assert(
+    reportVerifiedForeignExport.taxBreakdown.foreignPlatformTaxStatus === 'EXPORT_ZERO_RATED',
+    'Properly documented foreign export under PMK 32/2019 is classified as EXPORT_ZERO_RATED (0% VAT)',
+    `Expected EXPORT_ZERO_RATED, got ${reportVerifiedForeignExport.taxBreakdown.foreignPlatformTaxStatus}`
+  );
+
+  // 5. VAT Input Credit Excess Carryforward (Kelebihan PPN Masukan)
+  const reportVatExcessCarryforward = calculateComprehensiveFinancialReport({
+    milestones: [],
+    creditTransactions: [],
+    paymentOrders: [
+      { id: 'ord-ppn-carry', order_number: 'ORD-PPN-CARRY', amount: 11100000, status: 'completed', payment_method: 'qris', created_at: new Date().toISOString() }, // PPN Keluaran: 1.100.000
+    ],
+    isPkp: true,
+    ppnInputCreditableIdr: 1500000, // PPN Masukan: 1.500.000 (> 1.100.000)
+  });
+  assert(
+    reportVatExcessCarryforward.taxBreakdown.ppnNetPayableIdr === 0,
+    'When PPN Masukan > PPN Keluaran, PPN Net Payable to DJP is Rp 0',
+    `Expected PPN net payable 0, got ${reportVatExcessCarryforward.taxBreakdown.ppnNetPayableIdr}`
+  );
+  assert(
+    reportVatExcessCarryforward.taxBreakdown.ppnExcessCreditCarryforwardIdr === 400000,
+    'Excess Input VAT is preserved as carryforward credit (1.500.000 - 1.100.000 = Rp 400.000)',
+    `Expected carryforward 400.000, got ${reportVatExcessCarryforward.taxBreakdown.ppnExcessCreditCarryforwardIdr}`
+  );
+  assert(
+    reportVatExcessCarryforward.taxBreakdown.ppnRefundStatus === 'CARRYFORWARD_NEXT_PERIOD',
+    'Excess Input VAT refund status is CARRYFORWARD_NEXT_PERIOD',
+    `Expected CARRYFORWARD_NEXT_PERIOD, got ${reportVatExcessCarryforward.taxBreakdown.ppnRefundStatus}`
+  );
+
+  // 6. VAT Transaction Category: Commercial Production Services (12% Standard Rate)
+  const reportCommercialB2bVat = calculateComprehensiveFinancialReport({
+    milestones: [],
+    creditTransactions: [],
+    paymentOrders: [
+      { id: 'ord-b2b', order_number: 'ORD-B2B-01', amount: 10000000, status: 'completed', payment_method: 'manual_transfer', created_at: new Date().toISOString() },
+    ],
+    isPkp: true,
+    vatTransactionCategory: 'commercial_production_service',
+    ppnPricingScheme: 'exclusive',
+  });
+  assert(
+    reportCommercialB2bVat.taxBreakdown.ppnDppIdr === 10000000 && reportCommercialB2bVat.taxBreakdown.ppnOutputCollectedIdr === 1200000,
+    'Commercial B2B production service applies standard 12% VAT rate (10.000.000 x 12% = Rp 1.200.000)',
+    `Expected PPN 1.200.000, got ${reportCommercialB2bVat.taxBreakdown.ppnOutputCollectedIdr}`
+  );
+
+  // 7. Comprehensive Tax Cashflow Reconciliation
+  const reportCashflowRecon = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-cf', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 600000000, currency: 'IDR' }],
+    creditTransactions: [],
+    paymentOrders: [
+      { id: 'ord-cf', order_number: 'ORD-CF-01', amount: 11100000, status: 'completed', payment_method: 'qris', created_at: new Date().toISOString() }, // PPN Out: 1.100.000
+    ],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'wp_op_umkm',
+    cumulativeAnnualGrossRevenue: 600000000, // 500M exempt, 100M @ 0.5% = 500.000 PPh Studio
+    isPkp: true,
+    ppnInputCreditableIdr: 300000, // Net PPN Payable = 1.100.000 - 300.000 = 800.000
+    withholdingTaxObligationsPayableIdr: 250000, // Freelancer withholding payable = 250.000
+    withholdingTaxCreditsReceivedIdr: 1000000, // Client withholding tax credit = 1.000.000 (prepaid asset)
+  });
+  const cf = reportCashflowRecon.taxBreakdown.cashflowReconciliation;
+  assert(
+    cf.pphStudioExpenseIdr === 500000,
+    'Reconciliation correctly reports PPh Studio expense = Rp 500.000',
+    `Expected 500.000, got ${cf.pphStudioExpenseIdr}`
+  );
+  assert(
+    cf.ppnNetPayableIdr === 800000,
+    'Reconciliation correctly reports Net PPN payable = Rp 800.000',
+    `Expected 800.000, got ${cf.ppnNetPayableIdr}`
+  );
+  assert(
+    cf.withholdingTaxObligationsPayableIdr === 250000,
+    'Reconciliation correctly reports Withholding obligations payable = Rp 250.000',
+    `Expected 250.000, got ${cf.withholdingTaxObligationsPayableIdr}`
+  );
+  assert(
+    cf.withholdingTaxCreditsReceivedIdr === 1000000,
+    'Reconciliation correctly reports Withholding tax credit asset received = Rp 1.000.000',
+    `Expected 1.000.000, got ${cf.withholdingTaxCreditsReceivedIdr}`
+  );
+  assert(
+    cf.totalTaxCashOutflowIdr === 500000 + 800000 + 250000, // 1.550.000
+    'Total tax cash outflow is exactly PPh Studio + PPN Net Payable + Withholding Obligations (500k + 800k + 250k = Rp 1.550.000)',
+    `Expected total tax cash outflow 1.550.000, got ${cf.totalTaxCashOutflowIdr}`
+  );
+
+  // --------------------------------------------------------------------------
   // [TEST 29] Verifying Double Counting Defense on Revenue & Platform Share
   // --------------------------------------------------------------------------
   console.log('\n[TEST 29] Verifying Double Counting Defense on Revenue & Platform Share');
