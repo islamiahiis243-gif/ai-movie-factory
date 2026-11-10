@@ -19,6 +19,11 @@ import {
 } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import {
+  QC_15_PARAMETERS,
+  evaluateProjectQC,
+  validateExportClearance,
+} from '../../lib/qualityControlEngine';
+import {
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
@@ -56,6 +61,7 @@ interface QualityControlViewProps {
 
 const LOCAL_STORAGE_QC_AUDITS_KEY = 'ai_movie_factory_qc_audits_v1';
 const LOCAL_STORAGE_APPROVALS_KEY = 'ai_movie_factory_approvals_v1';
+const LOCAL_STORAGE_QC_OVERRIDES_KEY = 'ai_movie_factory_qc_overrides_v1';
 
 export const QualityControlView: React.FC<QualityControlViewProps> = ({
   projects,
@@ -88,6 +94,11 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
   const [activeAuditStage, setActiveAuditStage] = useState('');
   const [currentAudit, setCurrentAudit] = useState<QCComprehensiveAudit | null>(null);
 
+  // Director Overrides State (SSOT Section 8: Warning/Advisory override by director)
+  const [directorOverrides, setDirectorOverrides] = useState<Record<string, { overridden: boolean; override_reason: string }>>({});
+  const [overridingCheck, setOverridingCheck] = useState<QCCheckItem | null>(null);
+  const [overrideReasonInput, setOverrideReasonInput] = useState('');
+
   // Approval Hub Filter State
   const [approvalFilter, setApprovalFilter] = useState<'all' | QCApprovalState>('all');
   const [entityTypeFilter, setEntityTypeFilter] = useState<string>('all');
@@ -100,81 +111,17 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
   // Approvals State List
   const [approvalItems, setApprovalItems] = useState<ApprovalEntityItem[]>([]);
 
-  // 12 SSOT Pillar Definitions (Section 34)
-  const pillarDefinitions: { id: QCPillarCategory; title: string; desc: string; weight: number }[] = [
-    {
-      id: 'character_consistency',
-      title: isId ? '1. Konsistensi Penampilan Karakter' : '1. Character Appearance Consistency',
-      desc: isId ? 'Memverifikasi kemiripan wajah, mata, rambut, dan proporsi terhadap character sheet seed.' : 'Verifies facial likeness, eyes, hair, and proportions against character sheet seeds.',
-      weight: 12,
-    },
-    {
-      id: 'costume_continuity',
-      title: isId ? '2. Kontinuitas Kostum & Properti' : '2. Costume & Prop Continuity',
-      desc: isId ? 'Memastikan pakaian, aksesoris, dan senjata tidak berubah secara janggal antarsyot.' : 'Ensures garments, accessories, and weapons maintain visual continuity across shots.',
-      weight: 10,
-    },
-    {
-      id: 'environment_consistency',
-      title: isId ? '3. Konsistensi Lingkungan & Latar' : '3. Environment & Setting Consistency',
-      desc: isId ? 'Memeriksa arah pencahayaan, cuaca, dan aura spiritual/metaphysics sesuai lore sekte.' : 'Checks lighting direction, weather, and world lore alignment across scene cuts.',
-      weight: 8,
-    },
-    {
-      id: 'story_continuity',
-      title: isId ? '4. Kontinuitas Alur Cerita & Aturan Dunia' : '4. Story Continuity & Codex Rules',
-      desc: isId ? 'Memvalidasi hukum sihir/kultivasi dan skala kekuatan agar tidak melanggar lore narasi.' : 'Validates world power scaling and metaphysics codex rules to prevent plot holes.',
-      weight: 10,
-    },
-    {
-      id: 'dialogue_consistency',
-      title: isId ? '5. Konsistensi Dialog & Nada Karakter' : '5. Dialogue & Character Tone',
-      desc: isId ? 'Memeriksa kata sapaan/kehormatan (honorifics), intonasi emosi, dan register bahasa.' : 'Checks character registers, honorifics, and emotional dialogue bursts.',
-      weight: 8,
-    },
-    {
-      id: 'scene_order',
-      title: isId ? '6. Urutan Adegan & Penomoran Kronologis' : '6. Scene Order & Chronology',
-      desc: isId ? 'Memastikan slugline, transisi waktu, dan urutan kronologi nomor adegan teratur.' : 'Ensures sluglines, temporal transitions, and sequence scene orders are valid.',
-      weight: 7,
-    },
-    {
-      id: 'visual_quality',
-      title: isId ? '7. Kualitas Visual & Deteksi Anomali AI' : '7. Visual Quality & AI Artifact Scan',
-      desc: isId ? 'Mendeteksi distorsi jari/anggota tubuh, keburaman frame, dan artefak AI generasi.' : 'Detects distorted limbs, micro-blurring, and synthetic generative artifacts.',
-      weight: 10,
-    },
-    {
-      id: 'audio_quality',
-      title: isId ? '8. Kualitas Audio & Standar -14 LUFS' : '8. Audio Quality & -14 LUFS Compliance',
-      desc: isId ? 'Memeriksa kejernihan vokal, bebas clipping, dan rasio mixing BGM-Dialog yang seimbang.' : 'Ensures vocal clarity, zero clipping, and broadcast-standard loudness normalization.',
-      weight: 8,
-    },
-    {
-      id: 'aspect_ratio',
-      title: isId ? '9. Kepatuhan Rasio Aspek (Aspect Ratio)' : '9. Aspect Ratio Conformance',
-      desc: isId ? 'Memastikan framing konsisten pada rasio proyek (16:9 YouTube atau 9:16 Reels/TikTok).' : 'Ensures all footage adheres to project aspect ratio (16:9 or 9:16).',
-      weight: 6,
-    },
-    {
-      id: 'output_resolution',
-      title: isId ? '10. Kepatuhan Resolusi Output (1080p / 4K)' : '10. Output Resolution Conformance',
-      desc: isId ? 'Memverifikasi bahwa resolusi kanvas memenuhi target kualitas Full HD atau 4K Ultra HD.' : 'Verifies rendered frames meet target master resolution requirements.',
-      weight: 6,
-    },
-    {
-      id: 'missing_assets',
-      title: isId ? '11. Deteksi Aset yang Belum Lengkap' : '11. Missing Asset Detection',
-      desc: isId ? 'Mendeteksi shot tanpa visual gambar, dialog tanpa audio TTS, atau adegan kosong.' : 'Scans for missing voice tracks, unrendered storyboard shots, or blank scenes.',
-      weight: 8,
-    },
-    {
-      id: 'production_completeness',
-      title: isId ? '12. Kelengkapan Produksi Keseluruhan' : '12. Production Completeness Score',
-      desc: isId ? 'Mengukur persentase kesiapan produksi menyeluruh sebelum rendering final paket master.' : 'Measures end-to-end production readiness index prior to final master export packaging.',
-      weight: 7,
-    },
-  ];
+  // 15 SSOT Parameter Definitions (Section 8, TC-WF-12)
+  const pillarDefinitions = useMemo(() => {
+    return QC_15_PARAMETERS.map((p) => ({
+      id: p.id,
+      title: isId ? p.nameId : p.nameEn,
+      desc: isId ? p.descriptionId : p.descriptionEn,
+      category: p.category,
+      severity: p.severity,
+      weight: p.weight,
+    }));
+  }, [isId]);
 
   // Load project data and cached audits
   useEffect(() => {
@@ -309,12 +256,24 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
 
         setApprovalItems(builtItems);
 
+        // Load director overrides
+        let loadedOverrides: Record<string, { overridden: boolean; override_reason: string }> = {};
+        try {
+          const rawOverrides = localStorage.getItem(`${LOCAL_STORAGE_QC_OVERRIDES_KEY}_${activeProject.id}`);
+          if (rawOverrides) {
+            loadedOverrides = JSON.parse(rawOverrides);
+            setDirectorOverrides(loadedOverrides);
+          }
+        } catch (e) {
+          console.warn('Failed reading qc overrides:', e);
+        }
+
         // Load or initialize QC Comprehensive Audit
         try {
           const rawAudit = localStorage.getItem(`${LOCAL_STORAGE_QC_AUDITS_KEY}_${activeProject.id}`);
           if (rawAudit) {
             const parsed = JSON.parse(rawAudit);
-            if (parsed && parsed.checks) {
+            if (parsed && parsed.checks && parsed.checks.length === 15) {
               setCurrentAudit(parsed);
               return;
             }
@@ -323,8 +282,8 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
           console.warn('Failed reading cached audit:', e);
         }
 
-        // Initialize default comprehensive audit if none cached
-        generateInitialAudit(activeProject, fetchedChars, fetchedScenes, fetchedAssets);
+        // Initialize 15-parameter comprehensive audit if none cached or outdated
+        generateInitialAudit(activeProject, fetchedChars, fetchedScenes, fetchedAssets, loadedOverrides);
       } catch (err) {
         console.warn('Error loading QC and Continuity data:', err);
       } finally {
@@ -338,150 +297,21 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
     };
   }, [activeProject?.id]);
 
-  // Generate Baseline Audit Based on Actual Project Assets
+  // Generate Baseline 15-Parameter Audit Based on Actual Project Assets
   const generateInitialAudit = (
     proj: Project,
     chars: Character[],
     scs: SceneItem[],
-    ast: MediaAsset[]
+    ast: MediaAsset[],
+    overrides = directorOverrides
   ) => {
-    const checks: QCCheckItem[] = [
-      {
-        id: 'qc-check-1',
-        check_name: 'Konsistensi Wajah & Karakter (Facial Consistency)',
-        category: 'character_consistency',
-        pillar: 'character_consistency',
-        status: chars.length > 0 ? 'passed' : 'warning',
-        score: chars.length > 0 ? 94 : 60,
-        details: chars.length > 0
-          ? `${chars.length} profil karakter memiliki seed referensi visual konsisten terdaftar.`
-          : 'Belum ada karakter yang memiliki seed prompt visual stabil.',
-        recommendation: chars.length > 0 ? undefined : 'Buat lembar referensi karakter di Character Studio.',
-      },
-      {
-        id: 'qc-check-2',
-        check_name: 'Kontinuitas Busana & Aksesoris (Costume Continuity)',
-        category: 'costume_continuity',
-        pillar: 'costume_continuity',
-        status: 'passed',
-        score: 92,
-        details: 'Katalog pakaian kultivasi dan jubah sekte konsisten di seluruh adegan.',
-      },
-      {
-        id: 'qc-check-3',
-        check_name: 'Latar Lingkungan & Pencahayaan (Environment & Lighting Lore)',
-        category: 'environment_consistency',
-        pillar: 'environment_consistency',
-        status: 'passed',
-        score: 96,
-        details: 'Arah cahaya volumetrik dan kabut spiritual selaras dengan world bible.',
-      },
-      {
-        id: 'qc-check-4',
-        check_name: 'Kontinuitas Naratif & Batasan Kekuatan (Codex & Power Scaling)',
-        category: 'story_continuity',
-        pillar: 'story_continuity',
-        status: 'passed',
-        score: 98,
-        details: 'Tingkatan ranah kultivasi mematuhi aturan narasi tanpa anomali deus ex machina.',
-      },
-      {
-        id: 'qc-check-5',
-        check_name: 'Konsistensi Dialog & Sapaan Kehormatan (Dialogue & Honorifics)',
-        category: 'dialogue_consistency',
-        pillar: 'dialogue_consistency',
-        status: 'passed',
-        score: 95,
-        details: 'Penggunaan honorifics (Shifu, Kakak Seperguruan, Junior) terjaga akurat.',
-      },
-      {
-        id: 'qc-check-6',
-        check_name: 'Urutan Adegan & Penomoran (Scene Order & Chronology)',
-        category: 'scene_order',
-        pillar: 'scene_order',
-        status: scs.length > 0 ? 'passed' : 'warning',
-        score: scs.length > 0 ? 100 : 50,
-        details: `${scs.length} adegan tersusun dalam kronologi slugline yang runtut.`,
-      },
-      {
-        id: 'qc-check-7',
-        check_name: 'Kualitas Visual & Bebas Artefak AI (Visual Fidelity)',
-        category: 'visual_quality',
-        pillar: 'visual_quality',
-        status: 'passed',
-        score: 90,
-        details: 'Pemeriksaan frame tidak menemukan cacat anatomi jari atau distorsi AI parah.',
-      },
-      {
-        id: 'qc-check-8',
-        check_name: 'Standar Audio & Loudness -14 LUFS (Audio Loudness)',
-        category: 'audio_quality',
-        pillar: 'audio_quality',
-        status: 'passed',
-        score: 93,
-        details: 'Tingkat kekerasan suara dinormalisasi pada -14 LUFS tanpa ada clipping peak.',
-      },
-      {
-        id: 'qc-check-9',
-        check_name: 'Kepatuhan Rasio Aspek (Aspect Ratio Conformance)',
-        category: 'aspect_ratio',
-        pillar: 'aspect_ratio',
-        status: 'passed',
-        score: 100,
-        details: `Seluruh rekaman terkonfirmasi dalam format rasio ${proj.settings?.aspect_ratio || '16:9'}.`,
-      },
-      {
-        id: 'qc-check-10',
-        check_name: 'Kepatuhan Resolusi Output (Resolution Standard)',
-        category: 'output_resolution',
-        pillar: 'output_resolution',
-        status: 'passed',
-        score: 95,
-        details: `Resolusi output terkalibrasi pada target ${proj.settings?.output_resolution || '1080p'}.`,
-      },
-      {
-        id: 'qc-check-11',
-        check_name: 'Deteksi Aset yang Belum Dihasilkan (Missing Assets)',
-        category: 'missing_assets',
-        pillar: 'missing_assets',
-        status: ast.length >= 3 ? 'passed' : 'warning',
-        score: ast.length >= 3 ? 91 : 70,
-        details: `${ast.length} aset media aktif terverifikasi. Tidak ada shot krusial yang terputus.`,
-      },
-      {
-        id: 'qc-check-12',
-        check_name: 'Indeks Kesiapan Produksi (Production Completeness Index)',
-        category: 'production_completeness',
-        pillar: 'production_completeness',
-        status: 'passed',
-        score: 94,
-        details: 'Pipeline produksi memenuhi ambang batas kelayakan untuk perakitan master video.',
-      },
-    ];
-
-    const avgScore = Math.round(checks.reduce((acc, c) => acc + c.score, 0) / checks.length);
-    const hasFailed = checks.some((c) => c.status === 'failed');
-    const hasWarning = checks.some((c) => c.status === 'warning');
-
-    const audit: QCComprehensiveAudit = {
-      id: `audit-${proj.id}-${Date.now()}`,
-      project_id: proj.id,
-      audit_title: `Audit Kontinuitas & Mutu Produksi — ${proj.name}`,
-      overall_score: avgScore,
-      readiness_status: hasFailed ? 'failed' : hasWarning ? 'warning' : 'passed',
-      summary: hasFailed
-        ? 'Ditemukan anomali kritis yang menghalangi rendering master paket. Tinjau catatan sutradara.'
-        : 'Proyek lolos verifikasi standar industri perfilman. Kontinuitas karakter dan lore terjaga prima.',
-      audited_at: new Date().toISOString(),
-      audited_by_agent: 'Quality Control Agent (Gemini Pro Vision Engine)',
-      checks,
-      missing_assets_count: ast.length < 3 ? 3 - ast.length : 0,
-      critical_issues_count: hasFailed ? 1 : 0,
-      recommendations: [
-        'Pertahankan seed prompt wajah karakter saat merender shot aksi pertempuran berkecepatan tinggi.',
-        'Terapkan profil Color LUT Xianxia Ethereal pada timeline editing sebelum merilis master package.',
-      ],
-    };
+    const audit = evaluateProjectQC({
+      project: proj,
+      characters: chars,
+      scenes: scs,
+      assets: ast,
+      existingOverrides: overrides,
+    });
 
     setCurrentAudit(audit);
     try {
@@ -491,6 +321,48 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
     }
   };
 
+  // Apply Director Override for Warning/Advisory Parameter (SSOT Section 8)
+  const handleApplyDirectorOverride = (check: QCCheckItem, reason: string) => {
+    if (!activeProject || !reason.trim()) return;
+    const paramKey = check.pillar || check.category;
+    const updatedOverrides = {
+      ...directorOverrides,
+      [paramKey]: {
+        overridden: true,
+        override_reason: reason.trim(),
+      },
+    };
+    setDirectorOverrides(updatedOverrides);
+    try {
+      localStorage.setItem(`${LOCAL_STORAGE_QC_OVERRIDES_KEY}_${activeProject.id}`, JSON.stringify(updatedOverrides));
+    } catch (e) {
+      console.warn('Failed saving override:', e);
+    }
+
+    const updatedAudit = evaluateProjectQC({
+      project: activeProject,
+      characters,
+      scenes,
+      assets,
+      existingOverrides: updatedOverrides,
+    });
+    setCurrentAudit(updatedAudit);
+    try {
+      localStorage.setItem(`${LOCAL_STORAGE_QC_AUDITS_KEY}_${activeProject.id}`, JSON.stringify(updatedAudit));
+    } catch (e) {
+      console.warn('Failed saving audit:', e);
+    }
+
+    setOverridingCheck(null);
+    setOverrideReasonInput('');
+    onShowToast(
+      isId
+        ? `Persetujuan sutradara (Override) berhasil diterapkan untuk "${check.check_name}".`
+        : `Director override applied for "${check.check_name}".`,
+      'success'
+    );
+  };
+
   // Run Full Project AI QC Audit
   const handleRunFullAudit = async () => {
     if (!activeProject || isAuditing) return;
@@ -498,12 +370,12 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
     setAuditProgress(0);
 
     const stages = [
-      { progress: 15, msg: isId ? 'Memindai Konsistensi Wajah Karakter & Seed Prompt...' : 'Scanning Character Facial Consistency & Seeds...' },
-      { progress: 35, msg: isId ? 'Memvalidasi Kontinuitas Busana & Senjata Antar-Syot...' : 'Validating Costume & Weapon Continuity Across Shots...' },
-      { progress: 55, msg: isId ? 'Menganalisis Kepatuhan Aturan Lore & Power Scaling...' : 'Analyzing Lore Rule Compliance & Power Scaling...' },
-      { progress: 75, msg: isId ? 'Memeriksa Normalisasi Audio -14 LUFS & Kerapian Vokal...' : 'Inspecting -14 LUFS Audio Normalization & Vocal Balance...' },
-      { progress: 90, msg: isId ? 'Memverifikasi Rasio Aspek & Resolusi Output Master...' : 'Verifying Aspect Ratio & Output Resolution Standards...' },
-      { progress: 100, msg: isId ? 'Audit Kontinuitas Selesai!' : 'Continuity Audit Complete!' },
+      { progress: 15, msg: isId ? 'Memindai Konsistensi Wajah Karakter & Master Sheet (Auto AI)...' : 'Scanning Character Facial Likeness & Master Sheet (Auto AI)...' },
+      { progress: 30, msg: isId ? 'Memvalidasi Kontinuitas Busana, Properti & Latar (Auto AI)...' : 'Validating Costume, Prop & Setting Continuity (Auto AI)...' },
+      { progress: 50, msg: isId ? 'Mendeteksi Distorsi Anatomi & AI Glitch Frame...' : 'Scanning Anatomical Distortions & AI Glitches...' },
+      { progress: 70, msg: isId ? 'Memeriksa Kepatuhan Normalisasi Audio -14/-16 LUFS & Lip-sync...' : 'Inspecting -14/-16 LUFS Loudness & Lip-sync Viseme...' },
+      { progress: 85, msg: isId ? 'Memverifikasi Rasio Aspek Proyek & Format Master Video...' : 'Verifying Target Aspect Ratio & Master Export Specs...' },
+      { progress: 100, msg: isId ? 'Audit 15 Parameter QC Selesai!' : '15-Parameter QC Audit Complete!' },
     ];
 
     for (const st of stages) {
@@ -513,12 +385,12 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
     }
 
     // Refresh audit
-    generateInitialAudit(activeProject, characters, scenes, assets);
+    generateInitialAudit(activeProject, characters, scenes, assets, directorOverrides);
     setIsAuditing(false);
     onShowToast(
       isId
-        ? `Audit Kontrol Kualitas proyek "${activeProject.name}" selesai dengan skor 94/100!`
-        : `QC Audit for project "${activeProject.name}" completed with score 94/100!`,
+        ? `Audit Kontrol Kualitas 15 Parameter proyek "${activeProject.name}" selesai!`
+        : `15-Parameter QC Audit for project "${activeProject.name}" completed!`,
       'success'
     );
   };
@@ -827,7 +699,7 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
           }`}
         >
           <Sliders className="w-4 h-4" />
-          <span>{isId ? '12 Pilar Audit Mutu & Kontinuitas' : '12-Pillar QC Audit Engine'}</span>
+          <span>{isId ? '15 Parameter QC & Kontinuitas (SSOT)' : '15-Parameter QC Engine (SSOT)'}</span>
         </button>
 
         <button
@@ -863,15 +735,22 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
         </button>
       </div>
 
-      {/* TAB 1: 12-PILLAR QC AUDIT ENGINE */}
+      {/* TAB 1: 15-PARAMETER QC AUDIT ENGINE */}
       {activeTab === 'audit_engine' && currentAudit && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span>{isId ? 'Indikator Pemeriksaan Standar SSOT Section 34' : 'SSOT Section 34 Quality Checklist'}</span>
-            </h3>
-            <span className="text-xs text-slate-400 font-mono">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
+                <span>{isId ? '15 Parameter Mutu & Kontinuitas Sinematik (SSOT Bagian 8)' : '15 Cinematic Quality & Continuity Parameters (SSOT Section 8)'}</span>
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {isId
+                  ? 'Evaluasi berlapis: Auto AI, Technical Rule Engine, dan Director Manual Verification dengan hierarki Critical Blocker & Advisory.'
+                  : 'Multi-layer evaluation: Auto AI, Technical Rule Engine, and Director Manual Verification with Critical Blocker & Advisory hierarchy.'}
+              </p>
+            </div>
+            <span className="text-xs text-slate-400 font-mono shrink-0">
               {isId ? 'Terakhir diaudit:' : 'Last audited:'} {new Date(currentAudit.audited_at).toLocaleTimeString()}
             </span>
           </div>
@@ -883,21 +762,44 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
                 className="p-4 rounded-xl bg-[#101726] border border-slate-800/80 hover:border-slate-700 transition-all flex flex-col justify-between gap-2 text-xs"
               >
                 <div>
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <span className="font-bold text-white text-xs">{chk.check_name}</span>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 ${
-                        chk.status === 'passed'
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                          : chk.status === 'warning'
-                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
-                      }`}
-                    >
-                      {chk.status === 'passed' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
-                      <span>{chk.status}</span>
-                      <span className="ml-1 opacity-80">{chk.score}%</span>
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {/* Evaluation Category Badge */}
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold uppercase ${
+                        chk.evaluation_mode === 'auto_ai'
+                          ? 'bg-indigo-500/10 text-indigo-300 border border-indigo-500/30'
+                          : chk.evaluation_mode === 'director_manual'
+                          ? 'bg-purple-500/10 text-purple-300 border border-purple-500/30'
+                          : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30'
+                      }`}>
+                        {chk.evaluation_mode === 'auto_ai' ? '🤖 Auto AI' : chk.evaluation_mode === 'director_manual' ? '🎬 Director' : '⚙️ Technical'}
+                      </span>
+
+                      {/* Severity Badge */}
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold uppercase ${
+                        chk.severity === 'critical_blocker'
+                          ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
+                          : 'bg-slate-700/50 text-slate-300 border border-slate-600/50'
+                      }`}>
+                        {chk.severity === 'critical_blocker' ? '🚨 Blocker' : 'Advisory'}
+                      </span>
+
+                      {/* Status Badge */}
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 ${
+                          chk.status === 'passed'
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                            : chk.status === 'warning'
+                            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                            : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
+                        }`}
+                      >
+                        {chk.status === 'passed' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                        <span>{chk.status}</span>
+                        <span className="ml-1 opacity-80">{chk.score}%</span>
+                      </span>
+                    </div>
                   </div>
                   <p className="text-slate-400 text-[11px] leading-relaxed">{chk.details}</p>
                 </div>
@@ -908,6 +810,27 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
                     <span>{chk.recommendation}</span>
                   </div>
                 )}
+
+                {/* Director Override Section */}
+                <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
+                  {chk.overridden ? (
+                    <span className="text-[10px] bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1 font-mono">
+                      <Check className="w-3 h-3" />
+                      {isId ? 'Override Sutradara Aktif' : 'Director Override Active'}
+                    </span>
+                  ) : (chk.status === 'warning' || chk.status === 'failed') && chk.severity === 'warning_advisory' ? (
+                    <button
+                      onClick={() => {
+                        setOverridingCheck(chk);
+                        setOverrideReasonInput('Disetujui sutradara: Variasi artistik dapat diterima sesuai visi visual.');
+                      }}
+                      className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>{isId ? 'Override Sutradara (Artistic Approval)' : 'Director Override'}</span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
@@ -1131,6 +1054,76 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
                 >
                   <XCircle className="w-4 h-4" />
                   <span>{isId ? 'Tolak' : 'Reject'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Director Override Parameter Modal (SSOT Section 8) */}
+      {overridingCheck && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#0b101b] border border-amber-500/40 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl shadow-amber-500/10">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span>{isId ? 'Override Persetujuan Sutradara' : 'Director Override Approval'}</span>
+                </h3>
+                <p className="text-xs text-amber-400/90 font-mono mt-0.5 truncate">{overridingCheck.check_name}</p>
+              </div>
+              <button
+                onClick={() => setOverridingCheck(null)}
+                className="text-slate-400 hover:text-white text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[11px] text-amber-300">
+              <p className="font-semibold mb-1">
+                {isId ? 'Ketentuan SSOT Section 8 (Exception Handling):' : 'SSOT Section 8 Policy (Exception Handling):'}
+              </p>
+              <p className="text-slate-300">
+                {isId
+                  ? 'Sutradara berhak menyetujui parameter berkategori Advisory / Warning bila variasi AI dinilai dapat diterima secara artistik. Catatan alasan Anda akan dicatat ke dalam audit trail proyek.'
+                  : 'The Director may override Advisory / Warning parameters when AI deviations are deemed artistically acceptable. Your justification will be logged in the project audit trail.'}
+              </p>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1 block">
+                  {isId ? 'Alasan Pertimbangan Artistik / Catatan Override:' : 'Artistic Justification / Override Notes:'}
+                </label>
+                <textarea
+                  value={overrideReasonInput}
+                  onChange={(e) => setOverrideReasonInput(e.target.value)}
+                  placeholder={
+                    isId
+                      ? 'Contoh: Variasi pencahayaan diterima untuk memperkuat nuansa tegang adegan...'
+                      : 'E.g.: Lighting variance accepted to heighten suspense mood...'
+                  }
+                  rows={3}
+                  className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none text-xs resize-none"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setOverridingCheck(null)}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-lg text-xs cursor-pointer"
+                >
+                  {isId ? 'Batal' : 'Cancel'}
+                </button>
+                <button
+                  onClick={() => handleApplyDirectorOverride(overridingCheck, overrideReasonInput)}
+                  disabled={!overrideReasonInput.trim()}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{isId ? 'Terapkan Override Sutradara' : 'Apply Director Override'}</span>
                 </button>
               </div>
             </div>

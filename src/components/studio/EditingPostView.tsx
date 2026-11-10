@@ -93,6 +93,7 @@ interface EditingPostViewProps {
 }
 
 const LOCAL_STORAGE_SEQUENCES_KEY = 'ai_movie_factory_timeline_sequences_v1';
+const LOCAL_STORAGE_GATE5_KEY = 'ai_movie_factory_gate5_approved_v1';
 
 export const EditingPostView: React.FC<EditingPostViewProps> = ({
   projects,
@@ -170,6 +171,14 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
   const [dispatchingJobId, setDispatchingJobId] = useState<string | null>(null);
 
+  // Gate 5 & Multi-Tier Export Presets (SSOT TC-WF-14)
+  const [exportTierPreset, setExportTierPreset] = useState<'social_web' | 'cinema_master'>('social_web');
+  const [isGate5Approved, setIsGate5Approved] = useState<boolean>(false);
+  const [gate5ReviewNotes, setGate5ReviewNotes] = useState<string>('');
+  const [gate5ApprovedAt, setGate5ApprovedAt] = useState<string | null>(null);
+  const [showGate5Modal, setShowGate5Modal] = useState<boolean>(false);
+  const [gate5ModalNoteInput, setGate5ModalNoteInput] = useState<string>('Seluruh klip video, dialog vokal, BGM, dan subtitle telah ditinjau dan disetujui untuk rilis master.');
+
   // Animation Timer Ref
   const animationFrameRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
@@ -212,6 +221,27 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
         setProjectAssets(assetRes.data || []);
         setScenes(sceneRes.data || []);
         setExportHistory(expRes.data || []);
+
+        // Load Gate 5 Approval State (SSOT TC-WF-14)
+        const savedG5 = localStorage.getItem(`${LOCAL_STORAGE_GATE5_KEY}_${activeProject.id}`);
+        if (savedG5) {
+          try {
+            const parsed = JSON.parse(savedG5);
+            setIsGate5Approved(Boolean(parsed.approved));
+            setGate5ReviewNotes(parsed.review_notes || '');
+            setGate5ApprovedAt(parsed.approved_at || null);
+          } catch (e) {
+            setIsGate5Approved(savedG5 === 'true');
+          }
+        } else if (activeProject.settings?.gate5_approved) {
+          setIsGate5Approved(true);
+          setGate5ApprovedAt(activeProject.settings?.gate5_approved_at || null);
+          setGate5ReviewNotes(activeProject.settings?.gate5_review_notes || '');
+        } else {
+          setIsGate5Approved(false);
+          setGate5ApprovedAt(null);
+          setGate5ReviewNotes('');
+        }
 
         // Load or initialize sequence
         const savedSeqs = localStorage.getItem(`${LOCAL_STORAGE_SEQUENCES_KEY}_${activeProject.id}`);
@@ -706,19 +736,83 @@ ${chaptersContent}
     }, 1500);
   };
 
-  // Execute Master Video Render & Publishing
+  // Gate 5 Approval Handlers (SSOT TC-WF-14)
+  const handleApproveGate5 = (notes: string) => {
+    if (!activeProject) return;
+    const now = new Date().toISOString();
+    setIsGate5Approved(true);
+    setGate5ApprovedAt(now);
+    setGate5ReviewNotes(notes);
+
+    const payload = {
+      approved: true,
+      approved_at: now,
+      approved_by: 'Sutradara Utama',
+      review_notes: notes,
+    };
+    try {
+      localStorage.setItem(`${LOCAL_STORAGE_GATE5_KEY}_${activeProject.id}`, JSON.stringify(payload));
+    } catch (e) {
+      console.warn('Failed saving gate 5 approval:', e);
+    }
+
+    setShowGate5Modal(false);
+    onShowToast(
+      isId
+        ? 'Gerbang Persetujuan Sutradara (Gate 5) Disetujui! Tombol Ekspor Master kini aktif.'
+        : 'Director Gate 5 Approved! Master Export is now unlocked.',
+      'success'
+    );
+  };
+
+  const handleRevokeGate5 = () => {
+    if (!activeProject) return;
+    setIsGate5Approved(false);
+    setGate5ApprovedAt(null);
+    try {
+      localStorage.removeItem(`${LOCAL_STORAGE_GATE5_KEY}_${activeProject.id}`);
+    } catch (e) {
+      console.warn('Failed revoking gate 5 approval:', e);
+    }
+    onShowToast(
+      isId
+        ? 'Persetujuan Gate 5 dibatalkan. Timeline kembali ke mode revisi.'
+        : 'Gate 5 approval revoked. Timeline returned to draft/revision mode.',
+      'info'
+    );
+  };
+
+  // Execute Master Video Render & Publishing (Enforcing Gate 5 & Multi-Preset)
   const handleRenderMasterSequence = async () => {
     if (!activeProject) return;
+
+    // Enforce Gate 5 (Final Master Approval)
+    if (!isGate5Approved) {
+      setShowGate5Modal(true);
+      onShowToast(
+        isId
+          ? 'Persetujuan Sutradara (Gate 5) Diperlukan sebelum merender ekspor master!'
+          : 'Director Approval (Gate 5) is required before rendering master export!',
+        'error'
+      );
+      return;
+    }
+
     setIsRendering(true);
     setRenderProgress(0);
     setActiveRenderStage('Inisialisasi Timeline Assembly Engine...');
 
+    const isCinema = exportTierPreset === 'cinema_master';
+    const targetResolution = isCinema ? '4K' : (activePlatform === 'tiktok_reels_9_16' ? '1080p' : '1080p');
+    const targetLufs = isCinema ? '-14 LUFS' : '-16 LUFS';
+    const targetCodec = isCinema ? 'ProRes 422 HQ / MP4 H.265' : 'H.264 / AAC';
+
     const stages = [
-      { progress: 15, msg: 'Menggabungkan Track Video (V1) & Menghitung Frame Transitions...' },
+      { progress: 15, msg: 'Menggabungkan Track Multi-Layer (Video, Voice, Music, Subtitle)...' },
       { progress: 35, msg: `Menerapkan LUT Color Grade: ${colorGradeLut.toUpperCase()}...` },
-      { progress: 55, msg: 'Audio Mastering: Meratakan Dialog LUFS -14 & Ducking Musik...' },
-      { progress: 75, msg: `Mengompresi ke Format Presisi: ${activePlatform.toUpperCase()}...` },
-      { progress: 95, msg: 'Menyusun Metadata & Menyematkan Subtitel Berwaktu (SRT)...' },
+      { progress: 55, msg: `Audio Mastering: Normalisasi Target ${targetLufs} & Ducking BGM...` },
+      { progress: 75, msg: `Mengompresi Preset [${isCinema ? 'CINEMA 4K PRORES' : 'SOCIAL WEB 1080P'}]: ${targetCodec}...` },
+      { progress: 95, msg: 'Menyusun Metadata & Menyematkan Subtitel Berwaktu (SRT/VTT)...' },
       { progress: 100, msg: 'Master Package Siap Diterbitkan!' },
     ];
 
@@ -729,18 +823,20 @@ ${chaptersContent}
     }
 
     try {
-      const packageTitle = `${activeProject.name.replace(/\s+/g, '_')}_Final_Master_${activePlatform}`;
+      const packageTitle = `${activeProject.name.replace(/\s+/g, '_')}_Final_Master_${exportTierPreset}_${activePlatform}`;
       const newPkg = await createExportPackage(activeProject.id, {
         project_id: activeProject.id,
         package_title: packageTitle,
-        format: 'mp4',
-        resolution: activePlatform === 'youtube_16_9' ? '4K' : '1080p',
+        format: isCinema ? 'mov' : 'mp4',
+        resolution: targetResolution,
         framerate: '24fps',
         audio_channels: 'Stereo 2.0',
         include_subtitles: true,
         subtitle_format: 'srt',
-        file_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-        file_size_mb: 68.4,
+        file_url: isCinema
+          ? 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
+          : 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+        file_size_mb: isCinema ? 320.5 : 68.4,
         status: 'ready',
       });
 
@@ -748,7 +844,7 @@ ${chaptersContent}
         setExportHistory((prev) => [newPkg.data!, ...prev]);
       }
 
-      onShowToast(`Master Video "${packageTitle}" berhasil dirender dan siap diunduh!`, 'success');
+      onShowToast(`Master Video "${packageTitle}" (${targetResolution}, ${targetLufs}) berhasil dirender dan siap diunduh!`, 'success');
     } catch (err: any) {
       onShowToast(err.message || 'Gagal merender paket master', 'error');
     } finally {
@@ -1051,6 +1147,79 @@ ${chaptersContent}
             <Sparkles className="w-4 h-4 fill-current" />
             <span>{isRendering ? (isId ? 'Merender Master...' : 'Rendering Master...') : isId ? 'Render Master Video' : 'Render Master Video'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* Gate 5 (Final Master Approval) Director Gate Banner (SSOT TC-WF-14) */}
+      <div className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs transition-all shadow-md ${
+        isGate5Approved
+          ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-300 shadow-emerald-950/20'
+          : 'bg-amber-950/20 border-amber-500/40 text-amber-300 shadow-amber-950/20'
+      }`}>
+        <div className="flex items-start md:items-center gap-3">
+          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+            isGate5Approved ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+          }`}>
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-white text-xs">
+                [GATE 5] Gerbang Persetujuan Master Final Sutradara
+              </span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider ${
+                isGate5Approved
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+              }`}>
+                {isGate5Approved ? '✅ Telah Disetujui (Locked for Master Export)' : '⚠️ Menunggu Persetujuan'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {isGate5Approved
+                ? `${gate5ReviewNotes || 'Assembly multi-track dan audio loudness disetujui sutradara.'} • Disetujui: ${new Date(gate5ApprovedAt || Date.now()).toLocaleTimeString()}`
+                : 'Sesuai SSOT Master Workflow, ekspor master video dikunci hingga sutradara menyetujui hasil assembly utuh timeline, mixing audio, dan sinkronisasi subtitle.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          {/* Preset Selector */}
+          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+            <button
+              onClick={() => setExportTierPreset('social_web')}
+              className={`px-2.5 py-1 rounded font-medium transition-colors cursor-pointer ${
+                exportTierPreset === 'social_web' ? 'bg-amber-400 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Social Web (-16 LUFS)
+            </button>
+            <button
+              onClick={() => setExportTierPreset('cinema_master')}
+              className={`px-2.5 py-1 rounded font-medium transition-colors cursor-pointer ${
+                exportTierPreset === 'cinema_master' ? 'bg-amber-400 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Cinema 4K (-14 LUFS)
+            </button>
+          </div>
+
+          {isGate5Approved ? (
+            <button
+              onClick={handleRevokeGate5}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+            >
+              Buka Revisi
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowGate5Modal(true)}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-md shadow-amber-400/20 cursor-pointer transition-all"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Setujui Final Master (Gate 5)</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -2769,6 +2938,101 @@ ${chaptersContent}
                 </a>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Gate 5 (Final Master Approval) Modal Dialog (SSOT TC-WF-14) */}
+      {showGate5Modal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#0b101b] border border-amber-500/40 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl shadow-amber-500/10">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span>Gerbang Persetujuan Sutradara (Gate 5)</span>
+                </h3>
+                <p className="text-xs text-amber-400/90 font-mono mt-0.5 truncate">{activeProject?.name}</p>
+              </div>
+              <button
+                onClick={() => setShowGate5Modal(false)}
+                className="text-slate-400 hover:text-white text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[11px] text-amber-300">
+              <p className="font-semibold mb-1">Pemeriksaan Prasyarat Ekspor Master (SSOT TC-WF-14):</p>
+              <p className="text-slate-300">
+                Dengan menyetujui gerbang ini, Anda mengonfirmasi bahwa assembly klip video, audio mixing (voice, BGM, SFX), dan ketepatan waktu subtitle (SRT/VTT) telah sesuai standar artistik studio sebelum proses render master dieksekusi.
+              </p>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1 block">
+                  Preset Target Master:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExportTierPreset('social_web')}
+                    className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all ${
+                      exportTierPreset === 'social_web'
+                        ? 'bg-amber-400/10 border-amber-400 text-white'
+                        : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <div className="font-bold text-xs text-amber-400">Social Web Preset</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">MP4 H.264, 1080p, -16 LUFS</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportTierPreset('cinema_master')}
+                    className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all ${
+                      exportTierPreset === 'cinema_master'
+                        ? 'bg-amber-400/10 border-amber-400 text-white'
+                        : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <div className="font-bold text-xs text-amber-400">Cinema Master</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">ProRes 422, 4K, 24fps, -14 LUFS</div>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1 block">
+                  Catatan Ulasan Sutradara:
+                </label>
+                <textarea
+                  value={gate5ModalNoteInput}
+                  onChange={(e) => setGate5ModalNoteInput(e.target.value)}
+                  placeholder="Catatan approval master final..."
+                  rows={3}
+                  className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none text-xs resize-none"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGate5Modal(false)}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-lg text-xs cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApproveGate5(gate5ModalNoteInput)}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-400/20"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Kunci & Setujui Final Master (Gate 5)</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

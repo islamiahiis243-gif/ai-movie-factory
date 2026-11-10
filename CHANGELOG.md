@@ -3,6 +3,33 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.4] - 15-Parameter Automated QC Engine (TC-WF-12) & Gate 5 Master Export Enforcement (TC-WF-13, TC-WF-14) - 2026-11-10 17:25 +07:00
+
+### Added, Hardened & Orchestrated
+- **Mesin Audit Kontrol Kualitas Otomatis 15 Parameter Sinematik (`src/lib/qualityControlEngine.ts`, `src/components/studio/QualityControlView.tsx`):**
+  - Mengimplementasikan 15 parameter kualitas wajib sesuai SSOT Bagian 8 & TC-WF-12 yang dibagi ke dalam 3 kategori evaluasi:
+    1. *Auto AI (Vision & Embedding Check):* 1. Konsistensi Wajah Karakter (Layer 6 Similarity Check), 3. Konsistensi Lingkungan & Latar Belakang, 6. Deteksi Distorsi Anatomi & AI Glitch.
+    2. *Technical Rule Engine:* 4. Kontinuitas Pencahayaan & Palet Warna, 7. Kelancaran Gerak Kamera & Anti-Jitter, 8. Sinkronisasi Gerak Bibir & Dialog (Lip-sync), 9. Kualitas & Kejelasan Suara Dialog, 10. Keseimbangan Audio Mix (Voice vs Music vs SFX), 12. Ketepatan Durasi, Timing, dan Ritme Editing, 13. Kesesuaian Target Resolusi & Aspek Rasio, 14. Kepatuhan Loudness Standar Distribusi (-14 s.d. -16 LUFS), 15. Kesesuaian Format Ekspor & Subtitle Timing.
+    3. *Director Manual Verification:* 2. Konsistensi Pakaian & Properti Karakter, 5. Kesesuaian Aksi Visual terhadap Naskah, 11. Penyelarasan Emosi Musik terhadap Mood Adegan.
+  - *Hierarki Keparahan & Penanganan Pengecualian (Severity Hierarchy):*
+    - **Critical Blocker:** Cacat anatomis berat, distorsi wajah fatal, inkonsistensi rasio aspek, dan audio clipping otomatis mengunci ekspor master hingga diperbaiki.
+    - **Warning / Advisory:** Variasi pencahayaan minor atau durasi toleransi dapat diberikan *Override Persetujuan Sutradara* melalui modal khusus dengan catatan justifikasi artistik yang tercatat di audit trail proyek.
+- **Penegakan Gate 5 (Final Master Approval) di Studio Editing & Post-Produksi (`src/components/studio/EditingPostView.tsx`):**
+  - Menambahkan banner bimbingan terpandu *[GATE 5] Gerbang Persetujuan Master Final Sutradara* di bagian atas NLE editor.
+  - Eksekusi tombol *Render Master Video* kini dilindungi pemeriksaan ketat Gate 5 (TC-WF-14): jika belum disetujui, modal persetujuan sutradara muncul dan ekspor diblokir hingga disetujui secara sadar oleh sutradara.
+  - Menyediakan tombol 1-klik *Setujui Final Master (Gate 5)* lengkap dengan modal input catatan persetujuan sutradara serta tombol *Buka Revisi* jika ingin membatalkan persetujuan.
+  - Mengintegrasikan selektor **Multi-Tier Export Presets**:
+    - *Social Web Preset (Default):* MP4 H.264, 1080p, target loudness -16 LUFS (standar YouTube / TikTok / Reels).
+    - *Cinema / Master Preset:* ProRes 422 HQ / MP4 H.265, 4K UHD, 24fps, target loudness -14 LUFS (standar streaming premium OTT / bioskop).
+- **Peningkatan Rangkaian Uji Otomasi (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Menambahkan pengujian otomatis `[TEST 13]` (TC-WF-12: 15-Parameter Automated QC Engine, pemisahan 3 kategori, 4 critical blocker, perhitungan skor mutu, dan mekanisme override sutradara).
+  - Menambahkan pengujian otomatis `[TEST 14]` (TC-WF-13 & TC-WF-14: Pemblokiran master export tanpa Gate 5, verifikasi rilis Social Web MP4 -16 LUFS, dan verifikasi rilis Cinema Master ProRes 4K -14 LUFS).
+  - Rangkaian pengujian meningkat menjadi **60/60 assertion** lulus 100%.
+
+### Verification & Tests
+- `npm test`: 100% lulus seluruh rangkaian pengujian (60/60 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 84 assertions).
+- `npm run build`: Lulus bersih dalam 2.81s (0 errors).
+
 ## [Gelombang II - Milestone 2.3] - Pipeline Orchestrator Integration, In-Flight Background Recovery (TC-WF-09) & Multi-Retry Engine (TC-WF-10) - 2026-11-10 17:10 +07:00
 
 ### Added, Hardened & Orchestrated

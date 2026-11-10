@@ -58,6 +58,10 @@ export interface ProjectSettings {
   enabled_agents: string[];
   human_approval_required: boolean;
   credit_budget: number;
+  gate5_approved?: boolean;
+  gate5_approved_at?: string;
+  gate5_approved_by?: string;
+  gate5_review_notes?: string;
 }
 
 export interface ProjectSettingsRecord {
@@ -586,11 +590,28 @@ export type PipelineJobStatus =
 export type PipelineJobPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export type QCCheckStatus = 'passed' | 'warning' | 'failed';
+export type QCEvaluationMode = 'auto_ai' | 'technical_rule' | 'director_manual';
+export type QCSeverity = 'critical_blocker' | 'warning_advisory';
 
 export type QCPillarCategory =
-  | 'character_consistency'
+  // SSOT Section 8: 15 Mandatory Quality Parameters
+  | 'facial_consistency'
   | 'costume_continuity'
   | 'environment_consistency'
+  | 'lighting_continuity'
+  | 'action_continuity'
+  | 'anatomy_glitch_detection'
+  | 'camera_motion_smoothness'
+  | 'lip_sync_accuracy'
+  | 'dialogue_clarity'
+  | 'audio_mix_balance'
+  | 'music_mood_alignment'
+  | 'editing_pace_timing'
+  | 'aspect_ratio_conformance'
+  | 'loudness_compliance'
+  | 'export_format_subtitles'
+  // Backward-compatibility aliases
+  | 'character_consistency'
   | 'story_continuity'
   | 'dialogue_consistency'
   | 'scene_order'
@@ -612,6 +633,12 @@ export interface QCCheckItem {
   details: string;
   recommendation?: string;
   pillar?: QCPillarCategory;
+  evaluation_mode?: QCEvaluationMode;
+  severity?: QCSeverity;
+  overridden?: boolean;
+  override_reason?: string;
+  overridden_by?: string;
+  overridden_at?: string;
 }
 
 export interface QCReport {
