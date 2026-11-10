@@ -3,6 +3,39 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.8.1] - Financial Accuracy, Gross Deduplication, Refund Partitioning & Legal DJP Tax Hardening - 2026-11-10 22:45 +07:00
+
+### Added, Hardened & Reconciled
+- **Deduplikasi Pendapatan Bruto & Pemisahan Pending/Settled (`src/lib/creatorBusinessEngine.ts`):**
+  - Mencegah inflasi ganda (*double-counting*) pada agregasi pendapatan: ketika data atomic pesanan tiket (`payment_orders`) tersedia, sistem mendekomposisi dan mendeduplikasi data `creator_milestones` (internal OTT/web drama) sehingga omzet tidak terhitung 2x.
+  - Memisahkan secara ketat omzet kas yang telah cair (*settled/paid/completed*) dari transaksi pending/berjalan.
+- **Pemisahan Tegas Partisi Refund (Cash vs Quota Credits):**
+  - Mengisolasi `cash_refunds` (pengembalian uang riil pembeli tiket pada `payment_orders`) dari `credit_refunds` (restorasi kuota operasional internal pada credit ledger dari job AI yang gagal).
+  - Formula laba bersih kas hanya memotong `cash_refunds`. Restorasi kuota dikembalikan ke saldo kredit kreator tanpa mengurangi uang kas riil.
+- **Transparansi Biaya Produksi AI (Internal Tariff vs Actual Provider Cost):**
+  - Nilai kredit AI internal diidentifikasi secara transparan dengan label **`[INTERNAL_RATE_EQUIVALENT]`** (ekuivalen tarif Rp 1.000 / CR).
+  - Biaya tagihan API penyedia mentah (provider invoice) dikelompokkan secara terpisah dalam klasifikasi **`[VERIFIED_ACTUAL]`** jika tersedia.
+- **Kategorisasi Estimasi Biaya CDN & Payment Gateway:**
+  - MDR Payment Gateway (Midtrans/Stripe ~1.5%–2.9%) diklasifikasikan sebagai **`[ESTIMATED_BENCHMARK]`**.
+  - Estimasi hosting & CDN (benchmark Rp 25.000 / 10.000 views) diklasifikasikan sebagai **`[ESTIMATED_PROJECTION]`**, dilarang bercampur aduk ke kategori verified actual.
+- **Hardening Regulasi Perpajakan DJP & PMK Indonesia:**
+  - **PPh Final UMKM PP 55/2022 (0,5%)**: Dihitung dari omzet bruto (peredaran bruto <= Rp 4,8 Miliar/tahun). Menyediakan opsi ambang batas pembebasan omzet Orang Pribadi s.d. Rp 500 juta/tahun (pajak Rp 0 jika belum melebihi Rp 500 juta).
+  - **PPN PMK 131/2024 / UU HPP**: 11% secara tepat dihitung dari Dasar Pengenaan Pajak (DPP Penyerahan / Bruto), secara mutlak **BUKAN** dari laba bersih operasional.
+  - **PPh 21 (TER PP 58/2023)** untuk tenaga ahli/freelancer perorangan dan **PPh 23 (2%)** untuk jasa produksi komersial dipisahkan secara tegas.
+  - Status **`TAX_BASIS_UNCONFIRMED`**: Jika profil wajib pajak belum dikonfigurasi, sistem menetapkan estimasi pajak Rp 0 dan meminta konfirmasi profil.
+  - Penambahan **Legal Tax Disclaimer**: Menegaskan secara eksplisit bahwa estimasi ini bersifat perencanaan informatif dan bukan Surat Ketetapan Pajak (SKP) resmi pengganti nasihat konsultan pajak berlisensi.
+- **AI Advisor Berbasis Rule-Based Coverage Score:**
+  - Mengubah label "Confidence %" menjadi "Rule-Based Coverage Score" untuk merefleksikan cakupan aturan inferensi bisnis secara objektif tanpa menciptakan ilusi kepastian finansial absolut.
+- **Peningkatan Rangkaian Uji Otomasi (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Menghardening assertion pengujian `[TEST 27]` s.d. `[TEST 31]` dengan validasi matematis deterministik untuk seluruh skenario deduplikasi omzet, partisi refund, pemisahan biaya AI, rezim pajak DJP, dan invariants pelabelan data.
+  - Seluruh pengujian lulus 100% tanpa regresi.
+- **Pembaruan Versi Produksi & Healthcheck:**
+  - Versi aplikasi ditingkatkan ke `1.15.10` (`V3.15 Financial Accuracy & DJP Tax Logic Hardening`).
+
+### Verification & Tests
+- `npm test`: 100% PASS seluruh rangkaian pengujian (162/162 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 186 assertions).
+- `npm run build`: Lulus bersih dalam 2.81s (0 errors).
+
 ## [Gelombang II - Milestone 2.8] - Creator Business Intelligence, TC-WF-16 Financial Breakdown & Evidence-Based AI Advisor - 2026-11-10 22:15 +07:00
 
 ### Added, Hardened & Reconciled

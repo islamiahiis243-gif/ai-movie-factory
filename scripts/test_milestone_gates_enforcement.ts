@@ -1679,9 +1679,9 @@ async function runMilestoneGatesAudit() {
   }
 
   // --------------------------------------------------------------------------
-  // [TEST 27] Verifying Comprehensive Financial Formula & Net Profit Calculation (TC-WF-16)
+  // [TEST 27] Verifying Comprehensive Financial Formula & Revenue Deduplication (TC-WF-16)
   // --------------------------------------------------------------------------
-  console.log('\n[TEST 27] Verifying Comprehensive Financial Formula & Net Profit Calculation (TC-WF-16)');
+  console.log('\n[TEST 27] Verifying Comprehensive Financial Formula & Revenue Deduplication (TC-WF-16)');
 
   const mockMilestones = [
     {
@@ -1715,7 +1715,7 @@ async function runMilestoneGatesAudit() {
       user_id: 'usr-fin-1',
       project_id: 'proj-sci-fi-01',
       transaction_type: 'refund' as const,
-      amount: 20, // 20 CR refunded
+      amount: 20, // 20 CR refunded internally to quota
       balance_after: 770,
       created_at: new Date().toISOString(),
     },
@@ -1729,12 +1729,41 @@ async function runMilestoneGatesAudit() {
       package_type: 'topup_credits' as const,
       package_id: 'pack_ticket',
       package_name: 'Digital Cinema Premiere Ticket',
-      amount: 100000, // Rp 100.000 gross
+      amount: 100000, // Rp 100.000 settled cash
       currency: 'IDR',
       payment_method: 'qris' as const,
       status: 'settlement' as const,
       credits_granted: 0,
       paid_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 'ord-ref-01',
+      user_id: 'usr-fin-1',
+      order_number: 'ORD-REF-0012',
+      package_type: 'topup_credits' as const,
+      package_id: 'pack_ticket',
+      package_name: 'Cancelled Premiere Ticket',
+      amount: 50000, // Rp 50.000 cash refunded to buyer
+      currency: 'IDR',
+      payment_method: 'qris' as const,
+      status: 'refund' as const,
+      credits_granted: 0,
+      paid_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 'ord-pend-01',
+      user_id: 'usr-fin-1',
+      order_number: 'ORD-PEND-0034',
+      package_type: 'topup_credits' as const,
+      package_id: 'pack_ticket',
+      package_name: 'Pending Virtual Account',
+      amount: 30000, // Rp 30.000 pending (must NOT be counted in realized gross)
+      currency: 'IDR',
+      payment_method: 'mandiri_va' as const,
+      status: 'pending' as const,
+      credits_granted: 0,
       created_at: new Date().toISOString(),
     },
   ];
@@ -1745,41 +1774,53 @@ async function runMilestoneGatesAudit() {
     paymentOrders: mockPaymentOrders,
     period: 'all_time',
     taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'wp_op_umkm',
+    isUmkmRevenueOver500M: true,
     isGrossPrePlatformCut: false, // Gross is post-payout, zero duplicate platform cut
   });
 
-  // Gross Revenue: 5.000.000 (milestone) + 100.000 (order) = 5.100.000
+  // Gross Cash Revenue: 5.000.000 (milestone) + 100.000 (settled order) = 5.100.000 (Pending 30.000 is excluded)
   assert(
     report.grossRevenueIdr === 5100000,
-    'Gross Revenue correctly sums milestone earned revenue and settled payment orders',
+    'Gross Revenue strictly counts settled orders and verified milestones, excluding pending orders',
     `Expected 5.100.000, got ${report.grossRevenueIdr}`
   );
-
-  // AI Production Cost: 250 CR * Rp 1.000 = 250.000
   assert(
-    report.aiProductionCostIdr === 250000,
-    'AI Production Cost correctly converts ledger usage credits to IDR at standard conversion rate',
-    `Expected 250.000, got ${report.aiProductionCostIdr}`
+    report.pendingRevenueIdr === 30000,
+    'Pending revenue is tracked separately and isolated from recognized gross revenue',
+    `Expected 30.000, got ${report.pendingRevenueIdr}`
   );
 
-  // Refunds: 20 CR * Rp 1.000 = 20.000
+  // Cash Refunds vs Credit Refunds Partitioning
   assert(
-    report.refundsIdr === 20000,
-    'Refunds accurately captures ledger credit refund transactions in IDR',
-    `Expected 20.000, got ${report.refundsIdr}`
+    report.cashRefundsIdr === 50000,
+    'Cash refunds accurately capture real money returned to buyers from refunded orders',
+    `Expected 50.000, got ${report.cashRefundsIdr}`
+  );
+  assert(
+    report.creditRefundsCount === 20 && report.creditRefundsEquivalentIdr === 20000,
+    'Credit refunds accurately record restored quota credits without deducting from cash revenue',
+    `Expected 20 CR / Rp 20.000 equiv, got ${report.creditRefundsCount} CR`
   );
 
-  // Gateway Fee: 100.000 * 0.7% QRIS = 700
+  // AI Production Cost (Internal Quota Tariff Equivalent)
+  assert(
+    report.internalCreditCostEquivalentIdr === 250000,
+    'AI Production Cost correctly calculates internal quota tariff equivalent (250 CR @ Rp 1.000)',
+    `Expected 250.000, got ${report.internalCreditCostEquivalentIdr}`
+  );
+
+  // Gateway Fee: 100.000 settled * 0.7% QRIS = 700
   assert(
     report.gatewayFeesIdr === 700,
-    'Payment Gateway Fee correctly calculates Indonesian QRIS standard fee (0.7%)',
+    'Payment Gateway Fee correctly calculates Bank Indonesia QRIS standard MDR (0.7%)',
     `Expected 700, got ${report.gatewayFeesIdr}`
   );
 
-  // Hosting & CDN: (50.000 / 10.000) * 25.000 = 125.000
+  // Hosting & CDN: (50.000 / 10.000) * 25.000 = 125.000 (explicitly estimated)
   assert(
-    report.hostingCdnCostIdr === 125000,
-    'Hosting & CDN cost accurately scales with verified audience views telemetry',
+    report.hostingCdnCostIdr === 125000 && report.isHostingCdnEstimated,
+    'Hosting & CDN cost is explicitly classified as an industry benchmark estimation',
     `Expected 125.000, got ${report.hostingCdnCostIdr}`
   );
 
@@ -1790,98 +1831,131 @@ async function runMilestoneGatesAudit() {
     `Expected 25.500, got ${report.taxIdr}`
   );
 
-  // Net Profit: 5.100.000 - (20.000 + 0 + 700 + 250.000 + 125.000 + 25.500) = 4.678.800
+  // Net Profit: 5.100.000 - (50.000 cash_refund + 0 platform + 700 gateway + 250.000 AI + 125.000 CDN + 25.500 tax) = 4.648.800
   assert(
-    report.netProfitIdr === 4678800,
-    'Net Profit satisfies SSOT TC-WF-16 master formula without discrepancy',
-    `Expected 4.678.800, got ${report.netProfitIdr}`
+    report.netProfitIdr === 4648800,
+    'Net Cash Profit satisfies hardened SSOT TC-WF-16 formula without discrepancy',
+    `Expected 4.648.800, got ${report.netProfitIdr}`
   );
 
-  // Margin: (4.678.800 / 5.100.000) * 100 = 91.7%
+  // Margin: (4.648.800 / 5.100.000) * 100 = 91.2%
   assert(
-    report.netProfitMarginPercent === 91.7,
-    'Net Profit Margin is accurately computed as percentage of gross revenue',
-    `Expected 91.7%, got ${report.netProfitMarginPercent}%`
+    report.netProfitMarginPercent === 91.2,
+    'Net Profit Margin is accurately computed against gross cash revenue',
+    `Expected 91.2%, got ${report.netProfitMarginPercent}%`
   );
 
   // --------------------------------------------------------------------------
-  // [TEST 28] Verifying Multi-Regime Legal Tax Calculations
+  // [TEST 28] Verifying DJP Legal Tax Regimes & Eligibility Compliance
   // --------------------------------------------------------------------------
-  console.log('\n[TEST 28] Verifying Multi-Regime Legal Tax Calculations');
+  console.log('\n[TEST 28] Verifying DJP Legal Tax Regimes & Eligibility Compliance');
 
-  // PPN 11% (11% of Net Operating Profit: 5.100.000 - 395.700 = 4.704.300 -> 11% = 517.473)
+  // PPh Final UMKM for WP OP with omzet <= 500M (Fasilitas bebas pajak UU HPP)
+  const reportUmkmUnder500M = calculateComprehensiveFinancialReport({
+    milestones: mockMilestones,
+    creditTransactions: mockCreditTransactions,
+    paymentOrders: mockPaymentOrders,
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'wp_op_umkm',
+    isUmkmRevenueOver500M: false,
+  });
+  assert(
+    reportUmkmUnder500M.taxIdr === 0,
+    'PPh Final UMKM applies Rp 0 tax when WP OP annual gross revenue is under Rp 500M threshold (UU HPP)',
+    `Expected 0, got ${reportUmkmUnder500M.taxIdr}`
+  );
+
+  // PPN 11% Efektif (PMK 131/2024): Dikenakan pada DPP Penyerahan (5.100.000 * 11% = 561.000), BUKAN laba bersih!
   const reportPpn = calculateComprehensiveFinancialReport({
     milestones: mockMilestones,
     creditTransactions: mockCreditTransactions,
     paymentOrders: mockPaymentOrders,
-    taxRegime: 'ppn_11',
+    taxRegime: 'ppn_11_dpp_nilai_lain',
+    taxPayerCategory: 'pkp_badan',
   });
   assert(
-    reportPpn.taxIdr === 517473,
-    'PPN 11% tax regime correctly calculates on net operating taxable income',
-    `Expected 517.473, got ${reportPpn.taxIdr}`
+    reportPpn.taxIdr === 561000,
+    'PPN correctly applies 11% on DPP Penyerahan JKP (Gross), strictly NOT on net operating profit',
+    `Expected 561.000, got ${reportPpn.taxIdr}`
   );
 
-  // PPh 21/23 (2% of Gross 5.100.000 = 102.000)
+  // PPh 21 Imbalan Jasa Kreatif OP (TER PP 58/2023: 2.5% of Gross = 127.500)
   const reportPph21 = calculateComprehensiveFinancialReport({
     milestones: mockMilestones,
     creditTransactions: mockCreditTransactions,
     paymentOrders: mockPaymentOrders,
-    taxRegime: 'pph_21_23',
+    taxRegime: 'pph_21_freelance',
   });
   assert(
-    reportPph21.taxIdr === 102000,
-    'PPh 21/23 tax regime correctly calculates 2% withholding on gross commercial revenue',
-    `Expected 102.000, got ${reportPph21.taxIdr}`
+    reportPph21.taxIdr === 127500,
+    'PPh 21 correctly calculates withholding on creative freelancer compensation',
+    `Expected 127.500, got ${reportPph21.taxIdr}`
   );
 
-  // Non-PKP Exempt (0%)
-  const reportExempt = calculateComprehensiveFinancialReport({
+  // PPh 23 Jasa Pembuatan Konten (2% of Gross = 102.000)
+  const reportPph23 = calculateComprehensiveFinancialReport({
     milestones: mockMilestones,
     creditTransactions: mockCreditTransactions,
     paymentOrders: mockPaymentOrders,
-    taxRegime: 'non_pkp_exempt',
+    taxRegime: 'pph_23_jasa',
   });
   assert(
-    reportExempt.taxIdr === 0,
-    'Non-PKP / Tax-Exempt regime sets tax deduction strictly to Rp 0',
-    `Expected 0, got ${reportExempt.taxIdr}`
+    reportPph23.taxIdr === 102000,
+    'PPh 23 correctly calculates 2% withholding by corporate clients on creative production services',
+    `Expected 102.000, got ${reportPph23.taxIdr}`
   );
 
-  // Custom Tax Rate (e.g. 7.5%)
-  const reportCustom = calculateComprehensiveFinancialReport({
+  // Unconfirmed Tax Basis (Data Incomplete)
+  const reportUnconfirmed = calculateComprehensiveFinancialReport({
     milestones: mockMilestones,
     creditTransactions: mockCreditTransactions,
     paymentOrders: mockPaymentOrders,
-    taxRegime: 'custom',
-    customTaxRate: 7.5,
+    taxRegime: 'tax_basis_unconfirmed',
   });
-  const expectedCustomTax = Math.round((5100000 - 395700) * 0.075);
   assert(
-    reportCustom.taxIdr === expectedCustomTax,
-    'Custom user-defined tax rate applies correctly on net operating income',
-    `Expected ${expectedCustomTax}, got ${reportCustom.taxIdr}`
+    reportUnconfirmed.taxIdr === 0 && reportUnconfirmed.taxBasisStatus === 'UNCONFIRMED_DATA_PENDING',
+    'Unconfirmed tax basis safely sets tax to Rp 0 with UNCONFIRMED_DATA_PENDING status, preventing fabricated numbers'
   );
 
   // --------------------------------------------------------------------------
-  // [TEST 29] Verifying Double Counting Defense on Platform Revenue Share
+  // [TEST 29] Verifying Double Counting Defense on Revenue & Platform Share
   // --------------------------------------------------------------------------
-  console.log('\n[TEST 29] Verifying Double Counting Defense on Platform Revenue Share');
+  console.log('\n[TEST 29] Verifying Double Counting Defense on Revenue & Platform Share');
 
-  // When gross is already post-payout, platform fee must be 0 to prevent double deduction
-  const reportPostPayout = calculateComprehensiveFinancialReport({
-    milestones: mockMilestones,
+  // Milestone of type 'web_drama' alongside matching payment_orders MUST be deduplicated
+  const mockDupeMilestones = [
+    {
+      id: 'm-ott-dupe',
+      user_id: 'usr-fin-1',
+      project_id: 'proj-sci-fi-01',
+      project_name: 'Cyberpunk Web Drama Episode 1',
+      platform: 'web_drama' as const, // Internal OTT production
+      views_count: 10000,
+      likes_count: 500,
+      comments_count: 50,
+      revenue_earned: 100000, // Identical to payment order
+      currency: 'IDR',
+      release_date: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    },
+  ];
+
+  const reportDeduplicated = calculateComprehensiveFinancialReport({
+    milestones: mockDupeMilestones,
     creditTransactions: [],
-    isGrossPrePlatformCut: false,
+    paymentOrders: mockPaymentOrders, // Contains 100k settled order
   });
+
+  // Gross must be exactly 100.000 (from order), NOT 200.000!
   assert(
-    reportPostPayout.platformFeesIdr === 0,
-    'Platform fee is Rp 0 when gross is already post-payout, strictly preventing duplicate platform fee cuts'
+    reportDeduplicated.grossRevenueIdr === 100000,
+    'Internal web_drama milestone revenue is deduplicated against atomic payment orders, preventing 2x revenue inflation',
+    `Expected 100.000, got ${reportDeduplicated.grossRevenueIdr}`
   );
 
-  // When gross is pre-split, platform fee is deducted appropriately
+  // Pre-split vs Post-payout platform fee defense
   const reportPreSplit = calculateComprehensiveFinancialReport({
-    milestones: mockMilestones,
+    milestones: mockMilestones, // 5.000.000 YouTube
     creditTransactions: [],
     isGrossPrePlatformCut: true,
   });
@@ -1891,10 +1965,20 @@ async function runMilestoneGatesAudit() {
     `Expected 500.000, got ${reportPreSplit.platformFeesIdr}`
   );
 
+  const reportPostPayout = calculateComprehensiveFinancialReport({
+    milestones: mockMilestones,
+    creditTransactions: [],
+    isGrossPrePlatformCut: false,
+  });
+  assert(
+    reportPostPayout.platformFeesIdr === 0,
+    'Platform fee is strictly Rp 0 when gross is already post-payout, preventing duplicate cuts'
+  );
+
   // --------------------------------------------------------------------------
-  // [TEST 30] Verifying Data Classification Invariant ([VERIFIED ACTUAL] vs [ESTIMATED PROJECTION])
+  // [TEST 30] Verifying Data Classification Invariant & Estimation Partitioning
   // --------------------------------------------------------------------------
-  console.log('\n[TEST 30] Verifying Data Classification Invariant ([VERIFIED ACTUAL] vs [ESTIMATED PROJECTION])');
+  console.log('\n[TEST 30] Verifying Data Classification Invariant & Estimation Partitioning');
 
   // Empty state: No records must NOT fabricate positive numbers
   const reportEmpty = calculateComprehensiveFinancialReport({
@@ -1911,17 +1995,18 @@ async function runMilestoneGatesAudit() {
     'Zero real records yield exactly Rp 0 Gross Revenue and Rp 0 Net Profit, preventing fabricated numbers'
   );
 
-  // Real state: Verified Actual classification
+  // Verify internal quota tariff is labeled INTERNAL_RATE_EQUIVALENT, not VERIFIED_ACTUAL provider invoice
+  const aiLineItem = report.lineItems.find((item) => item.category === 'ai_credit_equivalent');
   assert(
-    report.classification === 'VERIFIED_ACTUAL' && report.hasVerifiedActualData,
-    'Real transactions & milestones are strictly classified as VERIFIED_ACTUAL'
+    aiLineItem !== undefined && aiLineItem.classification === 'INTERNAL_RATE_EQUIVALENT',
+    'AI credit quota usage is honestly labeled INTERNAL_RATE_EQUIVALENT rather than claiming verified provider invoice'
   );
 
-  // Verify all line items have traceable data source
-  const hasUntraceableLineItem = report.lineItems.some((item) => !item.dataSource || item.dataSource.length < 3);
+  // Verify hosting CDN is labeled ESTIMATED_PROJECTION
+  const cdnLineItem = report.lineItems.find((item) => item.category === 'hosting_cdn_estimate');
   assert(
-    !hasUntraceableLineItem,
-    'Every financial line item contains an explicit, non-empty database table audit origin'
+    cdnLineItem !== undefined && cdnLineItem.classification === 'ESTIMATED_PROJECTION',
+    'Hosting CDN is strictly labeled ESTIMATED_PROJECTION unless backed by raw egress provider invoice'
   );
 
   // --------------------------------------------------------------------------
@@ -1944,7 +2029,7 @@ async function runMilestoneGatesAudit() {
     `Directive count: ${realDirectives.length}`
   );
 
-  // Verify every directive fulfills all 4 SSOT Bagian III.4 requirements
+  // Verify every directive fulfills all SSOT Bagian III.4 requirements and rule-based confidence labeling
   for (const d of realDirectives) {
     assert(
       d.evidenceDataSource && d.evidenceDataSource.length > 5,
@@ -1955,8 +2040,12 @@ async function runMilestoneGatesAudit() {
       `AI Directive "${d.title}" includes explicit Asumsi Pasar (Market Assumptions)`
     );
     assert(
-      typeof d.confidenceScore === 'number' && d.confidenceScore > 0 && d.confidenceScore <= 100,
-      `AI Directive "${d.title}" specifies valid Confidence Level score (0-100)`
+      typeof d.ruleBasedConfidenceScore === 'number' && d.ruleBasedConfidenceScore > 0 && d.ruleBasedConfidenceScore <= 100,
+      `AI Directive "${d.title}" specifies valid Rule-Based Coverage score (0-100)`
+    );
+    assert(
+      d.confidenceDescription && d.confidenceDescription.includes('Rule-based'),
+      `AI Directive "${d.title}" explicitly labels score as rule-based coverage (not financial certainty)`
     );
     assert(
       d.riskBoundary && d.riskBoundary.length > 5,

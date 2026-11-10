@@ -16,10 +16,12 @@ import {
   generateAIBusinessAdvisorDirectives,
   TAX_REGIME_PRESETS,
   TaxRegimeType,
+  TaxPayerCategory,
   FinancialTimePeriod,
   ComprehensiveFinancialReport,
   AIBusinessAdvisorDirective,
-  CREDIT_TO_IDR_CONVERSION_RATE,
+  INTERNAL_CREDIT_RATE_IDR,
+  LEGAL_TAX_DISCLAIMER,
 } from '../../lib/creatorBusinessEngine';
 import { AnalyticsClientService, LiveAnalyticsSnapshot } from '../../lib/distribution/analyticsClientService';
 import { fetchUserPublishingJobs } from '../../lib/distribution/publishingRepository';
@@ -204,6 +206,8 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
   const [profitabilitySubTab, setProfitabilitySubTab] = useState<'actual_financial' | 'simulation_projection'>('actual_financial');
   const [financialPeriod, setFinancialPeriod] = useState<FinancialTimePeriod>('all_time');
   const [taxRegime, setTaxRegime] = useState<TaxRegimeType>('pph_final_umkm');
+  const [taxPayerCategory, setTaxPayerCategory] = useState<TaxPayerCategory>('wp_op_umkm');
+  const [isUmkmOver500M, setIsUmkmOver500M] = useState<boolean>(true);
   const [customTaxRate, setCustomTaxRate] = useState<number>(5);
   const [isGrossPrePlatformCut, setIsGrossPrePlatformCut] = useState<boolean>(false);
 
@@ -402,8 +406,10 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       period: financialPeriod,
       selectedProjectId: financialPeriod === 'by_project' ? selectedProjectId : undefined,
       taxRegime,
+      taxPayerCategory,
       customTaxRate,
       isGrossPrePlatformCut,
+      isUmkmRevenueOver500M: isUmkmOver500M,
     });
   }, [
     milestones,
@@ -412,8 +418,10 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     financialPeriod,
     selectedProjectId,
     taxRegime,
+    taxPayerCategory,
     customTaxRate,
     isGrossPrePlatformCut,
+    isUmkmOver500M,
   ]);
 
   // Dynamic AI Business Advisor Directives (Evidence-based from actual AMF metrics)
@@ -1244,12 +1252,49 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                       onChange={(e) => setTaxRegime(e.target.value as TaxRegimeType)}
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
                     >
-                      <option value="pph_final_umkm">PPh Final UMKM (0.5% Omzet - PP 55/2022 / UU HPP)</option>
-                      <option value="ppn_11">PPN 11% (Badan Usaha / Studio Kena Pajak)</option>
-                      <option value="pph_21_23">PPh 21 / 23 Jasa Kreatif & Komersial (2%)</option>
-                      <option value="non_pkp_exempt">Non-PKP / Dibebaskan Pajak Langsung (0%)</option>
+                      <option value="pph_final_umkm">PPh Final UMKM (0.5% Omzet - PP 55/2022)</option>
+                      <option value="ppn_11_dpp_nilai_lain">PPN 11% Efektif atas DPP (PMK 131/2024 - Khusus PKP)</option>
+                      <option value="pph_21_freelance">PPh 21 Imbalan Jasa Kreatif OP (TER PP 58/2023)</option>
+                      <option value="pph_23_jasa">PPh 23 Jasa Pembuatan Konten oleh Badan (2% Bruto)</option>
+                      <option value="non_pkp_exempt">Non-PKP (Bebas PPN; omzet &lt; Rp 4,8 M)</option>
+                      <option value="tax_basis_unconfirmed">Basis Pajak Belum Terkonfirmasi (Data belum lengkap)</option>
                       <option value="custom">Kustom Mandiri (Persentase Fleksibel)</option>
                     </select>
+
+                    {/* Taxpayer Category Selector */}
+                    <div className="pt-2 border-t border-slate-800/60 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                      <div>
+                        <label className="text-slate-400 block mb-1">Status Subjek Wajib Pajak:</label>
+                        <select
+                          value={taxPayerCategory}
+                          onChange={(e) => setTaxPayerCategory(e.target.value as TaxPayerCategory)}
+                          className="w-full px-2 py-1 bg-slate-950 border border-slate-800 rounded text-xs text-white"
+                        >
+                          <option value="wp_op_umkm">Orang Pribadi (WP OP UMKM)</option>
+                          <option value="wp_badan_umkm">Badan Usaha UMKM (CV/Firma/PT)</option>
+                          <option value="pkp_badan">Pengusaha Kena Pajak (PKP Badan)</option>
+                          <option value="non_pkp_op">Non-PKP / Freelancer Kreatif Bebas</option>
+                          <option value="custom_jurisdiction">Yurisdiksi Luar Negeri / Kustom</option>
+                        </select>
+                      </div>
+
+                      {taxPayerCategory === 'wp_op_umkm' && taxRegime === 'pph_final_umkm' && (
+                        <div className="flex items-center gap-2 pt-4">
+                          <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isUmkmOver500M}
+                              onChange={(e) => setIsUmkmOver500M(e.target.checked)}
+                              className="rounded border-slate-700 text-blue-500 focus:ring-0 cursor-pointer"
+                            />
+                            <span className="text-[10px] text-slate-300">
+                              Omzet tahunan melebihi Rp 500 jt (Fasilitas bebas pajak UU HPP)
+                            </span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+
                     {taxRegime === 'custom' && (
                       <div className="flex items-center gap-2 pt-1">
                         <span className="text-[11px] text-slate-400">Tarif Kustom:</span>
@@ -1265,9 +1310,11 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                         <span className="text-xs text-slate-400">%</span>
                       </div>
                     )}
-                    <p className="text-[10px] text-slate-500 italic">
-                      {comprehensiveReport.taxRegime.description}
-                    </p>
+
+                    <div className="p-2 bg-blue-500/5 border border-blue-500/20 rounded-lg text-[10px] text-slate-400 leading-relaxed mt-1">
+                      <span className="font-bold text-blue-300 block mb-0.5">Catatan Regulasi DJP:</span>
+                      {comprehensiveReport.taxDisclaimer}
+                    </div>
                   </div>
 
                   {/* Double Counting Protection Switch */}
@@ -1310,12 +1357,12 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                   </span>
                 </div>
                 <div className="font-mono text-xs text-slate-200 bg-black/60 p-3 rounded-lg border border-slate-800 overflow-x-auto">
-                  <span className="text-emerald-400 font-bold">Laba Bersih</span> = 
+                  <span className="text-emerald-400 font-bold">Laba Bersih Kas</span> = 
                   <span className="text-white font-semibold"> Rp {comprehensiveReport.grossRevenueIdr.toLocaleString('id-ID')}</span> [Gross] - (
-                  <span className="text-rose-400">Rp {comprehensiveReport.refundsIdr.toLocaleString('id-ID')}</span> [Refund] + 
+                  <span className="text-rose-400">Rp {comprehensiveReport.cashRefundsIdr.toLocaleString('id-ID')}</span> [Refund Uang] + 
                   <span className="text-rose-400"> Rp {comprehensiveReport.platformFeesIdr.toLocaleString('id-ID')}</span> [Platform Fee] + 
                   <span className="text-rose-400"> Rp {comprehensiveReport.gatewayFeesIdr.toLocaleString('id-ID')}</span> [Gateway] + 
-                  <span className="text-rose-400"> Rp {comprehensiveReport.aiProductionCostIdr.toLocaleString('id-ID')}</span> [AI Cost] + 
+                  <span className="text-rose-400"> Rp {comprehensiveReport.internalCreditCostEquivalentIdr.toLocaleString('id-ID')}</span> [Kredit AI] + 
                   <span className="text-rose-400"> Rp {comprehensiveReport.hostingCdnCostIdr.toLocaleString('id-ID')}</span> [CDN] + 
                   <span className="text-rose-400"> Rp {comprehensiveReport.taxIdr.toLocaleString('id-ID')}</span> [Pajak]) = 
                   <span className={`font-black ${comprehensiveReport.netProfitIdr >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -1329,44 +1376,46 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                 {/* 1. Gross Revenue */}
                 <div className="p-3.5 bg-[#101726] border border-slate-800 rounded-xl space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Pendapatan Kotor</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Omzet Kotor Kas</span>
                     <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-mono px-1.5 py-0.2 rounded font-bold">
-                      GROSS
+                      GROSS CASH
                     </span>
                   </div>
                   <p className="text-base sm:text-lg font-black text-white font-mono">
                     Rp {comprehensiveReport.grossRevenueIdr.toLocaleString('id-ID')}
                   </p>
                   <p className="text-[10px] text-slate-400">
-                    {comprehensiveReport.totalPublishedFilms} rilis terverifikasi
+                    Orders: Rp {comprehensiveReport.onPlatformOrdersGrossIdr.toLocaleString('id-ID')} • Kanal: Rp {comprehensiveReport.externalMilestonesGrossIdr.toLocaleString('id-ID')}
                   </p>
                 </div>
 
                 {/* 2. AI Production Cost */}
                 <div className="p-3.5 bg-[#101726] border border-slate-800 rounded-xl space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Biaya Komputasi AI</span>
-                    <Coins className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Nilai Kuota AI</span>
+                    <span className="text-[9px] bg-amber-500/20 text-amber-300 font-mono px-1 rounded font-bold">
+                      INTERNAL TARIFF
+                    </span>
                   </div>
                   <p className="text-base sm:text-lg font-black text-rose-400 font-mono">
-                    -Rp {comprehensiveReport.aiProductionCostIdr.toLocaleString('id-ID')}
+                    -Rp {comprehensiveReport.internalCreditCostEquivalentIdr.toLocaleString('id-ID')}
                   </p>
                   <p className="text-[10px] text-slate-400">
-                    {comprehensiveReport.totalAiCreditsConsumed.toLocaleString('id-ID')} CR (@Rp 1.000)
+                    {comprehensiveReport.internalAiCreditsConsumed.toLocaleString('id-ID')} CR (@Rp 1.000 internal)
                   </p>
                 </div>
 
                 {/* 3. Operating Deductions */}
                 <div className="p-3.5 bg-[#101726] border border-slate-800 rounded-xl space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Operasional & CDN</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Beban CDN & Operasional</span>
                     <Layers className="w-3.5 h-3.5 text-cyan-400" />
                   </div>
                   <p className="text-base sm:text-lg font-black text-rose-400/90 font-mono">
-                    -Rp {(comprehensiveReport.hostingCdnCostIdr + comprehensiveReport.gatewayFeesIdr + comprehensiveReport.platformFeesIdr + comprehensiveReport.refundsIdr).toLocaleString('id-ID')}
+                    -Rp {(comprehensiveReport.hostingCdnCostIdr + comprehensiveReport.gatewayFeesIdr + comprehensiveReport.platformFeesIdr + comprehensiveReport.cashRefundsIdr).toLocaleString('id-ID')}
                   </p>
                   <p className="text-[10px] text-slate-400">
-                    CDN, gateway, platform
+                    Refund uang: Rp {comprehensiveReport.cashRefundsIdr.toLocaleString('id-ID')} (Restorasi {comprehensiveReport.creditRefundsCount} CR)
                   </p>
                 </div>
 
@@ -1374,12 +1423,14 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                 <div className="p-3.5 bg-[#101726] border border-slate-800 rounded-xl space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold">Estimasi Pajak</span>
-                    <span className="text-[9px] bg-blue-500/20 text-blue-300 font-mono px-1.5 py-0.2 rounded font-bold">
-                      {comprehensiveReport.taxRegime.ratePercent}%
+                    <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                      comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? 'bg-blue-500/20 text-blue-300' : 'bg-amber-500/20 text-amber-300'
+                    }`}>
+                      {comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? `${comprehensiveReport.taxRegime.ratePercent}%` : 'UNCONFIRMED'}
                     </span>
                   </div>
-                  <p className="text-base sm:text-lg font-black text-rose-400/90 font-mono">
-                    -Rp {comprehensiveReport.taxIdr.toLocaleString('id-ID')}
+                  <p className={`text-base sm:text-lg font-black font-mono ${comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? 'text-rose-400/90' : 'text-amber-400'}`}>
+                    {comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? `-Rp ${comprehensiveReport.taxIdr.toLocaleString('id-ID')}` : 'Rp 0 (Pending)'}
                   </p>
                   <p className="text-[10px] text-slate-400 truncate">
                     {comprehensiveReport.taxRegime.label}
@@ -1712,9 +1763,13 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                         {d.title}
                       </span>
                       <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold border ${badgeColor}`}>
-                        {d.badge} • {d.confidenceScore}% CONFIDENCE
+                        {d.badge} • {d.ruleBasedConfidenceScore}% RULE COVERAGE
                       </span>
                     </div>
+
+                    <p className="text-[10px] text-slate-500 italic">
+                      *{d.confidenceDescription}
+                    </p>
 
                     {/* Evidence & Data Source */}
                     <div className="p-2.5 bg-slate-950/80 rounded-lg border border-slate-800/80 space-y-1">
