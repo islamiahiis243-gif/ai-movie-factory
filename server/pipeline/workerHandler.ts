@@ -58,6 +58,7 @@ export default async function workerHandler(req: any, res: any) {
       const nowIso = now.toISOString();
 
       // 1. Reconcile Stale Jobs (Running > 15 minutes without update)
+      // Differentiate between worker lease expired vs confirmed provider failure.
       const staleCutoff = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
       const { data: staleJobs } = await adminSupabase
         .from('pipeline_jobs')
@@ -67,45 +68,77 @@ export default async function workerHandler(req: any, res: any) {
 
       if (staleJobs && staleJobs.length > 0) {
         for (const job of staleJobs) {
-          await adminSupabase
-            .from('pipeline_jobs')
-            .update({
-              status: 'failed',
-              error_message: 'Job timeout: Proses komputasi provider melampaui batas waktu sewa (15 menit). Saldo kredit dikembalikan.',
-              updated_at: nowIso,
-            })
-            .eq('id', job.id);
+          const hasUnconfirmedProvider = Boolean(job.metadata?.provider_task_id && !job.metadata?.provider_completed);
+          
+          if (hasUnconfirmedProvider) {
+            // State: Provider status unknown / webhook pending -> transition to reconciliation_required (no premature refund)
+            await adminSupabase
+              .from('pipeline_jobs')
+              .update({
+                status: 'reconciliation_required',
+                error_message: 'Worker lease kedaluwarsa (15m). Menunggu konfirmasi status tugas dari provider sebelum refund.',
+                updated_at: nowIso,
+              })
+              .eq('id', job.id);
 
-          await adminSupabase.from('pipeline_job_logs').insert({
-            id: `log-timeout-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-            job_id: job.id,
-            stage: job.current_stage || 'video_gen',
-            level: 'error',
-            message: 'Timeout lease 15 menit terlampaui. Status ditandai FAILED dan kredit di-refund.',
-            timestamp: nowIso,
-          });
+            await adminSupabase.from('pipeline_job_logs').insert({
+              id: `log-recon-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              job_id: job.id,
+              stage: job.current_stage || 'video_gen',
+              level: 'warning',
+              message: 'Worker lease kedaluwarsa: status dialihkan ke RECONCILIATION_REQUIRED. Refund ditahan hingga status provider terverifikasi.',
+              timestamp: nowIso,
+            });
 
-          // Auto-refund reserved credits if an idempotency key was tracked
-          if (job.idempotency_key && job.project_id) {
-            try {
-              await releaseUserCredits({
-                adminSupabase,
-                userId: job.user_id || 'system',
-                reservationId: job.idempotency_key,
-                reason: 'timeout_rollback',
-              });
-            } catch (refErr) {
-              console.warn('Credit rollback error on timeout:', refErr);
+            result.reconciledCount++;
+            result.details.push({
+              jobId: job.id,
+              stage: job.current_stage,
+              status: 'reconciliation_required',
+              message: 'Worker lease expired with external provider task pending. Marked reconciliation_required.',
+            });
+          } else {
+            // State: Confirmed worker timeout / dead job -> mark failed and auto-refund held credits
+            await adminSupabase
+              .from('pipeline_jobs')
+              .update({
+                status: 'failed',
+                error_message: 'Job timeout: Proses komputasi provider melampaui batas waktu sewa (15 menit). Saldo kredit dikembalikan.',
+                updated_at: nowIso,
+              })
+              .eq('id', job.id);
+
+            await adminSupabase.from('pipeline_job_logs').insert({
+              id: `log-timeout-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              job_id: job.id,
+              stage: job.current_stage || 'video_gen',
+              level: 'error',
+              message: 'Timeout lease 15 menit terlampaui. Status ditandai FAILED dan kredit di-refund secara atomik.',
+              timestamp: nowIso,
+            });
+
+            // Auto-refund reserved credits idempotently
+            if (job.idempotency_key && job.project_id) {
+              try {
+                await releaseUserCredits({
+                  adminSupabase,
+                  userId: job.user_id || 'system',
+                  reservationId: job.idempotency_key,
+                  reason: 'timeout_rollback',
+                });
+              } catch (refErr) {
+                console.warn('Credit rollback error on timeout:', refErr);
+              }
             }
-          }
 
-          result.reconciledCount++;
-          result.details.push({
-            jobId: job.id,
-            stage: job.current_stage,
-            status: 'failed',
-            message: 'Timed out and reconciled.',
-          });
+            result.reconciledCount++;
+            result.details.push({
+              jobId: job.id,
+              stage: job.current_stage,
+              status: 'failed',
+              message: 'Timed out and reconciled with auto-refund.',
+            });
+          }
         }
       }
 

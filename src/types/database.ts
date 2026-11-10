@@ -62,6 +62,7 @@ export interface ProjectSettings {
   gate5_approved_at?: string;
   gate5_approved_by?: string;
   gate5_review_notes?: string;
+  gate5_fingerprint?: string;
 }
 
 export interface ProjectSettingsRecord {
@@ -585,7 +586,8 @@ export type PipelineJobStatus =
   | 'completed'
   | 'failed'
   | 'paused'
-  | 'cancelled';
+  | 'cancelled'
+  | 'reconciliation_required';
 
 export type PipelineJobPriority = 'low' | 'normal' | 'high' | 'urgent';
 

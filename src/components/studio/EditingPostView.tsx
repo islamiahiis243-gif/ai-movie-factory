@@ -10,7 +10,7 @@ import {
   PublishingPlatformPreset,
   ExportPackage,
 } from '../../types/database';
-import { fetchProjectAssets, fetchProjectScenes, createExportPackage, fetchExportPackages, supabase } from '../../lib/supabase';
+import { fetchProjectAssets, fetchProjectScenes, createExportPackage, fetchExportPackages, updateProjectRecord, supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import {
   Scissors,
@@ -95,6 +95,18 @@ interface EditingPostViewProps {
 const LOCAL_STORAGE_SEQUENCES_KEY = 'ai_movie_factory_timeline_sequences_v1';
 const LOCAL_STORAGE_GATE5_KEY = 'ai_movie_factory_gate5_approved_v1';
 
+export const computeSequenceFingerprint = (
+  clips: TimelineClip[],
+  lut: string = 'xianxia_ethereal',
+  platform: string = 'youtube_16_9'
+): string => {
+  const clipsSignature = clips
+    .map((c) => `${c.id}:${c.track}:${c.start_time}:${c.duration}:${c.source_url || ''}`)
+    .sort()
+    .join('|');
+  return `seq_${lut}_${platform}_${clipsSignature}`;
+};
+
 export const EditingPostView: React.FC<EditingPostViewProps> = ({
   projects,
   selectedProjectId,
@@ -176,6 +188,7 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   const [isGate5Approved, setIsGate5Approved] = useState<boolean>(false);
   const [gate5ReviewNotes, setGate5ReviewNotes] = useState<string>('');
   const [gate5ApprovedAt, setGate5ApprovedAt] = useState<string | null>(null);
+  const [gate5Fingerprint, setGate5Fingerprint] = useState<string | null>(null);
   const [showGate5Modal, setShowGate5Modal] = useState<boolean>(false);
   const [gate5ModalNoteInput, setGate5ModalNoteInput] = useState<string>('Seluruh klip video, dialog vokal, BGM, dan subtitle telah ditinjau dan disetujui untuk rilis master.');
 
@@ -222,26 +235,35 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
         setScenes(sceneRes.data || []);
         setExportHistory(expRes.data || []);
 
-        // Load Gate 5 Approval State (SSOT TC-WF-14)
+        // Load Gate 5 Approval State with Fingerprint (SSOT TC-WF-14)
         const savedG5 = localStorage.getItem(`${LOCAL_STORAGE_GATE5_KEY}_${activeProject.id}`);
-        if (savedG5) {
+        const cloudSettings = activeProject.settings;
+        let isApproved = false;
+        let approvedAt: string | null = null;
+        let reviewNotes = '';
+        let fingerprint: string | null = null;
+
+        if (cloudSettings?.gate5_approved) {
+          isApproved = true;
+          approvedAt = cloudSettings.gate5_approved_at || null;
+          reviewNotes = cloudSettings.gate5_review_notes || '';
+          fingerprint = cloudSettings.gate5_fingerprint || null;
+        } else if (savedG5) {
           try {
             const parsed = JSON.parse(savedG5);
-            setIsGate5Approved(Boolean(parsed.approved));
-            setGate5ReviewNotes(parsed.review_notes || '');
-            setGate5ApprovedAt(parsed.approved_at || null);
+            isApproved = Boolean(parsed.approved);
+            reviewNotes = parsed.review_notes || '';
+            approvedAt = parsed.approved_at || null;
+            fingerprint = parsed.fingerprint || null;
           } catch (e) {
-            setIsGate5Approved(savedG5 === 'true');
+            isApproved = savedG5 === 'true';
           }
-        } else if (activeProject.settings?.gate5_approved) {
-          setIsGate5Approved(true);
-          setGate5ApprovedAt(activeProject.settings?.gate5_approved_at || null);
-          setGate5ReviewNotes(activeProject.settings?.gate5_review_notes || '');
-        } else {
-          setIsGate5Approved(false);
-          setGate5ApprovedAt(null);
-          setGate5ReviewNotes('');
         }
+
+        setIsGate5Approved(isApproved);
+        setGate5ApprovedAt(approvedAt);
+        setGate5ReviewNotes(reviewNotes);
+        setGate5Fingerprint(fingerprint);
 
         // Load or initialize sequence
         const savedSeqs = localStorage.getItem(`${LOCAL_STORAGE_SEQUENCES_KEY}_${activeProject.id}`);
@@ -313,19 +335,34 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   const saveSequence = (updatedClips: TimelineClip[], lut = colorGradeLut, platform = activePlatform) => {
     if (!activeProject) return;
 
-    // Invalidate Gate 5 on timeline modification (Invariant TC-WF-14)
-    if (isGate5Approved) {
+    const newFingerprint = computeSequenceFingerprint(updatedClips, lut, platform);
+
+    // Invalidate Gate 5 on timeline modification if material differs (Invariant TC-WF-14)
+    if (isGate5Approved && gate5Fingerprint && newFingerprint !== gate5Fingerprint) {
       setIsGate5Approved(false);
       setGate5ApprovedAt(null);
+      setGate5Fingerprint(null);
       try {
         localStorage.removeItem(`${LOCAL_STORAGE_GATE5_KEY}_${activeProject.id}`);
       } catch (e) {
         console.warn('Failed clearing Gate 5 on sequence update:', e);
       }
+
+      // Persist invalidation to Supabase
+      updateProjectRecord(activeProject.id, {
+        settings: {
+          ...(activeProject.settings || {}),
+          gate5_approved: false,
+          gate5_approved_at: null,
+          gate5_fingerprint: null,
+          gate5_review_notes: `Persetujuan dibatalkan otomatis karena modifikasi materi timeline pada ${new Date().toISOString()}`,
+        } as any,
+      }).catch((e) => console.warn('Failed invalidating Gate 5 in Supabase:', e));
+
       onShowToast(
         isId
-          ? 'Materi timeline berubah: Persetujuan Gate 5 dibatalkan otomatis dan memerlukan peninjauan ulang sebelum ekspor master.'
-          : 'Timeline modified: Gate 5 approval automatically invalidated for re-approval.',
+          ? 'Materi timeline berubah: Persetujuan Gate 5 dibatalkan otomatis di Supabase dan memerlukan peninjauan ulang sebelum ekspor master.'
+          : 'Timeline modified: Gate 5 approval automatically invalidated in Supabase for re-approval.',
         'warning'
       );
     }
@@ -755,18 +792,22 @@ ${chaptersContent}
   };
 
   // Gate 5 Approval Handlers (SSOT TC-WF-14)
-  const handleApproveGate5 = (notes: string) => {
+  const handleApproveGate5 = async (notes: string) => {
     if (!activeProject) return;
     const now = new Date().toISOString();
+    const currentFingerprint = computeSequenceFingerprint(clips, colorGradeLut, activePlatform);
+
     setIsGate5Approved(true);
     setGate5ApprovedAt(now);
     setGate5ReviewNotes(notes);
+    setGate5Fingerprint(currentFingerprint);
 
     const payload = {
       approved: true,
       approved_at: now,
       approved_by: 'Sutradara Utama',
       review_notes: notes,
+      fingerprint: currentFingerprint,
     };
     try {
       localStorage.setItem(`${LOCAL_STORAGE_GATE5_KEY}_${activeProject.id}`, JSON.stringify(payload));
@@ -774,24 +815,57 @@ ${chaptersContent}
       console.warn('Failed saving gate 5 approval:', e);
     }
 
+    // Persist to Supabase
+    try {
+      await updateProjectRecord(activeProject.id, {
+        settings: {
+          ...(activeProject.settings || {}),
+          gate5_approved: true,
+          gate5_approved_at: now,
+          gate5_approved_by: 'Sutradara Utama',
+          gate5_review_notes: notes,
+          gate5_fingerprint: currentFingerprint,
+        } as any,
+      });
+    } catch (err) {
+      console.warn('Failed persisting Gate 5 approval to Supabase:', err);
+    }
+
     setShowGate5Modal(false);
     onShowToast(
       isId
-        ? 'Gerbang Persetujuan Sutradara (Gate 5) Disetujui! Tombol Ekspor Master kini aktif.'
-        : 'Director Gate 5 Approved! Master Export is now unlocked.',
+        ? 'Gerbang Persetujuan Sutradara (Gate 5) Disetujui & Tersimpan di Supabase! Tombol Ekspor Master kini aktif.'
+        : 'Director Gate 5 Approved & Persisted in Supabase! Master Export is now unlocked.',
       'success'
     );
   };
 
-  const handleRevokeGate5 = () => {
+  const handleRevokeGate5 = async () => {
     if (!activeProject) return;
     setIsGate5Approved(false);
     setGate5ApprovedAt(null);
+    setGate5Fingerprint(null);
     try {
       localStorage.removeItem(`${LOCAL_STORAGE_GATE5_KEY}_${activeProject.id}`);
     } catch (e) {
       console.warn('Failed revoking gate 5 approval:', e);
     }
+
+    // Persist revocation to Supabase
+    try {
+      await updateProjectRecord(activeProject.id, {
+        settings: {
+          ...(activeProject.settings || {}),
+          gate5_approved: false,
+          gate5_approved_at: null,
+          gate5_fingerprint: null,
+          gate5_review_notes: 'Persetujuan Gate 5 dicabut oleh sutradara.',
+        } as any,
+      });
+    } catch (err) {
+      console.warn('Failed revoking Gate 5 in Supabase:', err);
+    }
+
     onShowToast(
       isId
         ? 'Persetujuan Gate 5 dibatalkan. Timeline kembali ke mode revisi.'
@@ -805,20 +879,37 @@ ${chaptersContent}
     if (!activeProject) return;
     const baseName = activeProject.name.replace(/\s+/g, '_');
 
-    // 1. Download Subtitles SRT
+    // 1. Verify existence of real rendered master video
+    const latestRenderedMaster = exportHistory.find((pkg) => pkg.status === 'ready' && pkg.file_url) || null;
+
+    // 2. Verify existence of real thumbnail asset
+    const thumbnailAsset = projectAssets.find((a) => (a.asset_type === 'image' || a.asset_type === 'video') && a.file_url) || null;
+    const thumbnailLink = thumbnailAsset?.file_url || activeProject.thumbnail_url || null;
+
+    // 3. Inform director if master video is not rendered yet
+    if (!latestRenderedMaster) {
+      onShowToast(
+        isId
+          ? 'Perhatian: Video master belum dirender (Gate 5 render diperlukan). Mengunduh paket teks & metadata; silakan render master video untuk menyertakan berkas video utuh.'
+          : 'Notice: Master video is not yet rendered (Gate 5 render required). Downloading text & metadata package; please render master video for complete package.',
+        'info'
+      );
+    }
+
+    // 4. Download Subtitles SRT
     downloadFile(`${baseName}_Subtitles.srt`, srtContent);
 
-    // 2. Download Subtitles VTT
+    // 5. Download Subtitles VTT
     setTimeout(() => {
       downloadFile(`${baseName}_Subtitles.vtt`, vttContent);
     }, 250);
 
-    // 3. Download Chapters TXT
+    // 6. Download Chapters TXT
     setTimeout(() => {
       downloadFile(`${baseName}_Chapters.txt`, chaptersContent);
     }, 500);
 
-    // 4. Download Distribution Metadata Manifest TXT
+    // 7. Download Distribution Metadata Manifest TXT
     const fullKitManifest = `===============================================================
 AI MOVIE FACTORY — MULTI-CHANNEL PUBLISHING MANIFEST (TC-WF-15)
 ===============================================================
@@ -827,6 +918,14 @@ Genre: ${activeProject.genre}
 Preset Master: ${exportTierPreset.toUpperCase()}
 Platform Target: ${activePlatform.toUpperCase()}
 Dibuat: ${new Date().toISOString()}
+
+=== STATUS KOMPONEN PAKET DISTRIBUSI (TC-WF-15) ===
+1. Video Master: ${latestRenderedMaster ? `[TERSEDIA / SIAP DISTRIBUSI] ${latestRenderedMaster.package_title} (${latestRenderedMaster.format.toUpperCase()} ${latestRenderedMaster.resolution}) -> URL: ${latestRenderedMaster.file_url}` : '[BELUM DIRENDER — BUTUH GATE 5 RENDER SEBELUM DISTRIBUSI]'}
+2. Thumbnail JPG: ${thumbnailLink ? `[TERSEDIA / SIAP DISTRIBUSI] -> URL: ${thumbnailLink}` : '[BELUM DITENTUKAN — PILIH KEYFRAME DI STORYBOARD/MEDIA STUDIO]'}
+3. Subtitle SRT: [TERSEDIA / TELAH DIUNDUH]
+4. Subtitle WebVTT: [TERSEDIA / TELAH DIUNDUH]
+5. Cap Waktu Bab (Chapters): [TERSEDIA / TELAH DIUNDUH]
+6. Manifest & Tagar Algoritma: [TERSEDIA / DISALIN KE CLIPBOARD]
 
 --- JUDUL VIDEO (SEO OPTIMIZED) ---
 ${videoTitleOptions[selectedTitleIndex] || activeProject.name}
@@ -848,8 +947,8 @@ ${chaptersContent}
     copyToClipboard(seoDescriptionText, 'distribution_kit');
     onShowToast(
       isId
-        ? 'Paket Distribusi Lengkap (TC-WF-15: Subtitle SRT/VTT, Metadata, & Caption) berhasil diunduh!'
-        : 'Complete Distribution Kit (TC-WF-15) downloaded and caption copied!',
+        ? `Paket Distribusi Lengkap (TC-WF-15) berhasil diproses! ${latestRenderedMaster ? 'Video master & metadata siap rilis.' : 'Metadata & subtitle diunduh; render master video untuk paket video lengkap.'}`
+        : 'Complete Distribution Kit (TC-WF-15) processed and caption copied!',
       'success'
     );
   };
@@ -1062,6 +1161,31 @@ ${chaptersContent}
         return;
       }
 
+      const targetJob = userPublishingJobs.find((j) => j.id === jobId);
+      if (targetJob) {
+        const directPlatforms = ['youtube', 'tiktok', 'instagram', 'facebook'];
+        if (!directPlatforms.includes(targetJob.platform)) {
+          onShowToast(
+            isId
+              ? `Platform ${targetJob.platform.toUpperCase()} hanya mendukung Export/Share Kit Manual sesuai kapabilitas API platform. Silakan gunakan Paket Distribusi Lengkap.`
+              : `Platform ${targetJob.platform.toUpperCase()} only supports manual export/share kit. Please use Complete Distribution Kit.`,
+            'info'
+          );
+          return;
+        }
+
+        const isConnected = userConnections.some((c) => c.platform === targetJob.platform);
+        if (!isConnected) {
+          onShowToast(
+            isId
+              ? `Akun ${targetJob.platform.toUpperCase()} belum terhubung di OAuth Vault. Silakan sambungkan akun Anda terlebih dahulu.`
+              : `Account for ${targetJob.platform.toUpperCase()} is not connected in OAuth Vault. Please connect it first.`,
+            'error'
+          );
+          return;
+        }
+      }
+
       onShowToast('Menginisiasi proses upload serverless ke platform...', 'info');
       const updatedJob = await UniversalPublishingService.dispatchJobToServer({
         jobId,
@@ -1086,6 +1210,30 @@ ${chaptersContent}
       onShowToast(err.message || 'Gagal memproses dispatch publikasi.', 'error');
     } finally {
       setDispatchingJobId(null);
+    }
+  };
+
+  const handleBatchDispatchAllConnected = async () => {
+    const dispatchableJobs = userPublishingJobs.filter(
+      (j) =>
+        (j.status === 'draft' || j.status === 'failed') &&
+        ['youtube', 'tiktok', 'instagram', 'facebook'].includes(j.platform) &&
+        userConnections.some((c) => c.platform === j.platform)
+    );
+
+    if (dispatchableJobs.length === 0) {
+      onShowToast(
+        isId
+          ? 'Tidak ada draf antrean publikasi yang siap diproses untuk akun yang terhubung saat ini.'
+          : 'No pending draft jobs ready to publish for currently connected accounts.',
+        'info'
+      );
+      return;
+    }
+
+    onShowToast(`Memulai publikasi batch untuk ${dispatchableJobs.length} saluran terhubung...`, 'info');
+    for (const job of dispatchableJobs) {
+      await handleDispatchJob(job.id);
     }
   };
 
@@ -2612,14 +2760,24 @@ ${chaptersContent}
                             </span>
                           </div>
                         </div>
-                        <button
-                          onClick={handleSaveMultiPlatformDrafts}
-                          disabled={isSavingDraftJobs || selectedPlatforms.length === 0}
-                          className="px-3.5 py-1.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all shadow-md shadow-amber-400/20"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>{isSavingDraftJobs ? 'Menyimpan...' : 'Simpan Draf Antrean'}</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleSaveMultiPlatformDrafts}
+                            disabled={isSavingDraftJobs || selectedPlatforms.length === 0}
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>{isSavingDraftJobs ? 'Menyimpan...' : 'Simpan Draf'}</span>
+                          </button>
+                          <button
+                            onClick={handleBatchDispatchAllConnected}
+                            disabled={dispatchingJobId !== null || userPublishingJobs.length === 0}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all shadow-md shadow-amber-400/20"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>{dispatchingJobId ? 'Memproses...' : '🚀 Publikasikan Semua Sekarang'}</span>
+                          </button>
+                        </div>
                       </div>
 
                       {userPublishingJobs.length > 0 ? (

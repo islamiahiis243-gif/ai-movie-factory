@@ -3,6 +3,38 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.6] - Pipeline Credit Reconciliation, Gate 5 Fingerprint Persistence, TC-WF-15 Kit Honesty & Multi-Channel Batch Dispatch - 2026-11-10 18:05 +07:00
+
+### Added, Hardened & Reconciled
+- **Rekonsiliasi Kredit Pipeline & Perlindungan Status Provider (`server/pipeline/workerHandler.ts`, `server/credits/creditEngine.ts`):**
+  - Membedakan antara *worker lease expired* (pekerja background kedaluwarsa namun proses provider eksternal masih berjalan) dengan kegagalan pasti dari provider.
+  - Untuk tugas dengan provider eksternal yang belum selesai terkonfirmasi, status dialihkan ke `'reconciliation_required'` tanpa melakukan pengembalian kredit prematur (*no premature auto-refund*).
+  - Menegakkan *mutual exclusion* yang ketat antara penyelesaian kredit (`settleUserCredits`) dan pengembalian kredit (`releaseUserCredits`): transaksi yang telah diselesaikan tidak dapat di-refund, dan transaksi yang telah di-refund tidak dapat diselesaikan.
+- **Penyimpanan Persisten Gate 5 di Supabase & Fingerprint Timeline (`src/components/studio/EditingPostView.tsx`, `src/types/database.ts`):**
+  - Mengikat persetujuan Gate 5 dengan *sequence fingerprint* deterministik (`gate5_fingerprint`) yang merangkum seluruh tanda tangan klip timeline, filter grading LUT, dan platform target.
+  - Menyimpan status persetujuan Gate 5, catatan sutradara, dan *fingerprint* langsung ke tabel Supabase `projects` dan `project_settings` melalui `updateProjectRecord` (bukan hanya `localStorage`).
+  - Setiap kali klip di-trim, digeser, atau ditambah pasca persetujuan, sistem mendeteksi ketidaksesuaian *fingerprint* dan langsung mencabut persetujuan Gate 5 baik di Supabase maupun di cache lokal.
+- **Kejujuran & Kelengkapan Paket Distribusi TC-WF-15 (`src/components/studio/EditingPostView.tsx`):**
+  - Memeriksa ketersediaan fisik video master yang telah dirender di `exportHistory` dan thumbnail aktual proyek.
+  - Jika video master belum dirender, sistem secara jujur memberi tahu sutradara dan mencatat status `[BELUM DIRENDER — BUTUH GATE 5 RENDER SEBELUM DISTRIBUSI]` di lembar manifest tanpa merekayasa file video palsu/dummy.
+- **Antrean Dispatch Multi-Kanal Otomatis & Batch Publishing (`src/components/studio/EditingPostView.tsx`):**
+  - Menambahkan tombol aksi **"🚀 Publikasikan Semua Sekarang"** untuk memicu eksekusi antrean draf publikasi batch ke semua saluran yang terhubung secara serentak.
+  - Memvalidasi kepemilikan akun OAuth sebelum memicu `/api/publishing/dispatch`; jika akun platform tujuan belum terhubung di OAuth Vault, sistem memblokir dispatch dan meminta sutradara menyambungkan akun terlebih dahulu.
+  - Memisahkan kapabilitas platform: direct upload otomatis didukung untuk YouTube, Instagram Reels, Facebook Video, dan TikTok Direct Post; sedangkan platform X/Twitter, LinkedIn, dan Pinterest secara jujur diklasifikasikan sebagai *Export/Share Kit Manual*.
+- **Arsitektur Scheduler Otonom Supabase Cloud (`supabase/upgrade_v3_13_pipeline_worker_cron.sql`):**
+  - Mendaftarkan fungsi aman `public.trigger_pipeline_worker()` melalui ekstensi `pg_cron` & `pg_net` untuk memicu background worker `/api/pipeline/worker` setiap 10 menit.
+  - Mencegah penolakan deployment Vercel Hobby `3Fpeeb1` (batasan maksimal 1 cron harian) sehingga sistem dapat beroperasi tanpa biaya infrastruktur tambahan.
+- **Peningkatan Rangkaian Uji Otomasi (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Menambahkan `[TEST 19]` (Rekonsiliasi kredit, status reconciliation_required, dan mutual exclusion settle vs release).
+  - Menambahkan `[TEST 20]` (Penyimpanan persisten Gate 5 di Supabase dan pembatalan otomatis berbasis sequence fingerprint).
+  - Menambahkan `[TEST 21]` (Verifikasi kejujuran manifest TC-WF-15 untuk status video master).
+  - Menambahkan `[TEST 22]` (Guard kapabilitas API platform dan isolasi antrean batch dispatch).
+  - Assertion audit meningkat menjadi **115/115 assertion lulus 100%**.
+
+### Verification & Tests
+- `npm test`: 100% lulus seluruh rangkaian pengujian (115/115 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 139 assertions).
+- `npm run build`: Lulus bersih dalam 2.86s (0 errors).
+
 ## [Gelombang II - Milestone 2.5] - Serverless Pipeline Worker, QC 15 Transparency, Gate 5 Invalidation, TC-WF-15 Kit & TC-WF-16 Formula - 2026-11-10 17:50 +07:00
 
 ### Added, Hardened & Reconciled
