@@ -3,6 +3,38 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.9.1] - OTT Content Access Control & Entitlement Engine - 2026-11-11 01:15 +07:00
+
+### Added, Hardened & Reconciled
+- **Isolasi Domain Bisnis Total (OTT Commerce vs Creator SaaS):**
+  - Mempertahankan segregasi mutlak antara domain penagihan internal kreator AI Movie Factory (`subscriptions`, `payment_orders`, kuota/kredit AI AMF) dengan entitas kepemilikan akses dan tiket penonton (`ott_access_passes`, `ott_viewer_subscriptions`).
+- **Skema Relasional Hak Akses Penonton (`supabase/upgrade_v3_15_ott_entitlement_engine.sql`):**
+  - **`ott_access_passes`**: Model tiket penonton TVOD/PPV untuk episode mandiri, film lepas, atau tiket terusan serial (`series_season_pass`) berindeks komposit `(user_id, content_id, status)` dengan masa berlaku fleksibel (`valid_until` atau pembelian permanen) dan status (`active`, `expired`, `revoked`).
+  - **`ott_viewer_subscriptions`**: Model langganan penonton SVOD tingkat kanal (`ott_viewer_subscriptions`) berindeks komposit `(user_id, channel_id, status)` dengan periode siklus (`weekly`, `monthly`, `annual`), penanganan pembaruan otomatis (`auto_renew`), dan status perpanjangan (`active`, `cancelled`, `expired`, `past_due`).
+  - **Row Level Security (RLS) & Anti-Bypass Guard:** Menolak mutlak penulisan langsung dari klien publik anonim maupun terotentikasi; hanya dapat diterbitkan melalui service role / backend webhook fulfillment. Penonton hanya diizinkan melihat tiket/langganan miliknya sendiri, dan pemilik kanal dapat mengaudit tiket/langganan pada kanal miliknya.
+- **Mesin Entitlement Sentral AMF (`src/lib/ottEntitlementEngine.ts`):**
+  - Mengimplementasikan fungsi keputusan otoritatif tunggal `resolveOttContentAccess(params: ResolveOttAccessParams)` yang mengevaluasi hak tonton berdasarkan hierarki prioritas SSOT:
+    1. Pemeriksaan eksistensi dan status keaktifan kanal (`status === 'active'`).
+    2. Isolasi multi-tenant antar-studio (mencegah konten studio A diotorisasi di bawah kanal studio B).
+    3. Status publikasi katalog (`publication_status === 'published'`).
+    4. Jendela rilis terjadwal (*Scheduled Premiere Window* `scheduled_release_at`).
+    5. Permintaan pratinjau cuplikan (`isPreviewRequest === true`) yang hanya mengembalikan URL trailer, bukan berkas master.
+    6. Kebijakan akses konten publik (`free` dan `trailer_preview`).
+    7. Gerbang autentikasi penonton untuk konten berbayar (`viewer.id` wajib terverifikasi).
+    8. Evaluasi kepemilikan tiket PPV (termasuk tiket terusan musim) dan status masa berlaku.
+    9. Evaluasi langganan kanal SVOD dan masa aktif periode tagihan.
+    10. Evaluasi kebijakan hybrid akses awal (*Hybrid Early Access* SVOD atau tiket TVOD).
+  - **Arsitektur Keamanan Fail-Closed & Zero URL Leakage:** Jika keputusan akses tidak diizinkan (`allowed === false`), properti `playbackSession` dihapus secara mutlak dari respons dan URL master video tidak pernah dikirimkan ke penelepon.
+  - **Generasi Sesi Putar Aman:** Menghasilkan tiket sesi terenkripsi dengan waktu kedaluwarsa 6 jam dan penandaan *watermarking* untuk penonton berbayar.
+- **Serverless API Endpoint (`api/ott/resolve-access.ts` & `api/ott/[action].ts`):**
+  - Menerima permintaan otorisasi HTTP POST terproteksi, memvalidasi identitas penonton melalui JWT Supabase, memetakan status keputusan ke kode HTTP yang tepat (200 OK, 401 Unauthorized, 402 Payment Required, 403 Forbidden, 404 Not Found), serta menyaring log dari data sensitif atau token.
+- **Rangkaian Uji Deterministik Komprehensif (`scripts/test_ott_entitlement_engine.ts`):**
+  - 27 kategori pengujian mencakup 83 assertions otomatis tanpa kuota API eksternal (100% PASS).
+  - Total pengujian seluruh modul otomatis aplikasi meningkat dari 235 menjadi **318 assertions lulus 100%**.
+- **Pembaruan Versi Produksi & Healthcheck:**
+  - Versi aplikasi ditingkatkan ke `1.16.1` (`V3.19 Phase 6 Content Access Control & Entitlement Engine`).
+
+
 ## [Gelombang II - Milestone 2.9] - OTT Catalog Hierarchy & Multi-Episode Relational Architecture - 2026-11-11 00:45 +07:00
 
 ### Added, Hardened & Reconciled

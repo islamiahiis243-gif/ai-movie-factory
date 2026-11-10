@@ -1316,3 +1316,106 @@ export interface OttCatalogSummary {
   seriesList: OttSeries[];
   filmsList: OttFilm[];
 }
+
+// ============================================================================
+// OTT CONTENT ACCESS CONTROL & ENTITLEMENT TYPES (Milestone 2.9.1)
+// ============================================================================
+
+export type OttAccessPassStatus = 'active' | 'expired' | 'revoked';
+
+export type OttViewerSubscriptionStatus = 'active' | 'cancelled' | 'expired' | 'past_due';
+
+export interface OttAccessPass {
+  id: string;
+  user_id: string;
+  channel_id: string;
+  content_type: 'episode' | 'film' | 'series_season_pass';
+  content_id: string;
+  order_ref_id?: string;
+  price_paid_idr: number;
+  currency: string;
+  status: OttAccessPassStatus;
+  valid_from: string;
+  valid_until?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OttViewerSubscription {
+  id: string;
+  user_id: string;
+  channel_id: string;
+  tier_name: string;
+  billing_cycle: 'weekly' | 'monthly' | 'annual';
+  status: OttViewerSubscriptionStatus;
+  price_paid_idr: number;
+  current_period_start: string;
+  current_period_end: string;
+  auto_renew: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type OttAccessDecisionStatus =
+  | 'ALLOWED_FREE'
+  | 'ALLOWED_PPV'
+  | 'ALLOWED_SVOD'
+  | 'ALLOWED_PREVIEW'
+  | 'LOGIN_REQUIRED'
+  | 'PAYMENT_REQUIRED'
+  | 'SUBSCRIPTION_REQUIRED'
+  | 'ENTITLEMENT_EXPIRED'
+  | 'CONTENT_NOT_PUBLISHED'
+  | 'CONTENT_NOT_YET_AVAILABLE'
+  | 'CONTENT_UNAVAILABLE'
+  | 'ACCESS_REVOKED'
+  | 'TENANT_ACCESS_DENIED';
+
+export interface OttPlaybackSession {
+  ticketId: string;
+  videoUrl: string;
+  expiresAt: string;
+  isWatermarked: boolean;
+  sessionToken: string;
+}
+
+export interface OttMonetizationPrompt {
+  requiredAction: 'login' | 'purchase_ticket' | 'subscribe' | 'wait_for_release' | 'contact_support';
+  priceIdr?: number;
+  currency?: string;
+  channelId: string;
+  contentTitle: string;
+  subscriptionTiers?: Array<{
+    name: string;
+    billingCycle: 'weekly' | 'monthly' | 'annual';
+    priceIdr: number;
+  }>;
+}
+
+export interface OttAccessDecisionResult {
+  allowed: boolean;
+  status: OttAccessDecisionStatus;
+  reason: string;
+  contentId: string;
+  contentType: 'episode' | 'film';
+  channelId: string;
+  playbackSession?: OttPlaybackSession;
+  monetizationPrompt?: OttMonetizationPrompt;
+  evaluatedAt: string;
+}
+
+export interface ResolveOttAccessParams {
+  viewer?: {
+    id: string;
+    email?: string;
+  } | null;
+  channel: OttChannel;
+  content: OttEpisode | OttFilm;
+  parentSeries?: OttSeries;
+  contentType: 'episode' | 'film';
+  userPasses?: OttAccessPass[];
+  userSubscriptions?: OttViewerSubscription[];
+  isPreviewRequest?: boolean;
+  currentTime?: Date;
+}
+
