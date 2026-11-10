@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Project, ProductionActivity, ProductionJob } from '../../types/database';
 import { useAuth } from '../../context/AuthContext';
 import { fetchCreditTransactions } from '../../lib/supabase';
+import { computeNextBestAction } from '../../lib/workflowGates';
+import { NextBestActionBanner } from '../common/NextBestActionBanner';
 import {
   Film,
   Plus,
@@ -24,6 +26,7 @@ interface DashboardViewProps {
   onOpenCreateProject: () => void;
   onSelectProject: (project: Project) => void;
   onViewAllProjects: () => void;
+  onNavigateToModule?: (targetTab: string, project?: Project) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -34,6 +37,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenCreateProject,
   onSelectProject,
   onViewAllProjects,
+  onNavigateToModule,
 }) => {
   const { t, profile, user } = useAuth();
   const [ledgerBalance, setLedgerBalance] = useState<number>(150);
@@ -61,6 +65,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const activeJobs = jobs.filter((j) => j.status === 'running' || j.status === 'queued').length;
   const failedJobs = jobs.filter((j) => j.status === 'failed').length;
   const availableCredits = ledgerBalance;
+
+  const primaryProject = projects[0] || null;
+  const nextAction = computeNextBestAction(primaryProject);
+
+  const handleNextActionClick = (targetTab: string) => {
+    if (targetTab === 'projects' && !primaryProject) {
+      onOpenCreateProject();
+    } else if (onNavigateToModule) {
+      onNavigateToModule(targetTab, primaryProject || undefined);
+    } else {
+      onViewAllProjects();
+    }
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -93,6 +110,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <span>{t.dashboard.quickCreate}</span>
         </button>
       </div>
+
+      {/* Next Best Action Guided Workflow Banner (SSOT User-Interest Principle) */}
+      <NextBestActionBanner
+        action={nextAction}
+        projectName={primaryProject?.name}
+        onNavigate={handleNextActionClick}
+      />
 
       {/* KPI Stat Cards (SSOT Section 6 requirements) */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">

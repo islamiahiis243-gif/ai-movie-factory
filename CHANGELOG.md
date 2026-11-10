@@ -3,6 +3,101 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.1] - Guided Workflow Engine, Next Best Action, Production Templates & Multi-Gate Controls - 2026-11-10 08:05 +07:00
+
+### Added & Implemented
+- **Master Workflow Navigation Alignment (`src/components/layout/Sidebar.tsx`):**
+  - Mengatur ulang urutan navigasi menu studio di sidebar agar tepat mengikuti 18 tahapan produksi Master Workflow:
+    `Proyek Saya` $\rightarrow$ `Cerita & Naskah` (Gate 1) $\rightarrow$ `World Builder` $\rightarrow$ `Character Studio` (Gate 2) $\rightarrow$ `Storyboard Studio` (Gate 3) $\rightarrow$ `Media Studio` (Gate 4) $\rightarrow$ `Pipeline Produksi` $\rightarrow$ `Quality Control` $\rightarrow$ `Editing & Post-Produksi` (Gate 5) $\rightarrow$ `Tim AI Agent`.
+- **Workflow & Approval Gates Engine (`src/lib/workflowGates.ts`):**
+  - Mendefinisikan metadata resmi untuk 5 Director Approval Gates:
+    - *Gate 1: Script Approval* (Penguncian SSOT naskah)
+    - *Gate 2: World & Character Approval* (Penguncian DNA karakter & master lokasi)
+    - *Gate 3: Storyboard Approval* (Penguncian komposisi shot & arah kamera)
+    - *Gate 4: Keyframe Image Approval* (Validasi visual still sebelum komputasi video)
+    - *Gate 5: Final Master Approval* (Assembly editing & mastering ekspor)
+  - Mengimplementasikan algoritma `computeNextBestAction()` untuk memandu sutradara langkah demi langkah berdasarkan capaian gerbang persetujuan proyek aktif.
+- **Next Best Action Guided Banner (`src/components/common/NextBestActionBanner.tsx`):**
+  - Kartu panduan cerdas interaktif di Cockpit Dashboard (`src/components/dashboard/DashboardView.tsx`) yang menampilkan:
+    - Tahapan aktif saat ini (*Current Production Stage*)
+    - Judul & deskripsi aksi paling prioritas yang harus dilakukan sutradara
+    - Indikator status visual mini 5 Director Approval Gates (G1 s.d. G5)
+    - Tombol aksi 1-klik untuk langsung membuka modul yang bersangkutan tanpa kebingungan.
+- **Quick-Start Production Templates (`src/components/projects/ProjectModal.tsx`):**
+  - Menyediakan 4 template produksi siap pakai untuk pengguna pemula:
+    1. *Short-Form Viral (9:16):* 60 detik, pacing cepat, hook 3 detik, optimal untuk TikTok/Shorts/Reels.
+    2. *Cinematic Drama Series (16:9):* 3-5 menit, rasio 16:9 sinematik 24fps, multi-adegan.
+    3. *Micro-Drama Series OTT (9:16):* Format web series vertikal cliffhanger bergaya ReelShort / DramaBox.
+    4. *Commercial & Trailer (16:9):* Format trailer sinematik 30 detik berkecepatan tinggi.
+  - Memilih template otomatis mengisi format produksi, rasio aspek, target durasi, resolusi, frame rate, dan gaya visual tanpa harus mengkonfigurasi puluhan form secara manual.
+- **Director Approval Gate Controls di Modul Produksi:**
+  - *Cerita & Naskah (`src/components/studio/StoryScriptView.tsx`):* Menambahkan status bar Gate 1, penghitung adegan disetujui, label SSOT terkunci, dan tombol 1-klik *Setujui Semua Naskah (Kunci Gate 1)*.
+  - *Character Studio (`src/components/studio/CharacterStudioView.tsx`):* Menambahkan banner status Gate 2 & indikator arsitektur 8-lapisan konsistensi karakter.
+  - *Storyboard Studio (`src/components/studio/StoryboardView.tsx`):* Menambahkan peringatan dependensi Gate 1 jika naskah belum disetujui, status bar Gate 3, serta tombol persetujuan seluruh shot (*Gate 3 Storyboard Approval*).
+
+### Verification & Tests
+- `npm run build`: Lulus bersih dalam 2.08s dengan 0 TypeScript error & validasi chunk Vite.
+- `npm test`: 100% lulus seluruh rangkaian pengujian (Vercel Go-Live Readiness, AES-256 OAuth Vault, Publishing Engine, dan Live Analytics Sync).
+
+## [Gelombang II - Specification v2.1] - Master Blueprint Hardening, Review Integration & Implementation Governance - 2026-11-10 07:45 +07:00
+
+### Added & Enhanced
+- **Implementation Governance & Change Control:**
+  - Menetapkan prinsip perlindungan sistem produksi aktif (Gen 1 live di Vercel & Supabase Cloud).
+  - Kebijakan *Zero Breaking Changes*: dilarang merombak skema/tabel yang sudah bekerja tanpa skrip migrasi backward-compatible dan rencana rollback.
+  - Kewajiban transparansi status teknis (*Zero Mockup Status*).
+- **User Experience & User-Interest Principles:**
+  - Menetapkan filosofi inti: *"AMF harus bekerja keras untuk mempermudah pekerjaan pengguna, bukan pengguna yang bekerja keras untuk memahami cara kerja teknis AMF."*
+  - 8 pilar antarmuka pengguna: *Easy to Start* (Onboarding interaktif, Template Proyek 9:16/16:9), *Guided Workflow & Next Best Action*, *Smart Defaults*, *Progressive Disclosure*, *Contextual Help*, *Autosave & Draft Recovery*, *Complete User Control*, dan *Responsive Workspace*.
+- **Restrukturisasi Multi-Gate Approval Master Workflow:**
+  - Memisahkan dan menertibkan urutan 5 Gerbang Persetujuan Sutradara (*Director Approval Gates*):
+    1. *Gate 1 (Script Approval Gate):* Mengunci naskah sebagai kebenaran tunggal (*SSOT*) sebelum world/character & storyboard dirancang.
+    2. *Gate 2 (World & Character Approval Gate):* Mengunci identitas visual karakter dan lokasi master.
+    3. *Gate 3 (Storyboard Approval Gate):* Mengunci shot list, komposisi, dan pergerakan kamera sebelum generasi gambar.
+    4. *Gate 4 (Keyframe Image Approval Gate):* Mengesahkan visual still shot sebelum kredit komputasi video dikeluarkan.
+    5. *Gate 5 (Final Master Approval Gate):* Peninjauan komprehensif assembly timeline dan audio mix sebelum ekspor final.
+  - Penegasan dependensi spesifik per metode generasi video: Text-to-Video (T2V), Image-to-Video (I2V), dan Storyboard-to-Video (Batch Sequence).
+- **8-Layer Character Consistency Architecture:**
+  - Menggantikan janji 100% konsistensi seed absolut dengan arsitektur realistis multi-lapis: Master Character Reference Sheet, Character Identity DNA Profile, IP-Adapter / Reference Image Conditioning, Attribute Prompt Locking, Provider Seed Anchoring, Face Similarity AI QC Evaluation, Human Approval Override, dan Versioned Character Assets.
+- **Job Queue, Background Processing & Recovery:**
+  - Arsitektur antrean asinkron yang tahan terhadap penutupan browser tab atau gangguan koneksi.
+  - Penerapan *Idempotency Key* untuk mencegah tagihan ganda atau duplikasi aset.
+  - Mekanisme retry bertahap dengan *exponential backoff* dan pesan kegagalan yang dapat ditindaklanjuti (*actionable failure handling*).
+- **Cost Estimation & Spending Protection:**
+  - Preview biaya dan kredit transparan sebelum tombol eksekusi generasi dijalankan.
+  - Fitur batas anggaran per proyek (*Project Budget Cap*) dan peringatan ambang batas belanja.
+  - *Failed Job Credit Guarantee:* Jaminan pengembalian kredit otomatis (100% refund) jika provider AI mengalami kegagalan/timeout.
+- **Transparansi Finansial Komprehensif (Revenue Intelligence):**
+  - Pemisahan data aktual (*[VERIFIED ACTUAL]*) vs proyeksi estimasi (*[ESTIMATED PROJECTION]*).
+  - Formula perhitungan laba bersih transparan yang memperhitungkan Gross Revenue, Refunds, Platform Fees, Payment Gateway Fees, AI Production Costs, Hosting/CDN Costs, dan Pajak.
+- **Security & Production Deployment Rules:**
+  - Kebijakan ketat perlindungan token akses (Vercel, Supabase, GitHub, Google Console) via environment variables rahasia dan prinsip *Least Privilege*.
+  - Larangan modifikasi destruktif pada database produksi Supabase dan penegakan RLS wajib per akun.
+- **Roadmap Bertahap (Phases 1–6):**
+  - Membagi implementasi Gelombang II menjadi 6 fase terukur dengan kriteria kelulusan dan bukti pengujian masing-masing.
+- **Acceptance Test Matrix (Evidence-Based):**
+  - Mengubah seluruh indikator checklist awal menjadi `[ ]` (Pending Verification) dengan tabel pengujian berbasis bukti (Test ID, Lingkungan, Status, dan Referensi Bukti Log).
+- **Matriks Rebuttal Teknis & Klarifikasi Objektif:**
+  - Memberikan tanggapan teknis atas temuan reviewer terkait arsitektur SPA React vs web crawler, penegasan fondasi Gen 1 yang aktif bekerja (bukan mockup), serta penyediaan multi-preset ekspor (Web MP4 vs Cinema Master ProRes).
+
+## [Gelombang II - Planning] - Master Requirements & Blueprint: User-Centric AI Film Production OS & Independent OTT Ecosystem - 2026-11-10 07:10 +07:00
+
+### Added
+- **Arsip Dokumentasi Gen 1 (`docs/01_app_gen1_finish/`):**
+  - Seluruh 8 file arsitektur dan dokumentasi Gen 1 (`ai_movie_factory_SSOT.md`, `API_DOCUMENTATION.md`, `ARCHITECTURE.md`, `DATABASE_SCHEMA.md`, `DATABASE_AUDIT_REPORT.md`, `DEVELOPMENT_ROADMAP.md`, `ENVIRONMENT_VARIABLES.md`, `publishing_monetization_growth_plan.md`) telah dipindahkan dan dikunci permanen di folder `docs/01_app_gen1_finish/`.
+- **Master Blueprint Gelombang II (`docs/02_app_upgrade_II/01_master_requirements_and_upgrade_blueprint.md`):**
+  - Menetapkan visi sutradara dan 5 Golden Rules non-kompromis: Konsistensi Karakter, Konsistensi Cerita, Integrasi Nyata Antarmodul, Produksi Aset Riil (bukan mock), dan Keamanan Proyek.
+  - **Master Workflow & Production Execution Order:** Menetapkan urutan 16 tahapan kerja produksi utama, tabel ketergantungan antarmodul (*module dependency*), 6 aturan eksekusi paralel, 7 gerbang persetujuan sutradara (*Director Approval Gates*), 9 titik QC berlapis (*continuous QC*), *Revision Loop*, 11 status produksi, dan struktur navigasi 10 menu utama.
+  - **Pipeline Orchestrator & Dependency Enforcement:** Mewajibkan validasi prasyarat sebelum eksekusi, manajemen *recovery & retry*, serta visualisasi status per node di dashboard pipeline.
+  - **Acceptance Tests Khusus Workflow (13 Pengujian):** Menambahkan 13 kriteria kelulusan integritas alur kerja dan penelusuran end-to-end (*traceability test*).
+  - **12 Aturan Mutlak Implementasi Workflow AMF:** Fondasi operasional wajib bagi seluruh pengembang dalam mengeksekusi Gelombang II.
+  - Memetakan 5 Pilar Arsitektur AMF:
+    1. **Production Engine:** 7 modul produksi terintegrasi (Proyek Saya, Cerita & Naskah, World Builder, Character Studio, Storyboard, Media Studio riil, Editing & Post-Pro).
+    2. **Production Control:** 15 parameter inspeksi Quality Control (QC), 10-step Production Pipeline Orchestrator, 15 agen virtual AI Agent Manager, dan 13 kriteria kelulusan Acceptance Tests.
+    3. **Distribution Engine:** Multi-platform publishing ke YouTube, TikTok, Instagram, Facebook, dan X dari 1 hasil produksi utama.
+    4. **Web & OTT Publishing Studio:** Pilar bisnis ke-4 untuk memerdekakan kreator dari ketergantungan medsos dengan no-code visual website builder, 7 jenis platform streaming mandiri, 5 model monetisasi (Subscription, Pay-Per-View, Ads, Donation, Licensing), serta arsitektur streaming CDN/signed URLs.
+    5. **Business Intelligence:** Performance Analytics, Revenue Intelligence, ROI Calculator, dan AI Business Advisor berbasis data riil.
+
 ## [1.15.8] - Final Development Milestone, Complete Financial Infrastructure & UI Release Alignment - 2026-11-09 22:31 +07:00
 
 > **Status Milestone:** Final Development Milestone & Production Verification.  

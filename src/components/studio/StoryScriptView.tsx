@@ -909,8 +909,40 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
               </button>
             </div>
           ) : (
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl overflow-hidden">
-              <div className="overflow-x-auto">
+            <div className="space-y-3">
+              {/* Gate 1 Script Approval Status Header */}
+              <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-semibold text-white">Gate 1: Script Approval Gate</span>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    ({scenes.filter((s) => s.approval_status === 'approved').length}/{scenes.length} Adegan Disetujui)
+                  </span>
+                  {scenes.every((s) => s.approval_status === 'approved') && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      SSOT Terkunci
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {scenes.some((s) => s.approval_status !== 'approved') && (
+                    <button
+                      onClick={async () => {
+                        for (const sc of scenes.filter((s) => s.approval_status !== 'approved')) {
+                          await handleApproveScene(sc.id);
+                        }
+                        onShowToast('Seluruh adegan naskah disetujui (Gate 1 Lulus)!', 'success');
+                      }}
+                      className="px-2.5 py-1 bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/40 rounded text-[11px] font-semibold transition-colors cursor-pointer"
+                    >
+                      Setujui Semua Naskah (Kunci Gate 1)
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs text-slate-300">
                   <thead>
                     <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] text-slate-400 font-medium">
@@ -1023,7 +1055,8 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
                 </table>
               </div>
             </div>
-          )}
+          </div>
+        )}
         </div>
       )}
 

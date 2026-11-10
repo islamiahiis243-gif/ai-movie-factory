@@ -324,6 +324,10 @@ function StudioApp() {
               onOpenCreateProject={handleOpenCreateModal}
               onSelectProject={(p) => setInspectProject(p)}
               onViewAllProjects={() => setActiveTab('projects')}
+              onNavigateToModule={(tab, p) => {
+                if (p) setInspectProject(p);
+                setActiveTab(tab);
+              }}
             />
           )}
 

@@ -21,7 +21,9 @@ import {
   RefreshCw,
   Sun,
   ShieldCheck,
-  Maximize2
+  Maximize2,
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Project, SceneItem, Character } from '../../types/database';
@@ -357,6 +359,38 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left 2 Cols: Shot List Cards */}
           <div className="lg:col-span-2 space-y-4">
+            {/* Gate 1 Dependency Notice */}
+            {activeScene && activeScene.approval_status !== 'approved' && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Peringatan Alur Kerja (Gate 1):</strong> Naskah adegan #{activeScene.scene_number} ini berstatus <em>'{activeScene.approval_status}'</em>. Pastikan naskah disetujui di Cerita & Naskah sebelum eksekusi render riil di Media Studio.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Gate 3 Storyboard Approval Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="text-xs font-semibold text-white">Gate 3: Storyboard Approval</span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  ({shots.filter((s) => s.status === 'approved' || s.status === 'render_ready').length}/{shots.length} shot disetujui)
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setShots((prev) => prev.map((s) => ({ ...s, status: 'approved' })));
+                  onShowToast('Seluruh shot storyboard adegan ini disetujui (Gate 3 Lulus)!', 'success');
+                }}
+                className="px-2.5 py-1 bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 border border-amber-400/30 rounded text-xs font-medium transition-colors cursor-pointer"
+              >
+                Setujui Semua Shot (Gate 3)
+              </button>
+            </div>
+
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">

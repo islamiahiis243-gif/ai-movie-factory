@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Project, ProjectSettings, AspectRatio, ProductionMode, OutputResolution, FrameRate } from '../../types/database';
 import { GENRE_OPTIONS, FORMAT_OPTIONS, PRODUCTION_MODULES, INITIAL_AI_AGENTS } from '../../lib/translations';
-import { X, Check, HelpCircle } from 'lucide-react';
+import { QUICK_START_TEMPLATES, ProjectTemplate } from '../../lib/workflowGates';
+import { X, Check, HelpCircle, Sparkles, Film } from 'lucide-react';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -70,9 +71,29 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   ]);
   const [humanApprovalRequired, setHumanApprovalRequired] = useState<boolean>(true);
   const [creditBudget, setCreditBudget] = useState<number>(10000);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
   // Validation
   const [error, setError] = useState<string | null>(null);
+
+  const handleApplyTemplate = (tmpl: ProjectTemplate) => {
+    setSelectedTemplateId(tmpl.id);
+    setProductionFormat(tmpl.productionFormat);
+    setAspectRatio(tmpl.aspectRatio);
+    setOutputResolution(tmpl.outputResolution);
+    setFrameRate(tmpl.frameRate);
+    setEpisodeDuration(tmpl.episodeDurationMinutes);
+    setEpisodesCount(tmpl.episodesCount);
+    setSceneCountTarget(tmpl.sceneCountTarget);
+    setVisualStyle(tmpl.visualStyle);
+    setProductionMode(tmpl.productionMode);
+    if (!name.trim()) {
+      setName(`Proyek ${tmpl.nameId}`);
+    }
+    if (!description.trim()) {
+      setDescription(tmpl.descriptionId);
+    }
+  };
 
   useEffect(() => {
     if (editingProject) {
@@ -135,6 +156,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
       ]);
       setHumanApprovalRequired(true);
       setCreditBudget(10000);
+      setSelectedTemplateId(null);
     }
     setActiveStep(1);
     setError(null);
@@ -284,6 +306,48 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
           {/* STEP 1: Project Identity & Genre */}
           {activeStep === 1 && (
             <div className="space-y-4">
+              {!editingProject && (
+                <div className="p-4 rounded-xl bg-slate-950/70 border border-amber-400/25 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Pilih Template Cepat Produksi (Quick-Start)
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">1-Klik Konfigurasi Masuk Akal</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {QUICK_START_TEMPLATES.map((tmpl) => {
+                      const isSelected = selectedTemplateId === tmpl.id;
+                      return (
+                        <button
+                          key={tmpl.id}
+                          type="button"
+                          onClick={() => handleApplyTemplate(tmpl)}
+                          className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-400/15 border-amber-400 text-white shadow-md shadow-amber-400/10'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-semibold text-white flex items-center gap-1">
+                              <Film className="w-3 h-3 text-amber-400" />
+                              {tmpl.nameId}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono">
+                              {tmpl.aspectRatio}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 line-clamp-2 leading-snug">
+                            {tmpl.descriptionId}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   {t.projectModal.nameLabel} <span className="text-amber-400">*</span>

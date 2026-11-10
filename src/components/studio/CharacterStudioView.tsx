@@ -358,6 +358,33 @@ export const CharacterStudioView: React.FC<CharacterStudioViewProps> = ({
         </div>
       </div>
 
+      {/* Gate 2: World & Character Approval & 8-Layer Consistency Banner */}
+      <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-bold text-white">Gate 2: World & Character Approval Gate</span>
+            <span className="text-[11px] font-mono text-slate-400">
+              ({characters.length} Karakter Terdaftar)
+            </span>
+            {characters.length > 0 && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                Gate 2 Siap Disetujui
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Arsitektur 8-Lapisan Konsistensi: Master Sheet 4-Sudut, Profil DNA Karakter, Injeksi Prompt Atribut & Reference Image Conditioning.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[10px] font-mono px-2 py-1 bg-slate-950 rounded border border-slate-800 text-amber-300">
+            8-Layer Consistency Active
+          </span>
+        </div>
+      </div>
+
       {/* Filter and Search Bar */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-3">
         {/* Role Segmented Control (Interactive Filter Buttons - Allowed) */}

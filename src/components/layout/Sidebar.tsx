@@ -50,15 +50,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       group: t.nav.productionStudio,
       items: [
         { id: 'projects', label: t.nav.myProjects, icon: FolderKanban, status: 'active' },
+        { id: 'story_script', label: t.nav.storyScript, icon: ScrollText, status: 'active' },
         { id: 'world_builder', label: t.nav.worldBuilder, icon: Compass, status: 'active' },
         { id: 'character_studio', label: t.nav.characterStudio, icon: Users, status: 'active' },
-        { id: 'story_script', label: t.nav.storyScript, icon: ScrollText, status: 'active' },
         { id: 'storyboard', label: t.nav.storyboard, icon: Clapperboard, status: 'active' },
-        { id: 'agent_manager', label: t.nav.agentManager, icon: Bot, status: 'active' },
         { id: 'media_studio', label: t.nav.mediaStudio, icon: Sparkles, status: 'active' },
         { id: 'production_pipeline', label: t.nav.productionPipeline, icon: Workflow, status: 'active' },
         { id: 'quality_control', label: (t.nav as any).qualityControl || 'Quality Control & Kontinuitas', icon: ShieldCheck, status: 'active' },
         { id: 'editing_post', label: (t.nav as any).editingPost || 'Editing & Post-Produksi', icon: Scissors, status: 'active' },
+        { id: 'agent_manager', label: t.nav.agentManager, icon: Bot, status: 'active' },
       ],
     },
     {
