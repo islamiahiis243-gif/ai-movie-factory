@@ -53,6 +53,7 @@ import {
   createTestOttAccessPass,
   createTestOttViewerSubscription,
   generateEntitlementGrant,
+  verifyEntitlementGrantToken,
 } from '../src/lib/ottEntitlementEngine';
 import resolveAccessHandler from '../api/ott/resolve-access';
 
@@ -858,6 +859,146 @@ assert(sqlContent.includes('ALTER TABLE public.ott_access_passes ENABLE ROW LEVE
 assert(sqlContent.includes('ALTER TABLE public.ott_viewer_subscriptions ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on ott_viewer_subscriptions');
 assert(sqlContent.includes('DEFAULT now()'), 'Uses true now() TIMESTAMPTZ default');
 assert(sqlContent.includes('check_ott_access_pass_channel_integrity'), 'Polymorphic content channel integrity trigger defined');
+
+// -----------------------------------------------------------------------------
+// [TEST 33] Cryptographic Entitlement Grant Token Security & Verification Suite
+// -----------------------------------------------------------------------------
+console.log('\n[TEST 33] Cryptographic Entitlement Grant Token Security & Verification Suite');
+
+// 1. Valid token for user and content is verified successfully
+const grant1 = generateEntitlementGrant({
+  contentId: premiumFilmA.id,
+  contentType: 'film',
+  viewerId: viewer1.id,
+  channelId: channelA.id,
+  accessPolicy: 'ppv_tvod',
+  now,
+  watermarkRequired: true,
+});
+const verifyValid = verifyEntitlementGrantToken(grant1.grantToken, {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  expectedContentType: 'film',
+  currentTime: now,
+});
+assert(verifyValid.valid === true, '1. Valid grant token is verified successfully');
+assert(verifyValid.payload?.sub === viewer1.id, '1b. Payload sub matches viewerId');
+assert(verifyValid.payload?.cid === premiumFilmA.id, '1c. Payload cid matches contentId');
+
+// 2. Expired token is rejected
+const futureAfterExpiry = new Date(new Date(grant1.expiresAt).getTime() + 1000); // 1s past expiry
+const verifyExpired = verifyEntitlementGrantToken(grant1.grantToken, {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: futureAfterExpiry,
+});
+assert(verifyExpired.valid === false, '2. Expired grant token is strictly rejected');
+assert(Boolean(verifyExpired.reason?.includes('expired')), '2b. Reason specifies token expiration');
+
+// 3. User A token used by User B is rejected
+const verifyWrongUser = verifyEntitlementGrantToken(grant1.grantToken, {
+  expectedViewerId: viewer2.id, // User B
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: now,
+});
+assert(verifyWrongUser.valid === false, '3. Grant token used by another viewer is strictly rejected (Viewer Binding)');
+assert(Boolean(verifyWrongUser.reason?.includes('viewer binding mismatch')), '3b. Reason specifies viewer binding mismatch');
+
+// 4. Content A token used for Content B is rejected
+const verifyWrongContent = verifyEntitlementGrantToken(grant1.grantToken, {
+  expectedViewerId: viewer1.id,
+  expectedContentId: hybridFilmA.id, // Content B
+  expectedChannelId: channelA.id,
+  currentTime: now,
+});
+assert(verifyWrongContent.valid === false, '4. Grant token used for different content is rejected (Content Binding)');
+assert(Boolean(verifyWrongContent.reason?.includes('content binding mismatch')), '4b. Reason specifies content mismatch');
+
+// 5. Channel A token used for Channel B is rejected
+const verifyWrongChannel = verifyEntitlementGrantToken(grant1.grantToken, {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelB.id, // Channel B
+  currentTime: now,
+});
+assert(verifyWrongChannel.valid === false, '5. Grant token used for different channel is rejected (Channel Binding)');
+assert(Boolean(verifyWrongChannel.reason?.includes('channel binding mismatch')), '5b. Reason specifies channel mismatch');
+
+// 6. Modified / tampered payload with invalid signature is rejected
+const [prefixPayload, originalSig] = grant1.grantToken.replace('egt_amf_', '').split('.');
+// Decode payload, modify viewerId to viewer2, re-encode without signature update
+const decodedPayload = JSON.parse(Buffer.from(prefixPayload, 'base64url').toString('utf-8'));
+decodedPayload.sub = viewer2.id;
+const forgedPayloadB64 = Buffer.from(JSON.stringify(decodedPayload)).toString('base64url');
+const forgedToken = `egt_amf_${forgedPayloadB64}.${originalSig}`;
+
+const verifyTampered = verifyEntitlementGrantToken(forgedToken, {
+  expectedViewerId: viewer2.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: now,
+});
+assert(verifyTampered.valid === false, '6. Tampered payload with forged claim is rejected (HMAC Cryptographic Guard)');
+assert(Boolean(verifyTampered.reason?.includes('signature mismatch')), '6b. Reason specifies cryptographic signature mismatch');
+
+// 7. Malformed token structure (no prefix, missing signature, invalid chars)
+const verifyMalformed1 = verifyEntitlementGrantToken('not_a_valid_token', {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: now,
+});
+const verifyMalformed2 = verifyEntitlementGrantToken('egt_amf_nodotseparator', {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: now,
+});
+assert(verifyMalformed1.valid === false, '7a. Token without egt_amf_ prefix is rejected');
+assert(verifyMalformed2.valid === false, '7b. Token without payload.signature dot delimiter is rejected');
+
+// 8. Grant token expiry is strictly capped to underlying pass validity window
+// Example: pass expires in 45 minutes, shorter than default 2h window
+const shortRentalExpiryMs = now.getTime() + 45 * 60 * 1000;
+const cappedGrant = generateEntitlementGrant({
+  contentId: premiumFilmA.id,
+  contentType: 'film',
+  viewerId: viewer1.id,
+  channelId: channelA.id,
+  accessPolicy: 'ppv_tvod',
+  now,
+  maxExpiryMs: shortRentalExpiryMs,
+  watermarkRequired: true,
+});
+const cappedExpiryMs = new Date(cappedGrant.expiresAt).getTime();
+assert(
+  cappedExpiryMs === shortRentalExpiryMs,
+  '8. Grant token expiry is capped to rental pass validity window (Never outlives pass)'
+);
+
+// 9. Grant token and payload NEVER contain or reveal raw master video URL
+const tokenString = grant1.grantToken;
+const payloadString = JSON.stringify(verifyValid.payload);
+assert(!tokenString.includes('master.mp4'), '9a. Grant token string does NOT contain master video filename/path');
+assert(!payloadString.includes('master.mp4'), '9b. Grant token payload does NOT contain master video storage URL');
+assert(!tokenString.includes('storage.supabase'), '9c. Grant token does NOT contain storage domain');
+
+// 10. Fail-closed: Null, empty or undefined parameters always return valid: false
+const verifyNull = verifyEntitlementGrantToken(null as any, {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+});
+const verifyEmpty = verifyEntitlementGrantToken('', {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+});
+assert(verifyNull.valid === false, '10a. Null token safely yields valid: false');
+assert(verifyEmpty.valid === false, '10b. Empty token safely yields valid: false');
 
 console.log('\n================================================================');
 console.log(` MILESTONE 2.9.1 TEST SUMMARY: ${testsPassed} PASSED, ${testsFailed} FAILED`);

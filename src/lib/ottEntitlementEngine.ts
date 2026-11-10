@@ -12,6 +12,7 @@
  * 6. SVOD Cancellation Grace Period: Cancelled auto-renew keeps access until current_period_end.
  */
 
+import crypto from 'crypto';
 import {
   OttChannel,
   OttSeries,
@@ -23,36 +24,238 @@ import {
   OttAccessDecisionStatus,
   ResolveOttAccessParams,
   OttEntitlementGrant,
+  OttEntitlementGrantPayload,
   OttPlaybackSession,
   OttMonetizationPrompt,
   OttAccessPolicy,
 } from '../types/database';
 
 /**
- * Generates an opaque, cryptographically formatted entitlement grant token.
- * Valid for 6 hours by default.
- * Does NOT contain or expose raw video storage URLs.
+ * Default validity window for an ephemeral playback grant token (2 hours).
+ * An active ticket/subscription allows obtaining a new grant on demand.
+ */
+export const DEFAULT_GRANT_TTL_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Retrieves the cryptographic secret used to sign and verify entitlement grants.
+ */
+export function getGrantSigningSecret(): string {
+  return (
+    process.env.OTT_GRANT_SIGNING_SECRET ||
+    process.env.SUPABASE_SECRET_KEY ||
+    'amf-ott-secure-grant-signing-key-production-ssot'
+  );
+}
+
+/**
+ * Parameters for generating an entitlement grant.
+ */
+export interface GenerateEntitlementGrantOptions {
+  contentId: string;
+  contentType?: 'episode' | 'film';
+  viewerId: string;
+  channelId: string;
+  accessPolicy: OttAccessPolicy;
+  now?: Date;
+  maxExpiryMs?: number;
+  watermarkRequired?: boolean;
+}
+
+/**
+ * Generates an opaque, cryptographically signed entitlement grant token.
+ * HMAC-SHA256 signature binds the grant strictly to viewer, content, channel, and expiry.
+ * Raw video storage URLs are NEVER included in the token or payload.
  */
 export function generateEntitlementGrant(
-  contentId: string,
-  viewerId: string,
-  channelId: string,
-  accessPolicy: OttAccessPolicy,
-  now: Date = new Date(),
-  watermarkRequired: boolean = true
+  contentIdOrOptions: string | GenerateEntitlementGrantOptions,
+  viewerIdArg?: string,
+  channelIdArg?: string,
+  accessPolicyArg?: OttAccessPolicy,
+  nowArg?: Date,
+  watermarkRequiredArg: boolean = true
 ): OttEntitlementGrant {
-  const expiresAt = new Date(now.getTime() + 6 * 60 * 60 * 1000).toISOString();
-  const rawId = `${contentId}:${viewerId}:${channelId}:${now.getTime()}:${Math.random().toString(36).substring(2, 9)}`;
-  const grantToken = `egt_amf_${Buffer.from(rawId).toString('base64url')}`;
+  const isOptions = typeof contentIdOrOptions === 'object';
+  const contentId = isOptions ? contentIdOrOptions.contentId : contentIdOrOptions;
+  const contentType: 'episode' | 'film' = isOptions ? (contentIdOrOptions.contentType || 'film') : 'film';
+  const viewerId = isOptions ? contentIdOrOptions.viewerId : viewerIdArg!;
+  const channelId = isOptions ? contentIdOrOptions.channelId : channelIdArg!;
+  const accessPolicy = isOptions ? contentIdOrOptions.accessPolicy : accessPolicyArg!;
+  const now = (isOptions ? contentIdOrOptions.now : nowArg) || new Date();
+  const watermarkRequired = isOptions
+    ? (contentIdOrOptions.watermarkRequired !== undefined ? contentIdOrOptions.watermarkRequired : true)
+    : watermarkRequiredArg;
+  const maxExpiryMs = isOptions ? contentIdOrOptions.maxExpiryMs : undefined;
+
+  const nowMs = now.getTime();
+  let expMs = nowMs + DEFAULT_GRANT_TTL_MS;
+  // Cap expiry if the underlying ticket/subscription expires sooner than the default window
+  if (maxExpiryMs !== undefined && maxExpiryMs > nowMs) {
+    expMs = Math.min(expMs, maxExpiryMs);
+  }
+
+  const grantId = `gid_${crypto.randomUUID().replace(/-/g, '').substring(0, 16)}`;
+  const payload: OttEntitlementGrantPayload = {
+    v: 1,
+    sub: viewerId,
+    cid: contentId,
+    cty: contentType,
+    chid: channelId,
+    pol: accessPolicy,
+    wm: watermarkRequired,
+    iat: nowMs,
+    exp: expMs,
+    jti: grantId,
+  };
+
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const secret = getGrantSigningSecret();
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(payloadB64);
+  const signature = hmac.digest('base64url');
+  const grantToken = `egt_amf_${payloadB64}.${signature}`;
 
   return {
     grantToken,
-    expiresAt,
+    expiresAt: new Date(expMs).toISOString(),
+    issuedAt: now.toISOString(),
     accessPolicy,
     watermarkRequired,
     viewerId,
     contentId,
     channelId,
+    grantId,
+  };
+}
+
+/**
+ * Options for verifying an entitlement grant token on subsequent playback requests.
+ */
+export interface VerifyGrantTokenOptions {
+  expectedViewerId: string;
+  expectedContentId: string;
+  expectedChannelId: string;
+  expectedContentType?: 'episode' | 'film';
+  currentTime?: Date;
+}
+
+/**
+ * Result of entitlement grant token verification.
+ */
+export interface VerifyGrantTokenResult {
+  valid: boolean;
+  reason?: string;
+  payload?: OttEntitlementGrantPayload;
+}
+
+/**
+ * Verifies the cryptographic signature, context bindings, and expiry of an entitlement grant token.
+ * Consumed by Milestone 2.9.2 streaming player session issuer.
+ */
+export function verifyEntitlementGrantToken(
+  token: string,
+  options: VerifyGrantTokenOptions
+): VerifyGrantTokenResult {
+  if (!token || typeof token !== 'string') {
+    return { valid: false, reason: 'Missing or empty grant token.' };
+  }
+
+  if (!token.startsWith('egt_amf_')) {
+    return { valid: false, reason: 'Invalid token prefix (must begin with egt_amf_).' };
+  }
+
+  const rawToken = token.slice('egt_amf_'.length);
+  const parts = rawToken.split('.');
+  if (parts.length !== 2) {
+    return { valid: false, reason: 'Malformed token structure (expected payload.signature).' };
+  }
+
+  const [payloadB64, providedSig] = parts;
+
+  // 1. Verify HMAC Signature using timing-safe comparison to prevent timing attacks
+  const secret = getGrantSigningSecret();
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(payloadB64);
+  const expectedSig = hmac.digest('base64url');
+
+  if (providedSig.length !== expectedSig.length) {
+    return { valid: false, reason: 'Cryptographic signature mismatch (Token tampered or invalid secret).' };
+  }
+
+  const sigBufProvided = Buffer.from(providedSig);
+  const sigBufExpected = Buffer.from(expectedSig);
+  if (!crypto.timingSafeEqual(sigBufProvided, sigBufExpected)) {
+    return { valid: false, reason: 'Cryptographic signature mismatch (Token tampered or invalid secret).' };
+  }
+
+  // 2. Parse payload safely
+  let payload: OttEntitlementGrantPayload;
+  try {
+    const jsonStr = Buffer.from(payloadB64, 'base64url').toString('utf-8');
+    payload = JSON.parse(jsonStr);
+  } catch {
+    return { valid: false, reason: 'Failed to parse token payload JSON.' };
+  }
+
+  const now = options.currentTime || new Date();
+  const nowMs = now.getTime();
+
+  // 3. Expiration Check
+  if (nowMs >= payload.exp) {
+    return {
+      valid: false,
+      reason: `Grant token expired at ${new Date(payload.exp).toISOString()} (Current: ${now.toISOString()}).`,
+      payload,
+    };
+  }
+
+  // 4. Issued-At Clock Skew Check (reject tokens claiming to be issued > 60 seconds into future)
+  if (payload.iat > nowMs + 60000) {
+    return {
+      valid: false,
+      reason: 'Token issued in the future (Clock skew violation).',
+      payload,
+    };
+  }
+
+  // 5. Viewer Binding Check
+  if (payload.sub !== options.expectedViewerId) {
+    return {
+      valid: false,
+      reason: `Token viewer binding mismatch: Expected ${options.expectedViewerId}, got ${payload.sub}.`,
+      payload,
+    };
+  }
+
+  // 6. Content ID Binding Check
+  if (payload.cid !== options.expectedContentId) {
+    return {
+      valid: false,
+      reason: `Token content binding mismatch: Expected ${options.expectedContentId}, got ${payload.cid}.`,
+      payload,
+    };
+  }
+
+  // 7. Channel ID Binding Check
+  if (payload.chid !== options.expectedChannelId) {
+    return {
+      valid: false,
+      reason: `Token channel binding mismatch: Expected ${options.expectedChannelId}, got ${payload.chid}.`,
+      payload,
+    };
+  }
+
+  // 8. Content Type Check (if specified)
+  if (options.expectedContentType && payload.cty !== options.expectedContentType) {
+    return {
+      valid: false,
+      reason: `Token content type mismatch: Expected ${options.expectedContentType}, got ${payload.cty}.`,
+      payload,
+    };
+  }
+
+  return {
+    valid: true,
+    payload,
   };
 }
 
@@ -229,7 +432,15 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
           contentType: params.contentType,
           channelId: channel.id,
           previewUrl: film.trailer_video_url, // ONLY promotional trailer URL, NEVER master
-          entitlementGrant: generateEntitlementGrant(content.id, params.viewer?.id || 'anon', channel.id, 'trailer_preview', now, false),
+          entitlementGrant: generateEntitlementGrant({
+            contentId: content.id,
+            contentType: params.contentType,
+            viewerId: params.viewer?.id || 'anon',
+            channelId: channel.id,
+            accessPolicy: 'trailer_preview',
+            now,
+            watermarkRequired: false,
+          }),
           playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, now, false),
           evaluatedAt,
         };
@@ -243,7 +454,15 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
         contentId: content.id,
         contentType: params.contentType,
         channelId: channel.id,
-        entitlementGrant: generateEntitlementGrant(content.id, params.viewer?.id || 'anon', channel.id, 'trailer_preview', now, false),
+        entitlementGrant: generateEntitlementGrant({
+          contentId: content.id,
+          contentType: params.contentType,
+          viewerId: params.viewer?.id || 'anon',
+          channelId: channel.id,
+          accessPolicy: 'trailer_preview',
+          now,
+          watermarkRequired: false,
+        }),
         playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, now, false),
         evaluatedAt,
       };
@@ -260,7 +479,15 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
       contentId: content.id,
       contentType: params.contentType,
       channelId: channel.id,
-      entitlementGrant: generateEntitlementGrant(content.id, params.viewer?.id || 'anon', channel.id, 'free', now, false),
+      entitlementGrant: generateEntitlementGrant({
+        contentId: content.id,
+        contentType: params.contentType,
+        viewerId: params.viewer?.id || 'anon',
+        channelId: channel.id,
+        accessPolicy: 'free',
+        now,
+        watermarkRequired: false,
+      }),
       playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, now, false),
       evaluatedAt,
     };
@@ -275,7 +502,15 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
       contentId: content.id,
       contentType: params.contentType,
       channelId: channel.id,
-      entitlementGrant: generateEntitlementGrant(content.id, params.viewer?.id || 'anon', channel.id, 'trailer_preview', now, false),
+      entitlementGrant: generateEntitlementGrant({
+        contentId: content.id,
+        contentType: params.contentType,
+        viewerId: params.viewer?.id || 'anon',
+        channelId: channel.id,
+        accessPolicy: 'trailer_preview',
+        now,
+        watermarkRequired: false,
+      }),
       playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, now, false),
       evaluatedAt,
     };
@@ -529,14 +764,16 @@ function evaluatePpvEntitlement(args: {
     contentId: content.id,
     contentType,
     channelId: channel.id,
-    entitlementGrant: generateEntitlementGrant(
-      content.id,
-      viewer.id,
-      channel.id,
-      'ppv_tvod',
+    entitlementGrant: generateEntitlementGrant({
+      contentId: content.id,
+      contentType,
+      viewerId: viewer.id,
+      channelId: channel.id,
+      accessPolicy: 'ppv_tvod',
       now,
-      true
-    ),
+      maxExpiryMs: matchingPass.valid_until ? new Date(matchingPass.valid_until).getTime() : undefined,
+      watermarkRequired: true,
+    }),
     playbackSession: generatePlaybackSession(
       content.id,
       viewer.id,
@@ -648,14 +885,16 @@ function evaluateSvodEntitlement(args: {
       contentId: content.id,
       contentType,
       channelId: channel.id,
-      entitlementGrant: generateEntitlementGrant(
-        content.id,
-        viewer.id,
-        channel.id,
-        'svod_subscriber',
+      entitlementGrant: generateEntitlementGrant({
+        contentId: content.id,
+        contentType,
+        viewerId: viewer.id,
+        channelId: channel.id,
+        accessPolicy: 'svod_subscriber',
         now,
-        true
-      ),
+        maxExpiryMs: endMs,
+        watermarkRequired: true,
+      }),
       playbackSession: generatePlaybackSession(
         content.id,
         viewer.id,

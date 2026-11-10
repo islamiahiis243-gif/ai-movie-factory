@@ -3,9 +3,19 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Gelombang II - Milestone 2.9.1] - OTT Content Access Control & Entitlement Engine (Post-Audit Hardened) - 2026-11-11 01:35 +07:00
+## [Gelombang II - Milestone 2.9.1] - OTT Content Access Control & Entitlement Engine (Post-Audit Hardened & Grant Token Security) - 2026-11-11 02:00 +07:00
 
 ### Added, Hardened & Reconciled
+- **Cryptographic Entitlement Grant Token Engine (`src/lib/ottEntitlementEngine.ts` & `src/types/database.ts`):**
+  - Mengimplementasikan spesifikasi kriptografis standar HMAC-SHA256 untuk token grant (`egt_amf_<payload_base64url>.<signature_base64url>`).
+  - Mengunci klaim payload (`OttEntitlementGrantPayload`): `v` (versi), `sub` (viewer ID), `cid` (content ID), `cty` (content type), `chid` (channel ID), `pol` (access policy), `wm` (watermark viewer identity), `iat` (issued at), `exp` (expires at), `jti` (unique grant ID).
+  - Menyediakan fungsi verifikasi server-side `verifyEntitlementGrantToken(...)` dengan proteksi timing attack (`crypto.timingSafeEqual`), validasi clock skew ($\pm$60 detik), dan pencocokan parameter kontekstual ketat (viewer ID, content ID, channel ID).
+  - Masa berlaku token grant dibatasi secara dinamis (`maxExpiryMs`): tidak pernah melebihi masa berlaku tiket sewa (`valid_until`) atau periode langganan aktif (`current_period_end`).
+  - Invarian Zero-Leakage: Token grant terbukti bersih dari path berkas master, bucket URL, maupun nama file video storage mentah.
+- **Audit & Pengerasan Prosedur Rollback Database (`supabase/`):**
+  - Memberikan dokumentasi peringatan destruktif eksplisit pada `supabase/rollback_v3_15_ott_entitlement_engine.sql` terkait hilangnya seluruh riwayat pembelian penonton, tiket sewa aktif, indeks, trigger, dan foreign keys jika `DROP TABLE ... CASCADE` dijalankan.
+  - Mensyaratkan prosedur pencadangan (`pg_dump`) sebelum eksekusi rollback darurat.
+  - Menyediakan alternatif perbaikan non-destruktif (`supabase/corrective_v3_15_disable_entitlements.sql`) yang membekukan akses tanpa menghapus satu pun baris data riwayat transaksi penonton.
 - **Penerapan Nyata Migrasi Database Produksi Supabase (`upgrade_v3_14` & `upgrade_v3_15`):**
   - Seluruh 8 tabel katalog dan entitlement OTT telah diterapkan secara live di database PostgreSQL Supabase produksi (`jixfakvbhugpypjtyshq`):
     * `public.ott_channels` (13 kolom, indeks unik slug & user_id, RLS aktif)

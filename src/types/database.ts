@@ -1371,14 +1371,29 @@ export type OttAccessDecisionStatus =
   | 'ACCESS_REVOKED'
   | 'TENANT_ACCESS_DENIED';
 
+export interface OttEntitlementGrantPayload {
+  v: number;
+  sub: string;
+  cid: string;
+  cty: 'episode' | 'film';
+  chid: string;
+  pol: OttAccessPolicy;
+  wm: boolean;
+  iat: number;
+  exp: number;
+  jti: string;
+}
+
 export interface OttEntitlementGrant {
   grantToken: string;
   expiresAt: string;
+  issuedAt: string;
   accessPolicy: OttAccessPolicy;
   watermarkRequired: boolean;
   viewerId: string;
   contentId: string;
   channelId: string;
+  grantId: string;
 }
 
 export interface OttPlaybackSession {
