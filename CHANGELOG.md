@@ -3,6 +3,43 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.8] - Creator Business Intelligence, TC-WF-16 Financial Breakdown & Evidence-Based AI Advisor - 2026-11-10 22:15 +07:00
+
+### Added, Hardened & Reconciled
+- **Mesin Kalkulasi Finansial Komprehensif TC-WF-16 (`src/lib/creatorBusinessEngine.ts`):**
+  - Menerapkan formula laba bersih resmi SSOT Bagian III.3 secara transparan dan murni tanpa efek samping:
+    $$\text{Net Profit} = \text{Gross Revenue} - (\text{Refunds} + \text{Platform Fees} + \text{Payment Gateway Fees} + \text{AI Production Cost} + \text{Hosting/CDN} + \text{Tax})$$
+  - Menjamin pemisahan ketat antara status **`[VERIFIED ACTUAL]`** (didukung data transaksi riil di `creator_milestones`, `credit_transactions`, `payment_orders`) dan **`[ESTIMATED PROJECTION]`** (simulasi pasar).
+  - Melarang penyajian angka fiktif: jika belum ada transaksi riil, sistem secara jujur menampilkan status `[DATA PENDING]` dengan laba bersih Rp 0.
+- **Konfigurasi Rezim Pajak Multi-Yurisdiksi (Legal Tax Basis):**
+  - Menghapus tarif pajak statis dan menyediakan opsi rezim pajak yang sesuai regulasi perpajakan:
+    1. **PPh Final UMKM PP 55/2022 (0,5%)**: Tarif 0,5% dari omzet bruto untuk kreator/studio kreatif beromzet s.d. Rp 4,8 Miliar.
+    2. **PPN 11% (PKP / Studio Resmi)**: 11% dari laba operasional kena pajak untuk badan usaha.
+    3. **PPh 21/23 (2%)**: Potongan pajak 2% jasa komersial/editing ber-NPWP.
+    4. **Non-PKP / Bebas Pajak (0%)**: Pembebasan pajak untuk kreator di bawah ambang PTKP.
+    5. **Kustom Mandiri**: Tarif fleksibel sesuai domisili hukum yurisdiksi kreator.
+- **Proteksi Pemotongan Ganda Biaya Platform (Zero Double-Counting):**
+  - Menyediakan toggle status pendapatan bruto: jika pendapatan dari YouTube AdSense atau TikTok Creator Rewards dicatat sebagai payout bersih (*post-split*), potongan platform disetel Rp 0 untuk mencegah pemotongan fee dua kali.
+- **Tabel Audit Sumber Data Tertelusur (Traceable Ledger Audit):**
+  - Menyajikan rincian setiap baris entri finansial lengkap dengan tabel asal database (`creator_milestones`, `credit_transactions`, `payment_orders`), klasifikasi data, dan dasar perhitungannya.
+  - Menyediakan filter periode laporan: *Semua Waktu*, *30 Hari Terakhir*, *7 Hari Terakhir*, dan *Filter per Proyek*.
+- **AI Business Advisor Berbasis Data Riil (Evidence-Based Directives - SSOT Bagian III.4):**
+  - Mengganti teks statis dengan mesin rekomendasi dinamis yang mematuhi 4 pilar transparansi SSOT:
+    1. **Data Acuan Riil (Evidence)**: Menampilkan angka transaksi nyata yang digunakan sebagai dasar.
+    2. **Asumsi Pasar (Market Assumptions)**: Menjelaskan kondisi pasar yang diasumsikan.
+    3. **Tingkat Keyakinan (Confidence Score %)**: Skor keyakinan deterministik (0–100%).
+    4. **Batas Risiko Bisnis (Risk Boundary)**: Peringatan risiko operasional nyata bagi kreator.
+    5. **Tindakan Strategis (Strategic Action)**: Rekomendasi langkah konkret selanjutnya.
+- **Peningkatan Rangkaian Uji Otomasi (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Menambahkan pengujian `[TEST 27]`, `[TEST 28]`, `[TEST 29]`, `[TEST 30]`, dan `[TEST 31]`.
+  - Rangkaian pengujian meningkat dari 127 menjadi **162 assertions lulus 100%** (Total rangkaian uji seluruh modul: **186 assertions**).
+- **Pembaruan Versi Produksi & Healthcheck:**
+  - Versi aplikasi ditingkatkan ke `1.15.9` (`V3.14 Creator Business Intelligence & TC-WF-16 Financial Hardening`).
+
+### Verification & Tests
+- `npm test`: 100% PASS seluruh rangkaian pengujian (162/162 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 186 assertions).
+- `npm run build`: Lulus bersih dalam 2.46s (0 errors).
+
 ## [Gelombang II - Milestone 2.7] - Pipeline Reconciliation Resolution, Live Supabase Function Deployment, Full Attribute Gate 5 & Thumbnail Frame Capture - 2026-11-10 19:20 +07:00
 
 ### Added, Hardened & Reconciled

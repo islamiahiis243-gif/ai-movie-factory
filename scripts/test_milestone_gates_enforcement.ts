@@ -42,6 +42,12 @@ import { resolveReconciliationRequiredJob } from '../server/pipeline/workerHandl
 import { computeSequenceFingerprint } from '../src/components/studio/EditingPostView';
 import { PublishingDispatcher } from '../server/publishing/dispatcher';
 import { _setMemoryJob, _getMemoryJob } from '../server/publishing/jobProcessor';
+import {
+  calculateComprehensiveFinancialReport,
+  generateAIBusinessAdvisorDirectives,
+  TAX_REGIME_PRESETS,
+  CREDIT_TO_IDR_CONVERSION_RATE,
+} from '../src/lib/creatorBusinessEngine';
 
 let testsPassed = 0;
 let testsFailed = 0;
@@ -1670,6 +1676,296 @@ async function runMilestoneGatesAudit() {
     );
   } finally {
     globalThis.fetch = originalFetch;
+  }
+
+  // --------------------------------------------------------------------------
+  // [TEST 27] Verifying Comprehensive Financial Formula & Net Profit Calculation (TC-WF-16)
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 27] Verifying Comprehensive Financial Formula & Net Profit Calculation (TC-WF-16)');
+
+  const mockMilestones = [
+    {
+      id: 'm-audit-01',
+      user_id: 'usr-fin-1',
+      project_id: 'proj-sci-fi-01',
+      project_name: 'Cyberpunk Nusantara Episode 1',
+      platform: 'youtube' as const,
+      views_count: 50000,
+      likes_count: 3200,
+      comments_count: 240,
+      revenue_earned: 5000000,
+      currency: 'IDR',
+      release_date: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    },
+  ];
+
+  const mockCreditTransactions = [
+    {
+      id: 'tx-usage-01',
+      user_id: 'usr-fin-1',
+      project_id: 'proj-sci-fi-01',
+      transaction_type: 'usage' as const,
+      amount: -250, // 250 CR used
+      balance_after: 750,
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 'tx-refund-01',
+      user_id: 'usr-fin-1',
+      project_id: 'proj-sci-fi-01',
+      transaction_type: 'refund' as const,
+      amount: 20, // 20 CR refunded
+      balance_after: 770,
+      created_at: new Date().toISOString(),
+    },
+  ];
+
+  const mockPaymentOrders = [
+    {
+      id: 'ord-ppv-01',
+      user_id: 'usr-fin-1',
+      order_number: 'ORD-PPV-8899',
+      package_type: 'topup_credits' as const,
+      package_id: 'pack_ticket',
+      package_name: 'Digital Cinema Premiere Ticket',
+      amount: 100000, // Rp 100.000 gross
+      currency: 'IDR',
+      payment_method: 'qris' as const,
+      status: 'settlement' as const,
+      credits_granted: 0,
+      paid_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    },
+  ];
+
+  const report = calculateComprehensiveFinancialReport({
+    milestones: mockMilestones,
+    creditTransactions: mockCreditTransactions,
+    paymentOrders: mockPaymentOrders,
+    period: 'all_time',
+    taxRegime: 'pph_final_umkm',
+    isGrossPrePlatformCut: false, // Gross is post-payout, zero duplicate platform cut
+  });
+
+  // Gross Revenue: 5.000.000 (milestone) + 100.000 (order) = 5.100.000
+  assert(
+    report.grossRevenueIdr === 5100000,
+    'Gross Revenue correctly sums milestone earned revenue and settled payment orders',
+    `Expected 5.100.000, got ${report.grossRevenueIdr}`
+  );
+
+  // AI Production Cost: 250 CR * Rp 1.000 = 250.000
+  assert(
+    report.aiProductionCostIdr === 250000,
+    'AI Production Cost correctly converts ledger usage credits to IDR at standard conversion rate',
+    `Expected 250.000, got ${report.aiProductionCostIdr}`
+  );
+
+  // Refunds: 20 CR * Rp 1.000 = 20.000
+  assert(
+    report.refundsIdr === 20000,
+    'Refunds accurately captures ledger credit refund transactions in IDR',
+    `Expected 20.000, got ${report.refundsIdr}`
+  );
+
+  // Gateway Fee: 100.000 * 0.7% QRIS = 700
+  assert(
+    report.gatewayFeesIdr === 700,
+    'Payment Gateway Fee correctly calculates Indonesian QRIS standard fee (0.7%)',
+    `Expected 700, got ${report.gatewayFeesIdr}`
+  );
+
+  // Hosting & CDN: (50.000 / 10.000) * 25.000 = 125.000
+  assert(
+    report.hostingCdnCostIdr === 125000,
+    'Hosting & CDN cost accurately scales with verified audience views telemetry',
+    `Expected 125.000, got ${report.hostingCdnCostIdr}`
+  );
+
+  // Tax: PPh Final UMKM 0.5% of Gross 5.100.000 = 25.500
+  assert(
+    report.taxIdr === 25500,
+    'Tax calculation accurately enforces Indonesian PPh Final UMKM PP 55/2022 (0.5% of Gross)',
+    `Expected 25.500, got ${report.taxIdr}`
+  );
+
+  // Net Profit: 5.100.000 - (20.000 + 0 + 700 + 250.000 + 125.000 + 25.500) = 4.678.800
+  assert(
+    report.netProfitIdr === 4678800,
+    'Net Profit satisfies SSOT TC-WF-16 master formula without discrepancy',
+    `Expected 4.678.800, got ${report.netProfitIdr}`
+  );
+
+  // Margin: (4.678.800 / 5.100.000) * 100 = 91.7%
+  assert(
+    report.netProfitMarginPercent === 91.7,
+    'Net Profit Margin is accurately computed as percentage of gross revenue',
+    `Expected 91.7%, got ${report.netProfitMarginPercent}%`
+  );
+
+  // --------------------------------------------------------------------------
+  // [TEST 28] Verifying Multi-Regime Legal Tax Calculations
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 28] Verifying Multi-Regime Legal Tax Calculations');
+
+  // PPN 11% (11% of Net Operating Profit: 5.100.000 - 395.700 = 4.704.300 -> 11% = 517.473)
+  const reportPpn = calculateComprehensiveFinancialReport({
+    milestones: mockMilestones,
+    creditTransactions: mockCreditTransactions,
+    paymentOrders: mockPaymentOrders,
+    taxRegime: 'ppn_11',
+  });
+  assert(
+    reportPpn.taxIdr === 517473,
+    'PPN 11% tax regime correctly calculates on net operating taxable income',
+    `Expected 517.473, got ${reportPpn.taxIdr}`
+  );
+
+  // PPh 21/23 (2% of Gross 5.100.000 = 102.000)
+  const reportPph21 = calculateComprehensiveFinancialReport({
+    milestones: mockMilestones,
+    creditTransactions: mockCreditTransactions,
+    paymentOrders: mockPaymentOrders,
+    taxRegime: 'pph_21_23',
+  });
+  assert(
+    reportPph21.taxIdr === 102000,
+    'PPh 21/23 tax regime correctly calculates 2% withholding on gross commercial revenue',
+    `Expected 102.000, got ${reportPph21.taxIdr}`
+  );
+
+  // Non-PKP Exempt (0%)
+  const reportExempt = calculateComprehensiveFinancialReport({
+    milestones: mockMilestones,
+    creditTransactions: mockCreditTransactions,
+    paymentOrders: mockPaymentOrders,
+    taxRegime: 'non_pkp_exempt',
+  });
+  assert(
+    reportExempt.taxIdr === 0,
+    'Non-PKP / Tax-Exempt regime sets tax deduction strictly to Rp 0',
+    `Expected 0, got ${reportExempt.taxIdr}`
+  );
+
+  // Custom Tax Rate (e.g. 7.5%)
+  const reportCustom = calculateComprehensiveFinancialReport({
+    milestones: mockMilestones,
+    creditTransactions: mockCreditTransactions,
+    paymentOrders: mockPaymentOrders,
+    taxRegime: 'custom',
+    customTaxRate: 7.5,
+  });
+  const expectedCustomTax = Math.round((5100000 - 395700) * 0.075);
+  assert(
+    reportCustom.taxIdr === expectedCustomTax,
+    'Custom user-defined tax rate applies correctly on net operating income',
+    `Expected ${expectedCustomTax}, got ${reportCustom.taxIdr}`
+  );
+
+  // --------------------------------------------------------------------------
+  // [TEST 29] Verifying Double Counting Defense on Platform Revenue Share
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 29] Verifying Double Counting Defense on Platform Revenue Share');
+
+  // When gross is already post-payout, platform fee must be 0 to prevent double deduction
+  const reportPostPayout = calculateComprehensiveFinancialReport({
+    milestones: mockMilestones,
+    creditTransactions: [],
+    isGrossPrePlatformCut: false,
+  });
+  assert(
+    reportPostPayout.platformFeesIdr === 0,
+    'Platform fee is Rp 0 when gross is already post-payout, strictly preventing duplicate platform fee cuts'
+  );
+
+  // When gross is pre-split, platform fee is deducted appropriately
+  const reportPreSplit = calculateComprehensiveFinancialReport({
+    milestones: mockMilestones,
+    creditTransactions: [],
+    isGrossPrePlatformCut: true,
+  });
+  assert(
+    reportPreSplit.platformFeesIdr === 500000,
+    'Platform fee (10%) is applied when gross is explicitly flagged as pre-split',
+    `Expected 500.000, got ${reportPreSplit.platformFeesIdr}`
+  );
+
+  // --------------------------------------------------------------------------
+  // [TEST 30] Verifying Data Classification Invariant ([VERIFIED ACTUAL] vs [ESTIMATED PROJECTION])
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 30] Verifying Data Classification Invariant ([VERIFIED ACTUAL] vs [ESTIMATED PROJECTION])');
+
+  // Empty state: No records must NOT fabricate positive numbers
+  const reportEmpty = calculateComprehensiveFinancialReport({
+    milestones: [],
+    creditTransactions: [],
+    paymentOrders: [],
+  });
+  assert(
+    reportEmpty.classification === 'ESTIMATED_PROJECTION' && !reportEmpty.hasVerifiedActualData,
+    'Empty records are strictly classified as ESTIMATED_PROJECTION with hasVerifiedActualData=false'
+  );
+  assert(
+    reportEmpty.grossRevenueIdr === 0 && reportEmpty.netProfitIdr === 0,
+    'Zero real records yield exactly Rp 0 Gross Revenue and Rp 0 Net Profit, preventing fabricated numbers'
+  );
+
+  // Real state: Verified Actual classification
+  assert(
+    report.classification === 'VERIFIED_ACTUAL' && report.hasVerifiedActualData,
+    'Real transactions & milestones are strictly classified as VERIFIED_ACTUAL'
+  );
+
+  // Verify all line items have traceable data source
+  const hasUntraceableLineItem = report.lineItems.some((item) => !item.dataSource || item.dataSource.length < 3);
+  assert(
+    !hasUntraceableLineItem,
+    'Every financial line item contains an explicit, non-empty database table audit origin'
+  );
+
+  // --------------------------------------------------------------------------
+  // [TEST 31] Verifying Evidence-Based AI Business Advisor Directives (SSOT Bagian III.4)
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 31] Verifying Evidence-Based AI Business Advisor Directives (SSOT Bagian III.4)');
+
+  // Empty state advisor directives
+  const emptyDirectives = generateAIBusinessAdvisorDirectives(reportEmpty);
+  assert(
+    emptyDirectives.length === 1 && emptyDirectives[0].badge === 'DATA_PENDING',
+    'AI Advisor reports DATA_PENDING when no real records exist, refusing to invent hallucinated advice'
+  );
+
+  // Real state advisor directives
+  const realDirectives = generateAIBusinessAdvisorDirectives(report);
+  assert(
+    realDirectives.length >= 2,
+    'AI Advisor generates comprehensive directives when verified data is available',
+    `Directive count: ${realDirectives.length}`
+  );
+
+  // Verify every directive fulfills all 4 SSOT Bagian III.4 requirements
+  for (const d of realDirectives) {
+    assert(
+      d.evidenceDataSource && d.evidenceDataSource.length > 5,
+      `AI Directive "${d.title}" includes explicit Data Acuan Riil (Evidence)`
+    );
+    assert(
+      d.marketAssumptions && d.marketAssumptions.length > 5,
+      `AI Directive "${d.title}" includes explicit Asumsi Pasar (Market Assumptions)`
+    );
+    assert(
+      typeof d.confidenceScore === 'number' && d.confidenceScore > 0 && d.confidenceScore <= 100,
+      `AI Directive "${d.title}" specifies valid Confidence Level score (0-100)`
+    );
+    assert(
+      d.riskBoundary && d.riskBoundary.length > 5,
+      `AI Directive "${d.title}" specifies explicit Batas Risiko Bisnis (Risk Boundary)`
+    );
+    assert(
+      d.strategicAction && d.strategicAction.length > 5,
+      `AI Directive "${d.title}" specifies actionable recommendation (Strategic Action)`
+    );
   }
 
   // Audit Summary

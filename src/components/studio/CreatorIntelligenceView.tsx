@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Project, CreatorMilestone, PublishingPlatformKey, CreatorMediaKitSettings } from '../../types/database';
+import { Project, CreatorMilestone, PublishingPlatformKey, CreatorMediaKitSettings, CreditTransaction, PaymentOrder } from '../../types/database';
 import { useAuth } from '../../context/AuthContext';
 import {
   fetchCreatorMilestones,
@@ -7,8 +7,20 @@ import {
   deleteCreatorMilestone,
   fetchCreatorMediaKitSettings,
   saveCreatorMediaKitSettings,
+  fetchCreditTransactions,
+  fetchPaymentOrders,
   supabase,
 } from '../../lib/supabase';
+import {
+  calculateComprehensiveFinancialReport,
+  generateAIBusinessAdvisorDirectives,
+  TAX_REGIME_PRESETS,
+  TaxRegimeType,
+  FinancialTimePeriod,
+  ComprehensiveFinancialReport,
+  AIBusinessAdvisorDirective,
+  CREDIT_TO_IDR_CONVERSION_RATE,
+} from '../../lib/creatorBusinessEngine';
 import { AnalyticsClientService, LiveAnalyticsSnapshot } from '../../lib/distribution/analyticsClientService';
 import { fetchUserPublishingJobs } from '../../lib/distribution/publishingRepository';
 import { PublishingJob } from '../../lib/distribution/types';
@@ -54,6 +66,14 @@ import {
   Lock,
   Unlock,
   EyeOff,
+  PieChart,
+  Receipt,
+  Scale,
+  FileSpreadsheet,
+  Layers,
+  Info,
+  Coins,
+  Percent,
 } from 'lucide-react';
 
 interface CreatorIntelligenceViewProps {
@@ -177,6 +197,16 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
   const [simAiCreditsCost, setSimAiCreditsCost] = useState<number>(250000); // Rp 250k kredit AI
   const [simPayPerViewPrice, setSimPayPerViewPrice] = useState<number>(5000); // Rp 5.000 per episode
 
+  // Financial Ledger & Comprehensive Report State (TC-WF-16 & Fase 5)
+  const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>([]);
+  const [paymentOrders, setPaymentOrders] = useState<PaymentOrder[]>([]);
+  const [isLoadingFinancials, setIsLoadingFinancials] = useState<boolean>(false);
+  const [profitabilitySubTab, setProfitabilitySubTab] = useState<'actual_financial' | 'simulation_projection'>('actual_financial');
+  const [financialPeriod, setFinancialPeriod] = useState<FinancialTimePeriod>('all_time');
+  const [taxRegime, setTaxRegime] = useState<TaxRegimeType>('pph_final_umkm');
+  const [customTaxRate, setCustomTaxRate] = useState<number>(5);
+  const [isGrossPrePlatformCut, setIsGrossPrePlatformCut] = useState<boolean>(false);
+
   // Load Milestones
   const loadMilestones = async () => {
     setIsLoading(true);
@@ -192,6 +222,24 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       setMilestones([]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Load Financial Ledger (Credit Transactions & Payment Orders)
+  const loadFinancialLedger = async () => {
+    if (!userId) return;
+    setIsLoadingFinancials(true);
+    try {
+      const [txRes, ordRes] = await Promise.all([
+        fetchCreditTransactions(userId),
+        fetchPaymentOrders(userId),
+      ]);
+      if (txRes.data) setCreditTransactions(txRes.data);
+      if (ordRes.data) setPaymentOrders(ordRes.data);
+    } catch (err: any) {
+      console.warn('Failed to load financial transactions:', err);
+    } finally {
+      setIsLoadingFinancials(false);
     }
   };
 
@@ -232,6 +280,7 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
   useEffect(() => {
     loadMilestones();
     loadLiveAnalyticsData();
+    loadFinancialLedger();
   }, [userId]);
 
   // Sync single job live metrics (T9.5)
@@ -344,17 +393,44 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     };
   }, [liveSnapshots]);
 
+  // Comprehensive Financial Report Calculation (SSOT Wave II Section III.3 & TC-WF-16)
+  const comprehensiveReport = useMemo(() => {
+    return calculateComprehensiveFinancialReport({
+      milestones,
+      creditTransactions,
+      paymentOrders,
+      period: financialPeriod,
+      selectedProjectId: financialPeriod === 'by_project' ? selectedProjectId : undefined,
+      taxRegime,
+      customTaxRate,
+      isGrossPrePlatformCut,
+    });
+  }, [
+    milestones,
+    creditTransactions,
+    paymentOrders,
+    financialPeriod,
+    selectedProjectId,
+    taxRegime,
+    customTaxRate,
+    isGrossPrePlatformCut,
+  ]);
+
+  // Dynamic AI Business Advisor Directives (Evidence-based from actual AMF metrics)
+  const dynamicAdvisorDirectives = useMemo(() => {
+    return generateAIBusinessAdvisorDirectives(comprehensiveReport);
+  }, [comprehensiveReport]);
+
   // Aggregate Metrics
   const aggregateMetrics = useMemo(() => {
     const totalViews = milestones.reduce((acc, m) => acc + (Number(m.views_count) || 0), 0);
     const totalLikes = milestones.reduce((acc, m) => acc + (Number(m.likes_count) || 0), 0);
     const totalComments = milestones.reduce((acc, m) => acc + (Number(m.comments_count) || 0), 0);
-    const totalRevenue = milestones.reduce((acc, m) => acc + (Number(m.revenue_earned) || 0), 0);
+    const totalRevenue = comprehensiveReport.grossRevenueIdr;
 
     const engagementRate = totalViews > 0 ? (((totalLikes + totalComments) / totalViews) * 100).toFixed(1) : '0.0';
-    const totalCostEstimate = milestones.length * 250000;
-    const netProfit = Math.max(totalRevenue - totalCostEstimate, 0);
-    const roiMultiple = totalCostEstimate > 0 ? (totalRevenue / totalCostEstimate).toFixed(1) : '0.0';
+    const netProfit = comprehensiveReport.netProfitIdr;
+    const roiMultiple = comprehensiveReport.roiPercent > 0 ? (comprehensiveReport.roiPercent / 100).toFixed(1) : '0.0';
 
     return {
       totalViews,
@@ -365,8 +441,9 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       netProfit,
       roiMultiple,
       filmCount: milestones.length,
+      comprehensiveReport,
     };
-  }, [milestones]);
+  }, [milestones, comprehensiveReport]);
 
   // Profitability Simulator Calculations (SSOT Section III.3 Comprehensive Breakdown)
   const simCalculation = useMemo(() => {
@@ -1060,271 +1137,664 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
         </div>
       )}
 
-      {/* TAB 2: Profitability Simulator (T5) */}
+      {/* TAB 2: Profitability & Financial Breakdown (TC-WF-16 SSOT & Simulator) */}
       {activeTab === 'profitability' && (
         <div className="space-y-6">
-          <div className="p-5 bg-[#101726] border border-slate-800 rounded-xl space-y-4">
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-1">
-                <DollarSign className="w-4 h-4 text-emerald-400" />
-                <span>Simulator Proyeksi Cuan & Margin Laba Bersih (Net Profit)</span>
-              </h3>
-              <p className="text-xs text-slate-400">
-                Hitung estimasi pendapatan dari berbagai sumber pemasukan nyata, kurangkan biaya produksi AI, dan temukan titik impas (*break-even point*) film Anda.
-              </p>
-            </div>
+          {/* Sub-Tab Navigation: Verified Actual vs Simulation Projection */}
+          <div className="flex border-b border-slate-800 bg-[#0d131f] p-1.5 rounded-xl gap-2">
+            <button
+              type="button"
+              onClick={() => setProfitabilitySubTab('actual_financial')}
+              className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                profitabilitySubTab === 'actual_financial'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 font-extrabold'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Laporan Finansial Riil (TC-WF-16 SSOT)</span>
+              <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono border ${
+                comprehensiveReport.hasVerifiedActualData 
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
+                  : 'bg-slate-800 text-slate-400 border-slate-700'
+              }`}>
+                {comprehensiveReport.hasVerifiedActualData ? 'VERIFIED ACTUAL' : 'DATA PENDING'}
+              </span>
+            </button>
 
-            {/* View Target Slider */}
-            <div className="p-4 bg-slate-950/80 border border-slate-800/80 rounded-xl space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white">Target Jumlah Tayangan (Views)</span>
-                <span className="font-mono text-base font-extrabold text-emerald-400">
-                  {simViews.toLocaleString('id-ID')} Tayangan
-                </span>
-              </div>
-              <input
-                type="range"
-                min="10000"
-                max="2000000"
-                step="10000"
-                value={simViews}
-                onChange={(e) => setSimViews(Number(e.target.value))}
-                className="w-full accent-emerald-400 cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                <span>10.000 (Pemula)</span>
-                <span>100.000 (Indie Viral)</span>
-                <span>500.000 (Studio)</span>
-                <span>2.000.000 (Blockbuster)</span>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setProfitabilitySubTab('simulation_projection')}
+              className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                profitabilitySubTab === 'simulation_projection'
+                  ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20 font-extrabold'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+              }`}
+            >
+              <Sliders className="w-4 h-4" />
+              <span>Simulator Proyeksi Cuan & Impas</span>
+              <span className="bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[9px] font-mono border border-amber-500/30">
+                ESTIMATED PROJECTION
+              </span>
+            </button>
+          </div>
 
-            {/* Genre RPM Preset Buttons */}
-            <div>
-              <label className="text-xs font-bold text-white block mb-2">
-                Pilih Kategori Genre & Tolak Ukur RPM YouTube:
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { genre: 'Sci-Fi & Teknologi', rpm: 22000, desc: 'RPM Tertinggi (Audiens Tech & Gadget)' },
-                  { genre: 'Misteri & Folklor', rpm: 18000, desc: 'Daya Viral Tinggi (Penonton Medsos)' },
-                  { genre: 'Aksi & Petualangan', rpm: 15000, desc: 'Audiens Luas Lintas Usia' },
-                  { genre: 'Drama Seri Pendek', rpm: 12000, desc: 'Sangat Cocok untuk Model Pay-per-view' },
-                ].map((g) => (
-                  <button
-                    key={g.genre}
-                    type="button"
-                    onClick={() => setSimGenreRpm(g.rpm)}
-                    className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                      simGenreRpm === g.rpm
-                        ? 'bg-emerald-500/15 border-emerald-500/50 text-white shadow'
-                        : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                    }`}
-                  >
-                    <span className="text-xs font-bold block">{g.genre}</span>
-                    <span className="text-[10px] font-mono text-emerald-400 block mt-0.5">
-                      RPM Rp {g.rpm.toLocaleString('id-ID')}
-                    </span>
-                    <span className="text-[9px] text-slate-500 block mt-0.5">{g.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* SUB-TAB 1: Laporan Finansial Riil (TC-WF-16) */}
+          {profitabilitySubTab === 'actual_financial' && (
+            <div className="space-y-5">
+              {/* Filter Toolbar: Period, Tax Regime, Double-Counting Prevention */}
+              <div className="p-4 bg-[#101726] border border-slate-800 rounded-xl space-y-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Receipt className="w-4 h-4 text-emerald-400" />
+                      <span>Kalkulasi Laba Bersih Transparan (TC-WF-16)</span>
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded font-bold border border-emerald-500/30">
+                        SSOT Bagian III.3
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Menghitung laba bersih terverifikasi dari pendapatan nyata dikurangi biaya produksi AI, potongan platform, biaya gateway, hosting CDN, dan pajak.
+                    </p>
+                  </div>
 
-            {/* Financial Breakdown Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              {/* Left Column: Pemasukan Multi-Kanal */}
-              <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Komponen Pemasukan (Gross Revenue)</span>
-                </h4>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center text-slate-300">
-                    <span>• YouTube AdSense (RPM Rp {simGenreRpm.toLocaleString('id-ID')}):</span>
-                    <span className="font-mono text-white font-semibold">
-                      Rp {simCalculation.ytAdsense.toLocaleString('id-ID')}
-                    </span>
+                  {/* Period Filter Buttons */}
+                  <div className="flex flex-wrap items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                    <span className="text-[10px] text-slate-500 px-2 font-semibold">Periode:</span>
+                    {(['all_time', 'last_30_days', 'last_7_days', 'by_project'] as FinancialTimePeriod[]).map((p) => {
+                      const labels: Record<FinancialTimePeriod, string> = {
+                        all_time: 'Semua Waktu',
+                        last_30_days: '30 Hari Terakhir',
+                        last_7_days: '7 Hari Terakhir',
+                        by_project: activeProject ? `Proyek: ${activeProject.name.slice(0, 10)}...` : 'Per Proyek',
+                      };
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setFinancialPeriod(p)}
+                          className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
+                            financialPeriod === p
+                              ? 'bg-emerald-500 text-slate-950 shadow-sm font-bold'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                          }`}
+                        >
+                          {labels[p]}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="flex justify-between items-center text-slate-300">
-                    <span>• TikTok Creator Rewards & Reels Bonus:</span>
-                    <span className="font-mono text-white font-semibold">
-                      Rp {simCalculation.tiktokRewards.toLocaleString('id-ID')}
-                    </span>
+                </div>
+
+                {/* Tax Regime & Double Counting Configuration Bar */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-800/80">
+                  {/* Tax Regime Selector */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Scale className="w-3.5 h-3.5 text-blue-400" />
+                        Rezim & Tarif Pajak (Legal Tax Basis):
+                      </span>
+                      <span className="text-[10px] text-blue-300 font-mono">
+                        {comprehensiveReport.taxRegime.legalReference}
+                      </span>
+                    </label>
+                    <select
+                      value={taxRegime}
+                      onChange={(e) => setTaxRegime(e.target.value as TaxRegimeType)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="pph_final_umkm">PPh Final UMKM (0.5% Omzet - PP 55/2022 / UU HPP)</option>
+                      <option value="ppn_11">PPN 11% (Badan Usaha / Studio Kena Pajak)</option>
+                      <option value="pph_21_23">PPh 21 / 23 Jasa Kreatif & Komersial (2%)</option>
+                      <option value="non_pkp_exempt">Non-PKP / Dibebaskan Pajak Langsung (0%)</option>
+                      <option value="custom">Kustom Mandiri (Persentase Fleksibel)</option>
+                    </select>
+                    {taxRegime === 'custom' && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="text-[11px] text-slate-400">Tarif Kustom:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          step="0.5"
+                          value={customTaxRate}
+                          onChange={(e) => setCustomTaxRate(Number(e.target.value))}
+                          className="w-20 px-2 py-1 bg-slate-950 border border-slate-800 rounded text-xs text-white"
+                        />
+                        <span className="text-xs text-slate-400">%</span>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-slate-500 italic">
+                      {comprehensiveReport.taxRegime.description}
+                    </p>
                   </div>
-                  <div className="flex justify-between items-center text-slate-300">
-                    <span>• Kontrak Sponsorship & Product Placement:</span>
-                    <span className="font-mono text-white font-semibold">
-                      Rp {simCalculation.sponsorship.toLocaleString('id-ID')}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-slate-400 pt-2 border-t border-slate-800">
-                    <span>• Potensi Seri Berbayar ({simCalculation.buyers.toLocaleString('id-ID')} pembeli):</span>
-                    <span className="font-mono text-amber-300">
-                      +Rp {simCalculation.webDramaPayPerView.toLocaleString('id-ID')}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center font-bold text-sm pt-2 border-t border-slate-700 text-emerald-400">
-                    <span>Total Estimasi Pemasukan:</span>
-                    <span className="font-mono">
-                      Rp {simCalculation.totalGrossRevenue.toLocaleString('id-ID')}
-                    </span>
+
+                  {/* Double Counting Protection Switch */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      Proteksi Potongan Ganda Platform (Zero Double-Counting):
+                    </label>
+                    <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-lg space-y-1.5">
+                      <label className="flex items-start gap-2 cursor-pointer text-xs text-slate-300 hover:text-white">
+                        <input
+                          type="checkbox"
+                          checked={!isGrossPrePlatformCut}
+                          onChange={(e) => setIsGrossPrePlatformCut(!e.target.checked)}
+                          className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
+                        />
+                        <div>
+                          <span className="font-semibold block text-white">
+                            Pendapatan Diakui Payout Bersih (Post-Split)
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            Platform Fee = Rp 0. Mencegah pemotongan fee dua kali jika angka pendapatan dari AdSense/TikTok sudah merupakan hasil bersih setelah bagi hasil platform.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Right Column: Biaya Produksi & Laba Bersih */}
-              <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-3 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                      <Award className="w-3.5 h-3.5" />
-                      <span>Formula Laba Bersih (SSOT Bagian III.3)</span>
-                    </h4>
-                    <span className="text-[9px] bg-amber-500/20 text-amber-300 font-mono px-2 py-0.5 rounded font-bold">
-                      [ESTIMATED PROJECTION]
-                    </span>
-                  </div>
-                  <div className="space-y-1.5 text-xs mt-3">
-                    <div className="flex justify-between items-center text-slate-300">
-                      <span>Estimasi Pemasukan Kotor (Gross):</span>
-                      <span className="font-mono text-white font-bold">
-                        Rp {simCalculation.totalGrossRevenue.toLocaleString('id-ID')}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center text-rose-400 text-[11px]">
-                      <span>• Biaya Pembuatan Film (Kredit AI):</span>
-                      <span className="font-mono">-Rp {simAiCreditsCost.toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
-                      <span>• Hosting & Streaming CDN (Bandwidth):</span>
-                      <span className="font-mono">-Rp {simCalculation.hostingCdnCost.toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
-                      <span>• Potongan Platform & Store Fees (10%):</span>
-                      <span className="font-mono">-Rp {simCalculation.platformFees.toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
-                      <span>• Estimasi Pajak PPN (11%):</span>
-                      <span className="font-mono">-Rp {simCalculation.estimatedTax.toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="flex justify-between items-center font-bold text-slate-400 pt-1.5 border-t border-slate-800 text-[11px]">
-                      <span>Total Seluruh Potongan:</span>
-                      <span className="font-mono text-rose-400">
-                        -Rp {simCalculation.totalDeductionsStandard.toLocaleString('id-ID')}
-                      </span>
-                    </div>
-                  </div>
+              {/* SSOT Master Formula Breakdown Banner */}
+              <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-slate-900 to-slate-950 border border-emerald-500/30 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Award className="w-4 h-4" />
+                    Persamaan Laba Bersih SSOT (Formula Substituted)
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    Periode: {comprehensiveReport.periodLabel}
+                  </span>
                 </div>
-
-                <div className="p-3 bg-black/60 rounded-xl border border-emerald-500/30 text-center space-y-1 mt-2">
-                  <div className="flex items-center justify-center gap-1.5 mb-0.5">
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">LABA BERSIH RIIL (NET PROFIT)</span>
-                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-mono px-1.5 py-0.2 rounded font-bold">
-                      BERSIH
-                    </span>
-                  </div>
-                  <p className="text-2xl font-black text-emerald-400 font-mono">
-                    Rp {simCalculation.netProfitStandard.toLocaleString('id-ID')}
-                  </p>
-                  <span className="text-[10px] text-emerald-300 font-semibold bg-emerald-500/20 px-2 py-0.5 rounded-full inline-block">
-                    Margin Keuntungan Bersih: {simCalculation.marginStandard}%
+                <div className="font-mono text-xs text-slate-200 bg-black/60 p-3 rounded-lg border border-slate-800 overflow-x-auto">
+                  <span className="text-emerald-400 font-bold">Laba Bersih</span> = 
+                  <span className="text-white font-semibold"> Rp {comprehensiveReport.grossRevenueIdr.toLocaleString('id-ID')}</span> [Gross] - (
+                  <span className="text-rose-400">Rp {comprehensiveReport.refundsIdr.toLocaleString('id-ID')}</span> [Refund] + 
+                  <span className="text-rose-400"> Rp {comprehensiveReport.platformFeesIdr.toLocaleString('id-ID')}</span> [Platform Fee] + 
+                  <span className="text-rose-400"> Rp {comprehensiveReport.gatewayFeesIdr.toLocaleString('id-ID')}</span> [Gateway] + 
+                  <span className="text-rose-400"> Rp {comprehensiveReport.aiProductionCostIdr.toLocaleString('id-ID')}</span> [AI Cost] + 
+                  <span className="text-rose-400"> Rp {comprehensiveReport.hostingCdnCostIdr.toLocaleString('id-ID')}</span> [CDN] + 
+                  <span className="text-rose-400"> Rp {comprehensiveReport.taxIdr.toLocaleString('id-ID')}</span> [Pajak]) = 
+                  <span className={`font-black ${comprehensiveReport.netProfitIdr >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {' '}Rp {comprehensiveReport.netProfitIdr.toLocaleString('id-ID')}
                   </span>
                 </div>
               </div>
-            </div>
 
-            <p className="text-[10px] text-slate-500 italic text-center">
-              *Model estimasi berbasis benchmark riil industri YouTube Studio & Creator Rewards 2026. Hasil aktual bergantung pada retensi penonton dan demografi penonton.
-            </p>
-          </div>
+              {/* 5 Executive Financial KPI Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* 1. Gross Revenue */}
+                <div className="p-3.5 bg-[#101726] border border-slate-800 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Pendapatan Kotor</span>
+                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-mono px-1.5 py-0.2 rounded font-bold">
+                      GROSS
+                    </span>
+                  </div>
+                  <p className="text-base sm:text-lg font-black text-white font-mono">
+                    Rp {comprehensiveReport.grossRevenueIdr.toLocaleString('id-ID')}
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    {comprehensiveReport.totalPublishedFilms} rilis terverifikasi
+                  </p>
+                </div>
+
+                {/* 2. AI Production Cost */}
+                <div className="p-3.5 bg-[#101726] border border-slate-800 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Biaya Komputasi AI</span>
+                    <Coins className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                  <p className="text-base sm:text-lg font-black text-rose-400 font-mono">
+                    -Rp {comprehensiveReport.aiProductionCostIdr.toLocaleString('id-ID')}
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    {comprehensiveReport.totalAiCreditsConsumed.toLocaleString('id-ID')} CR (@Rp 1.000)
+                  </p>
+                </div>
+
+                {/* 3. Operating Deductions */}
+                <div className="p-3.5 bg-[#101726] border border-slate-800 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Operasional & CDN</span>
+                    <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                  </div>
+                  <p className="text-base sm:text-lg font-black text-rose-400/90 font-mono">
+                    -Rp {(comprehensiveReport.hostingCdnCostIdr + comprehensiveReport.gatewayFeesIdr + comprehensiveReport.platformFeesIdr + comprehensiveReport.refundsIdr).toLocaleString('id-ID')}
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    CDN, gateway, platform
+                  </p>
+                </div>
+
+                {/* 4. Tax */}
+                <div className="p-3.5 bg-[#101726] border border-slate-800 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Estimasi Pajak</span>
+                    <span className="text-[9px] bg-blue-500/20 text-blue-300 font-mono px-1.5 py-0.2 rounded font-bold">
+                      {comprehensiveReport.taxRegime.ratePercent}%
+                    </span>
+                  </div>
+                  <p className="text-base sm:text-lg font-black text-rose-400/90 font-mono">
+                    -Rp {comprehensiveReport.taxIdr.toLocaleString('id-ID')}
+                  </p>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    {comprehensiveReport.taxRegime.label}
+                  </p>
+                </div>
+
+                {/* 5. Net Profit */}
+                <div className="p-3.5 bg-gradient-to-b from-emerald-500/15 to-[#101726] border border-emerald-500/40 rounded-xl space-y-1 col-span-2 lg:col-span-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-emerald-300 uppercase font-bold tracking-wider">LABA BERSIH (NET)</span>
+                    <span className="text-[9px] bg-emerald-500/30 text-emerald-200 font-mono px-1.5 py-0.2 rounded font-black">
+                      {comprehensiveReport.netProfitMarginPercent}% MARGIN
+                    </span>
+                  </div>
+                  <p className="text-lg sm:text-xl font-black text-emerald-400 font-mono">
+                    Rp {comprehensiveReport.netProfitIdr.toLocaleString('id-ID')}
+                  </p>
+                  <p className="text-[10px] text-slate-300">
+                    ROI: <span className="font-bold text-white">{comprehensiveReport.roiPercent}%</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Detailed Traceability Ledger Audit Table */}
+              <div className="p-4 bg-[#101726] border border-slate-800 rounded-xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                    <span>Audit Sumber Data Finansial (Traceable Ledger)</span>
+                  </h4>
+                  <span className="text-[10px] text-slate-400">
+                    Menampilkan rincian entri terverifikasi per basis transaksi database
+                  </span>
+                </div>
+
+                {comprehensiveReport.lineItems.length === 0 ? (
+                  <div className="p-6 bg-slate-950/60 border border-slate-800/80 rounded-xl text-center space-y-3">
+                    <Info className="w-8 h-8 text-slate-500 mx-auto" />
+                    <div>
+                      <h5 className="text-sm font-bold text-white">Belum Ada Riwayat Transaksi Finansial</h5>
+                      <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                        Sistem AMF secara jujur menolak menampilkan angka laba fiktif. Catat rilis film pertama Anda pada tab Milestones atau lakukan simulasi menggunakan tab Simulator.
+                      </p>
+                    </div>
+                    <div className="flex justify-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                      >
+                        + Catat Rilis Pertama
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProfitabilitySubTab('simulation_projection')}
+                        className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                      >
+                        Buka Simulator
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 font-semibold bg-slate-950/70">
+                          <th className="py-2.5 px-3">Komponen Finansial</th>
+                          <th className="py-2.5 px-3">Kategori</th>
+                          <th className="py-2.5 px-3">Sumber Data Audit</th>
+                          <th className="py-2.5 px-3">Status Klasifikasi</th>
+                          <th className="py-2.5 px-3 text-right">Nilai (IDR)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                        {comprehensiveReport.lineItems.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-900/40 transition-colors">
+                            <td className="py-2.5 px-3 text-slate-200 font-sans">
+                              <span className="font-semibold block">{item.label}</span>
+                              {item.notes && <span className="text-[10px] text-slate-500 block">{item.notes}</span>}
+                            </td>
+                            <td className="py-2.5 px-3 uppercase text-[10px] text-slate-400">
+                              {item.category.replace(/_/g, ' ')}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-400 text-[11px] font-sans truncate max-w-xs" title={item.dataSource}>
+                              {item.dataSource}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-[9px] font-bold">
+                                {item.classification}
+                              </span>
+                            </td>
+                            <td className={`py-2.5 px-3 text-right font-bold ${item.isDeduction ? (item.amountIdr === 0 ? 'text-slate-500' : 'text-rose-400') : 'text-emerald-400'}`}>
+                              {item.isDeduction ? (item.amountIdr === 0 ? 'Rp 0' : `-Rp ${item.amountIdr.toLocaleString('id-ID')}`) : `+Rp ${item.amountIdr.toLocaleString('id-ID')}`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* SUB-TAB 2: Profitability Simulator (Interactive Projections) */}
+          {profitabilitySubTab === 'simulation_projection' && (
+            <div className="p-5 bg-[#101726] border border-slate-800 rounded-xl space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-amber-400" />
+                    <span>Simulator Proyeksi Cuan & Margin Laba Bersih (Net Profit)</span>
+                  </h3>
+                  <span className="text-[9px] bg-amber-500/20 text-amber-300 font-mono px-2 py-0.5 rounded font-bold border border-amber-500/30">
+                    ESTIMATED PROJECTION
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Hitung estimasi pendapatan dari berbagai sumber pemasukan, kurangkan biaya produksi AI, dan temukan titik impas (*break-even point*) film Anda.
+                </p>
+              </div>
+
+              {/* View Target Slider */}
+              <div className="p-4 bg-slate-950/80 border border-slate-800/80 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">Target Jumlah Tayangan (Views)</span>
+                  <span className="font-mono text-base font-extrabold text-amber-400">
+                    {simViews.toLocaleString('id-ID')} Tayangan
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="10000"
+                  max="2000000"
+                  step="10000"
+                  value={simViews}
+                  onChange={(e) => setSimViews(Number(e.target.value))}
+                  className="w-full accent-amber-400 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                  <span>10.000 (Pemula)</span>
+                  <span>100.000 (Indie Viral)</span>
+                  <span>500.000 (Studio)</span>
+                  <span>2.000.000 (Blockbuster)</span>
+                </div>
+              </div>
+
+              {/* Genre RPM Preset Buttons */}
+              <div>
+                <label className="text-xs font-bold text-white block mb-2">
+                  Pilih Kategori Genre & Tolak Ukur RPM YouTube:
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { genre: 'Sci-Fi & Teknologi', rpm: 22000, desc: 'RPM Tertinggi (Audiens Tech & Gadget)' },
+                    { genre: 'Misteri & Folklor', rpm: 18000, desc: 'Daya Viral Tinggi (Penonton Medsos)' },
+                    { genre: 'Aksi & Petualangan', rpm: 15000, desc: 'Audiens Luas Lintas Usia' },
+                    { genre: 'Drama Seri Pendek', rpm: 12000, desc: 'Sangat Cocok untuk Model Pay-per-view' },
+                  ].map((g) => (
+                    <button
+                      key={g.genre}
+                      type="button"
+                      onClick={() => setSimGenreRpm(g.rpm)}
+                      className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                        simGenreRpm === g.rpm
+                          ? 'bg-amber-500/15 border-amber-500/50 text-white shadow'
+                          : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <span className="text-xs font-bold block">{g.genre}</span>
+                      <span className="text-[10px] font-mono text-amber-400 block mt-0.5">
+                        RPM Rp {g.rpm.toLocaleString('id-ID')}
+                      </span>
+                      <span className="text-[9px] text-slate-500 block mt-0.5">{g.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Financial Breakdown Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                {/* Left Column: Pemasukan Multi-Kanal */}
+                <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Komponen Pemasukan (Gross Revenue)</span>
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span>• YouTube AdSense (RPM Rp {simGenreRpm.toLocaleString('id-ID')}):</span>
+                      <span className="font-mono text-white font-semibold">
+                        Rp {simCalculation.ytAdsense.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span>• TikTok Creator Rewards & Reels Bonus:</span>
+                      <span className="font-mono text-white font-semibold">
+                        Rp {simCalculation.tiktokRewards.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span>• Kontrak Sponsorship & Product Placement:</span>
+                      <span className="font-mono text-white font-semibold">
+                        Rp {simCalculation.sponsorship.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-400 pt-2 border-t border-slate-800">
+                      <span>• Potensi Seri Berbayar ({simCalculation.buyers.toLocaleString('id-ID')} pembeli):</span>
+                      <span className="font-mono text-amber-300">
+                        +Rp {simCalculation.webDramaPayPerView.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center font-bold text-sm pt-2 border-t border-slate-700 text-amber-400">
+                      <span>Total Estimasi Pemasukan:</span>
+                      <span className="font-mono">
+                        Rp {simCalculation.totalGrossRevenue.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Biaya Produksi & Laba Bersih */}
+                <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl space-y-3 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                        <Award className="w-3.5 h-3.5" />
+                        <span>Formula Laba Bersih (SSOT Bagian III.3)</span>
+                      </h4>
+                      <span className="text-[9px] bg-amber-500/20 text-amber-300 font-mono px-2 py-0.5 rounded font-bold">
+                        [ESTIMATED PROJECTION]
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 text-xs mt-3">
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span>Estimasi Pemasukan Kotor (Gross):</span>
+                        <span className="font-mono text-white font-bold">
+                          Rp {simCalculation.totalGrossRevenue.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-rose-400 text-[11px]">
+                        <span>• Biaya Pembuatan Film (Kredit AI):</span>
+                        <span className="font-mono">-Rp {simAiCreditsCost.toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
+                        <span>• Hosting & Streaming CDN (Bandwidth):</span>
+                        <span className="font-mono">-Rp {simCalculation.hostingCdnCost.toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
+                        <span>• Potongan Platform & Store Fees (10%):</span>
+                        <span className="font-mono">-Rp {simCalculation.platformFees.toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
+                        <span>• Estimasi Pajak PPN (11%):</span>
+                        <span className="font-mono">-Rp {simCalculation.estimatedTax.toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="flex justify-between items-center font-bold text-slate-400 pt-1.5 border-t border-slate-800 text-[11px]">
+                        <span>Total Seluruh Potongan:</span>
+                        <span className="font-mono text-rose-400">
+                          -Rp {simCalculation.totalDeductionsStandard.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-black/60 rounded-xl border border-amber-500/30 text-center space-y-1 mt-2">
+                    <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">LABA BERSIH RIIL (NET PROFIT)</span>
+                      <span className="text-[9px] bg-amber-500/20 text-amber-300 font-mono px-1.5 py-0.2 rounded font-bold">
+                        PROYEKSI
+                      </span>
+                    </div>
+                    <p className="text-2xl font-black text-amber-400 font-mono">
+                      Rp {simCalculation.netProfitStandard.toLocaleString('id-ID')}
+                    </p>
+                    <span className="text-[10px] text-amber-300 font-semibold bg-amber-500/20 px-2 py-0.5 rounded-full inline-block">
+                      Margin Keuntungan Bersih: {simCalculation.marginStandard}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-500 italic text-center">
+                *Model estimasi berbasis benchmark riil industri YouTube Studio & Creator Rewards 2026. Hasil aktual bergantung pada retensi penonton dan demografi penonton.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
-      {/* TAB 3: AI Growth Advisor & Trend Radar (T7) */}
+      {/* TAB 3: AI Growth Advisor & Trend Radar (T7 & SSOT Bagian III.4) */}
       {activeTab === 'growth_advisor' && (
-        <div className="space-y-5">
-          {/* Executive Growth Directives */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Directive 1: Next Film Topic Recommendation */}
-            <div className="p-4 bg-[#101726] border border-amber-500/30 rounded-xl space-y-2 shadow-lg">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
-                  <Flame className="w-4 h-4 text-amber-400" />
-                  Rekomendasi Niche & Topik Film Berikutnya
-                </span>
-                <span className="text-[9px] bg-amber-500/20 text-amber-300 font-mono px-2 py-0.5 rounded-full">
-                  High Demand 2026
-                </span>
-              </div>
-              <h4 className="text-sm font-bold text-white">
-                Fiksi Ilmiah Nusantara & Horor Folklore Modern
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Data penonton menunjukkan genre gabungan Sci-Fi dan mitologi lokal memiliki rasio berbagi (*viral share*) 4.2x lebih tinggi di TikTok dan YouTube Shorts dibanding konten fiksi generik.
-              </p>
-              <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-                <span className="text-amber-400 font-semibold">Tindakan Disarankan:</span> Manfaatkan modul Story & Script untuk membuat serial drama 3 episode berlatar kota masa depan Jakarta 2088.
-              </div>
+        <div className="space-y-6">
+          {/* Section Header */}
+          <div className="p-4 bg-gradient-to-r from-blue-500/15 via-slate-900 to-slate-950 border border-blue-500/30 rounded-xl space-y-1">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-blue-400" />
+                <span>AI Business Advisor (Penasihat Strategis Kreator Berbasis Data Nyata)</span>
+              </h3>
+              <span className="text-[10px] bg-blue-500/20 text-blue-300 font-mono px-2 py-0.5 rounded font-bold border border-blue-500/30">
+                SSOT Bagian III.4
+              </span>
             </div>
+            <p className="text-xs text-slate-300">
+              Rekomendasi strategis yang dibangun secara deterministik dari metrik AMF terverifikasi: data acuan riil, asumsi pasar, tingkat keyakinan (*confidence level*), dan batas risiko bisnis nyata.
+            </p>
+          </div>
 
-            {/* Directive 2: Optimal Publishing Schedule */}
-            <div className="p-4 bg-[#101726] border border-blue-500/30 rounded-xl space-y-2 shadow-lg">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-blue-400 flex items-center gap-1.5 uppercase tracking-wider">
-                  <Calendar className="w-4 h-4 text-blue-400" />
-                  Waktu & Jadwal Rilis Emas (Golden Hours)
-                </span>
-                <span className="text-[9px] bg-blue-500/20 text-blue-300 font-mono px-2 py-0.5 rounded-full">
-                  Peak Engagement
-                </span>
-              </div>
-              <h4 className="text-sm font-bold text-white">Kamis & Jumat — Pukul 19:30 s/d 21:00 WIB</h4>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Audiens film pendek berdurasi 3-8 menit paling aktif mengonsumsi konten sinematik menjelang akhir pekan. Rilis teaser pada hari Rabu sore untuk membangun antisipasi.
-              </p>
-              <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-                <span className="text-blue-400 font-semibold">Tindakan Disarankan:</span> Gunakan paket ekspor 15-detik Teaser dari tab Publikasi untuk diposting 24 jam sebelum film utama tayang.
-              </div>
+          {/* Dynamic Evidence-Based AI Directives */}
+          <div className="space-y-4">
+            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <Target className="w-4 h-4 text-emerald-400" />
+              <span>Direktif Strategis Bisnis Terverifikasi (Evidence-Based)</span>
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {dynamicAdvisorDirectives.map((d) => {
+                const badgeColor = 
+                  d.badge === 'OPTIMAL' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' :
+                  d.badge === 'RECOMMENDED' ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' :
+                  d.badge === 'WARNING' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' :
+                  'bg-slate-800 text-slate-400 border-slate-700';
+
+                return (
+                  <div key={d.id} className="p-4 bg-[#101726] border border-slate-800 hover:border-slate-700 rounded-xl space-y-3 shadow-lg transition-all">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5 uppercase tracking-wider">
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        {d.title}
+                      </span>
+                      <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold border ${badgeColor}`}>
+                        {d.badge} • {d.confidenceScore}% CONFIDENCE
+                      </span>
+                    </div>
+
+                    {/* Evidence & Data Source */}
+                    <div className="p-2.5 bg-slate-950/80 rounded-lg border border-slate-800/80 space-y-1">
+                      <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">
+                        • Data Acuan Riil (Evidence):
+                      </span>
+                      <p className="text-xs text-slate-300 leading-relaxed font-mono">
+                        {d.evidenceDataSource}
+                      </p>
+                    </div>
+
+                    {/* Market Assumptions & Risk Boundary */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                      <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800">
+                        <span className="text-[10px] text-blue-400 font-semibold block mb-0.5">Asumsi Pasar:</span>
+                        <p className="text-slate-400">{d.marketAssumptions}</p>
+                      </div>
+                      <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800">
+                        <span className="text-[10px] text-rose-400 font-semibold block mb-0.5">Batas Risiko Bisnis:</span>
+                        <p className="text-slate-400">{d.riskBoundary}</p>
+                      </div>
+                    </div>
+
+                    {/* Action Recommendation */}
+                    <div className="pt-2 border-t border-slate-800 text-xs">
+                      <span className="text-amber-400 font-bold block mb-0.5">Tindakan Strategis:</span>
+                      <p className="text-slate-200 leading-relaxed">{d.strategicAction}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+          </div>
 
-            {/* Directive 3: Retention & Pacing Advice */}
-            <div className="p-4 bg-[#101726] border border-emerald-500/30 rounded-xl space-y-2 shadow-lg">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 uppercase tracking-wider">
-                  <Zap className="w-4 h-4 text-emerald-400" />
-                  Optimasi Pacing & Golden Hook 15 Detik
-                </span>
-                <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded-full">
-                  Anti-Drop Off
-                </span>
-              </div>
-              <h4 className="text-sm font-bold text-white">Pindahkan Aksi Kritis ke Detik ke-3</h4>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                85% penonton yang melewati 15 detik pertama akan menonton hingga selesai. Hindari pembukaan dengan pemandangan statis tanpa narasi suara yang kuat.
-              </p>
-              <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-                <span className="text-emerald-400 font-semibold">Tindakan Disarankan:</span> Selalu gunakan inspeksi Safe Area pada format 9:16 agar teks hook pembuka berada tepat di area bebas tombol.
-              </div>
-            </div>
+          {/* Industry Trends & Publishing Schedule Benchmarks */}
+          <div className="pt-2 space-y-4">
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <Flame className="w-4 h-4 text-amber-400" />
+              <span>Benchmark Tren Industri & Waktu Rilis Sinematik 2026</span>
+            </h4>
 
-            {/* Directive 4: Sponsorship Pitch Strategy */}
-            <div className="p-4 bg-[#101726] border border-purple-500/30 rounded-xl space-y-2 shadow-lg">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-purple-400 flex items-center gap-1.5 uppercase tracking-wider">
-                  <ShieldCheck className="w-4 h-4 text-purple-400" />
-                  Strategi Menembus Sponsor Merek Komersial
-                </span>
-                <span className="text-[9px] bg-purple-500/20 text-purple-300 font-mono px-2 py-0.5 rounded-full">
-                  Brand Monetization
-                </span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Benchmark 1 */}
+              <div className="p-4 bg-[#101726]/80 border border-slate-800/80 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-400 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Calendar className="w-4 h-4 text-blue-400" />
+                    Waktu & Jadwal Rilis Emas (Golden Hours)
+                  </span>
+                  <span className="text-[9px] bg-blue-500/20 text-blue-300 font-mono px-2 py-0.5 rounded-full">
+                    Peak Engagement
+                  </span>
+                </div>
+                <h5 className="text-sm font-bold text-white">Kamis & Jumat — Pukul 19:30 s/d 21:00 WIB</h5>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Audiens film pendek berdurasi 3-8 menit paling aktif mengonsumsi konten sinematik menjelang akhir pekan. Rilis teaser pada hari Rabu sore untuk membangun antisipasi penonton.
+                </p>
+                <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+                  <span className="text-blue-400 font-semibold">Saran Eksekusi:</span> Gunakan paket ekspor 15-detik Teaser dari tab Editing untuk diposting 24 jam sebelum film utama tayang.
+                </div>
               </div>
-              <h4 className="text-sm font-bold text-white">Tarif Ideal: Rp 2.500.000 s/d Rp 5.000.000 per Penempatan</h4>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Dengan rata-rata 50.000+ views, channel Anda masuk dalam kategori *High-Value Niche Creator*. Brand teknologi, game, dan minuman energi menyukai penempatan logo dalam adegan film AI.
-              </p>
-              <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-                <span className="text-purple-400 font-semibold">Tindakan Disarankan:</span> Sisipkan produk sponsor secara halus ke dalam salah satu prompt adegan di modul Media Studio.
+
+              {/* Benchmark 2 */}
+              <div className="p-4 bg-[#101726]/80 border border-slate-800/80 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-purple-400 flex items-center gap-1.5 uppercase tracking-wider">
+                    <ShieldCheck className="w-4 h-4 text-purple-400" />
+                    Standar Tarif Sponsor Komersial Niche AI Film
+                  </span>
+                  <span className="text-[9px] bg-purple-500/20 text-purple-300 font-mono px-2 py-0.5 rounded-full">
+                    Market Benchmark
+                  </span>
+                </div>
+                <h5 className="text-sm font-bold text-white">Tolok Ukur: Rp 2.500.000 s/d Rp 12.500.000 per Integrasi</h5>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Film berbasis visual AI berkualitas tinggi menarik sponsor industri teknologi, SaaS, gaming, dan lifestyle karena kesan modern dan visual yang estetis.
+                </p>
+                <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+                  <span className="text-purple-400 font-semibold">Saran Eksekusi:</span> Gunakan tab Media Kit untuk mengunduh proposal PDF resmi dan kirimkan langsung ke calon mitra sponsor.
+                </div>
               </div>
             </div>
           </div>
