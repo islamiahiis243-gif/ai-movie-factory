@@ -38,6 +38,10 @@ import {
 } from '../server/credits/creditEngine';
 import aiGenerateHandler from '../api/ai-generate';
 import pipelineActionRouter, { statusHandler, retryHandler, workerHandler } from '../api/pipeline/[action]';
+import { resolveReconciliationRequiredJob } from '../server/pipeline/workerHandler';
+import { computeSequenceFingerprint } from '../src/components/studio/EditingPostView';
+import { PublishingDispatcher } from '../server/publishing/dispatcher';
+import { _setMemoryJob, _getMemoryJob } from '../server/publishing/jobProcessor';
 
 let testsPassed = 0;
 let testsFailed = 0;
@@ -1428,6 +1432,245 @@ async function runMilestoneGatesAudit() {
     batchDispatchable.length === 1 && batchDispatchable[0].id === 'j-yt',
     'Batch dispatch queue accurately isolates only eligible, draft, direct-upload, and OAuth-connected jobs'
   );
+
+  // --------------------------------------------------------------------------
+  // [TEST 23] Periodic Reconciliation of reconciliation_required Jobs
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 23] Verifying Periodic Resolution of reconciliation_required Jobs...');
+
+  const reconTestUser = 'usr-recon-final-test';
+  _setMemoryUserBalance(reconTestUser, 150);
+
+  // Job 1: External task confirmed SUCCESS
+  const holdSuccess = await reserveUserCredits({
+    adminSupabase: null,
+    userId: reconTestUser,
+    amount: 45,
+    operation: 'video_generation',
+    idempotencyKey: 'idemp-recon-success',
+  });
+
+  const mockSuccessJob = {
+    id: 'job-recon-1',
+    user_id: reconTestUser,
+    project_id: 'proj-1',
+    status: 'reconciliation_required',
+    credit_cost: 45,
+    idempotency_key: holdSuccess.reservationId,
+  };
+
+  const resSuccess = await resolveReconciliationRequiredJob({
+    adminSupabase: null,
+    job: mockSuccessJob,
+    providerResult: 'completed',
+    assetResultUrl: 'https://storage/output_final.mp4',
+  });
+
+  assert(
+    resSuccess.status === 'completed' && resSuccess.settled === true && resSuccess.refunded === false,
+    'Reconciliation correctly transitions completed provider task to "completed" and settles credits'
+  );
+
+  // Balance should now be 150 - 45 = 105 CR
+  const balAfterSuccess = await getUserCreditBalance(null, reconTestUser);
+  assert(balAfterSuccess.availableBalance === 105, 'Available balance accurately reflects 45 CR settled deduction');
+
+  // Job 2: External task confirmed FAILED
+  const holdFailure = await reserveUserCredits({
+    adminSupabase: null,
+    userId: reconTestUser,
+    amount: 45,
+    operation: 'video_generation',
+    idempotencyKey: 'idemp-recon-fail',
+  });
+
+  const mockFailJob = {
+    id: 'job-recon-2',
+    user_id: reconTestUser,
+    project_id: 'proj-1',
+    status: 'reconciliation_required',
+    credit_cost: 45,
+    idempotency_key: holdFailure.reservationId,
+  };
+
+  const resFail = await resolveReconciliationRequiredJob({
+    adminSupabase: null,
+    job: mockFailJob,
+    providerResult: 'failed',
+    errorMessage: 'Provider GPU out of memory',
+  });
+
+  assert(
+    resFail.status === 'failed' && resFail.settled === false && resFail.refunded === true,
+    'Reconciliation correctly transitions failed provider task to "failed" and auto-refunds credits'
+  );
+
+  // Balance should return back to 105 CR after refund
+  const balAfterFail = await getUserCreditBalance(null, reconTestUser);
+  assert(balAfterFail.availableBalance === 105, 'Available balance accurately restored to 105 CR after auto-refund');
+
+  // --------------------------------------------------------------------------
+  // [TEST 24] Gate 5 Full Attribute Invariant (Volume, Transitions & Overlays)
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 24] Verifying Gate 5 Invariant Across All Master Output Attributes...');
+
+  const baseClips: any[] = [
+    {
+      id: 'clip-master-1',
+      track: 'video',
+      start_time: 0,
+      duration: 6,
+      source_url: 'https://storage/v1.mp4',
+      volume: 1.0,
+      transition_in: 'cross_dissolve',
+      transition_duration: 1.0,
+      text_overlay: 'Babak Pembuka',
+    },
+  ];
+
+  const fpBase = computeSequenceFingerprint(baseClips, 'xianxia_ethereal', 'youtube_16_9');
+
+  // 24A: Volume modification changes fingerprint
+  const volumeClips = [{ ...baseClips[0], volume: 0.6 }];
+  const fpVolume = computeSequenceFingerprint(volumeClips, 'xianxia_ethereal', 'youtube_16_9');
+  assert(fpBase !== fpVolume, 'Volume change alters sequence fingerprint');
+
+  // 24B: Transition modification changes fingerprint
+  const transitionClips = [{ ...baseClips[0], transition_in: 'fade_black' }];
+  const fpTransition = computeSequenceFingerprint(transitionClips, 'xianxia_ethereal', 'youtube_16_9');
+  assert(fpBase !== fpTransition, 'Transition change alters sequence fingerprint');
+
+  // 24C: Subtitle/Text Overlay modification changes fingerprint
+  const overlayClips = [{ ...baseClips[0], text_overlay: 'Babak Pembuka Revisi' }];
+  const fpOverlay = computeSequenceFingerprint(overlayClips, 'xianxia_ethereal', 'youtube_16_9');
+  assert(fpBase !== fpOverlay, 'Text overlay change alters sequence fingerprint');
+
+  // --------------------------------------------------------------------------
+  // [TEST 25] TC-WF-15 Distribution Kit Honesty & Thumbnail Invariant
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 25] Verifying TC-WF-15 Manifest Asset Truthfulness...');
+
+  function verifyKitManifestAssetPresence(manifest: string) {
+    const hasUnrenderedWarning = manifest.includes('[BELUM DIRENDER — BUTUH GATE 5 RENDER SEBELUM DISTRIBUSI]');
+    const hasRenderedConfirmation = manifest.includes('[TERSEDIA / SIAP DISTRIBUSI]');
+    return { hasUnrenderedWarning, hasRenderedConfirmation };
+  }
+
+  const unrenderedCheck = verifyKitManifestAssetPresence(
+    generateHonestManifest({ projectName: 'Proyek A', hasRenderedMaster: false, hasThumbnail: false })
+  );
+  assert(unrenderedCheck.hasUnrenderedWarning === true, 'Manifest unrendered check strictly verified');
+
+  const renderedCheck = verifyKitManifestAssetPresence(
+    generateHonestManifest({ projectName: 'Proyek B', hasRenderedMaster: true, masterUrl: 'https://cdn/b.mp4', hasThumbnail: true, thumbnailUrl: 'https://cdn/b.jpg' })
+  );
+  assert(renderedCheck.hasRenderedConfirmation === true, 'Manifest rendered confirmation strictly verified');
+
+  // --------------------------------------------------------------------------
+  // [TEST 26] Publishing Dispatch Server-Side Lifecycle & Fencing Protection
+  // --------------------------------------------------------------------------
+  console.log('\n[TEST 26] Verifying Publishing Dispatch Lifecycle & Ownership...');
+
+  const mockDispatchJobId = `job-pub-audit-${Date.now()}`;
+  _setMemoryJob({
+    id: mockDispatchJobId,
+    user_id: 'usr-author-1',
+    project_id: 'proj-dist-1',
+    platform: 'youtube',
+    target_format: '16:9',
+    title: 'Mahakarya Film AI',
+    caption: 'Official Master',
+    description: 'Sinopsis film',
+    hashtags: ['aimovie'],
+    media_url: 'https://storage/master.mp4',
+    status: 'draft',
+    progress_percentage: 0,
+    retry_count: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  // Cross-user dispatch must be blocked
+  let crossUserBlocked = false;
+  try {
+    await PublishingDispatcher.dispatchJob({
+      jobId: mockDispatchJobId,
+      userId: 'usr-unauthorized-2',
+    });
+  } catch (err: any) {
+    if (err.message?.includes('Akses ditolak')) {
+      crossUserBlocked = true;
+    }
+  }
+  assert(crossUserBlocked, 'PublishingDispatcher strictly rejects unauthorized cross-user dispatch (403)');
+
+  // Owner dispatch succeeds with mock token and deterministic mock fetch
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url: any, init?: any): Promise<any> => {
+    const urlStr = url?.href || (typeof url === 'string' ? url : url?.toString?.() || String(url));
+    if (urlStr.includes('upload/youtube/v3/videos')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'https://upload.youtube.com/resumable_session_mock_123' },
+        json: async () => ({}),
+        text: async () => '{}',
+      };
+    }
+    if (urlStr.includes('resumable_session_mock_123')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+          id: 'mock_yt_video_8899',
+          snippet: { title: 'Mahakarya Sinema AI' },
+          status: { privacyStatus: 'public' },
+        }),
+        text: async () => '{"id":"mock_yt_video_8899"}',
+      };
+    }
+    if (urlStr.startsWith('https://storage/master.mp4')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        arrayBuffer: async () => new ArrayBuffer(1024),
+        text: async () => 'video_bytes',
+      };
+    }
+    return originalFetch(url, init);
+  };
+
+  try {
+    const dispatchedResult = await PublishingDispatcher.dispatchJob({
+      jobId: mockDispatchJobId,
+      userId: 'usr-author-1',
+      mockAccessToken: 'mock_yt_audit_token_xyz',
+    });
+
+    assert(
+      dispatchedResult.status === 'published',
+      'PublishingDispatcher successfully executes dispatch lifecycle to published status for authenticated owner'
+    );
+
+    // Idempotency check: Re-dispatching an already published job returns idempotently
+    _setMemoryJob({
+      ...dispatchedResult,
+      status: 'published',
+    });
+
+    const idempotentResult = await PublishingDispatcher.dispatchJob({
+      jobId: mockDispatchJobId,
+      userId: 'usr-author-1',
+    });
+    assert(
+      idempotentResult.status === 'published',
+      'PublishingDispatcher idempotently returns published job without duplicate upload trigger'
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 
   // Audit Summary
   // --------------------------------------------------------------------------

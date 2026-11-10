@@ -10,7 +10,7 @@
  */
 
 import { getSupabaseAdmin } from '../supabaseAdmin.ts';
-import { releaseUserCredits } from '../credits/creditEngine.ts';
+import { releaseUserCredits, settleUserCredits } from '../credits/creditEngine.ts';
 import { PipelineWorkerResult } from './types.ts';
 
 export default async function workerHandler(req: any, res: any) {
@@ -142,6 +142,110 @@ export default async function workerHandler(req: any, res: any) {
         }
       }
 
+      // 1B. Reconcile Existing 'reconciliation_required' Jobs to Final Status
+      const { data: reconJobs } = await adminSupabase
+        .from('pipeline_jobs')
+        .select('*')
+        .eq('status', 'reconciliation_required')
+        .limit(10);
+
+      if (reconJobs && reconJobs.length > 0) {
+        for (const rJob of reconJobs) {
+          const jobAgeMs = now.getTime() - new Date(rJob.updated_at || rJob.created_at).getTime();
+          const isOlderThan24h = jobAgeMs > 24 * 60 * 60 * 1000;
+
+          // Check if provider completed successfully
+          if (rJob.metadata?.provider_completed) {
+            // Settle credits idempotently
+            if (rJob.idempotency_key) {
+              try {
+                await settleUserCredits({
+                  adminSupabase,
+                  reservationId: rJob.idempotency_key,
+                  actualAmount: Number(rJob.credit_cost) || 0,
+                  description: `Penyelesaian Rekonsiliasi Job #${rJob.id}`,
+                });
+              } catch (settleErr) {
+                console.warn('Settle error during reconciliation:', settleErr);
+              }
+            }
+
+            await adminSupabase
+              .from('pipeline_jobs')
+              .update({
+                status: 'completed',
+                progress: 100,
+                error_message: null,
+                completed_at: nowIso,
+                updated_at: nowIso,
+              })
+              .eq('id', rJob.id);
+
+            await adminSupabase.from('pipeline_job_logs').insert({
+              id: `log-recon-settle-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              job_id: rJob.id,
+              stage: rJob.current_stage || 'video_gen',
+              level: 'success',
+              message: 'Rekonsiliasi berkala: Status provider terkonfirmasi SUKSES. Kredit diselesaikan (settled) dan job selesai 100%.',
+              timestamp: nowIso,
+            });
+
+            result.completedCount++;
+            result.details.push({
+              jobId: rJob.id,
+              stage: rJob.current_stage,
+              status: 'completed',
+              message: 'Reconciliation resolved to completed; credits settled.',
+            });
+          } else if (rJob.metadata?.provider_failed || isOlderThan24h) {
+            // Auto-refund held credits idempotently
+            if (rJob.idempotency_key && rJob.project_id) {
+              try {
+                await releaseUserCredits({
+                  adminSupabase,
+                  userId: rJob.user_id || 'system',
+                  reservationId: rJob.idempotency_key,
+                  reason: isOlderThan24h ? 'reconciliation_24h_timeout_rollback' : 'provider_reconciliation_failed',
+                });
+              } catch (refErr) {
+                console.warn('Refund error during reconciliation:', refErr);
+              }
+            }
+
+            const failMsg = isOlderThan24h
+              ? 'Batas waktu rekonsiliasi 24 jam terlampaui tanpa konfirmasi provider. Job ditandai FAILED dan kredit dikembalikan penuh.'
+              : 'Provider mengonfirmasi kegagalan komputasi. Kredit telah di-refund secara otomatis.';
+
+            await adminSupabase
+              .from('pipeline_jobs')
+              .update({
+                status: 'failed',
+                error_message: failMsg,
+                completed_at: nowIso,
+                updated_at: nowIso,
+              })
+              .eq('id', rJob.id);
+
+            await adminSupabase.from('pipeline_job_logs').insert({
+              id: `log-recon-refund-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              job_id: rJob.id,
+              stage: rJob.current_stage || 'video_gen',
+              level: 'error',
+              message: failMsg,
+              timestamp: nowIso,
+            });
+
+            result.failedCount++;
+            result.details.push({
+              jobId: rJob.id,
+              stage: rJob.current_stage,
+              status: 'failed',
+              message: 'Reconciliation resolved to failed; credits refunded.',
+            });
+          }
+        }
+      }
+
       // 2. Fetch Queued or Active Running Jobs
       const { data: activeJobs } = await adminSupabase
         .from('pipeline_jobs')
@@ -213,5 +317,69 @@ export default async function workerHandler(req: any, res: any) {
       error: 'WORKER_EXECUTION_ERROR',
       message: err.message || 'Worker gagal memproses antrean pipeline.',
     });
+  }
+}
+
+/**
+ * Resolves a job in 'reconciliation_required' to a final status (completed or failed).
+ * Guarantees mutually exclusive settlement vs refund with zero duplicate credit transactions.
+ */
+export async function resolveReconciliationRequiredJob(params: {
+  adminSupabase: any;
+  job: any;
+  providerResult: 'completed' | 'failed';
+  assetResultUrl?: string;
+  errorMessage?: string;
+}): Promise<{ status: 'completed' | 'failed'; settled: boolean; refunded: boolean }> {
+  const { adminSupabase, job, providerResult, assetResultUrl, errorMessage } = params;
+  const nowIso = new Date().toISOString();
+
+  if (providerResult === 'completed') {
+    if (job.idempotency_key) {
+      await settleUserCredits({
+        adminSupabase,
+        reservationId: job.idempotency_key,
+        actualAmount: Number(job.credit_cost) || 0,
+        description: `Penyelesaian Rekonsiliasi Job #${job.id}`,
+      });
+    }
+
+    if (adminSupabase) {
+      await adminSupabase
+        .from('pipeline_jobs')
+        .update({
+          status: 'completed',
+          progress: 100,
+          error_message: null,
+          completed_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq('id', job.id);
+    }
+
+    return { status: 'completed', settled: true, refunded: false };
+  } else {
+    if (job.idempotency_key && job.project_id) {
+      await releaseUserCredits({
+        adminSupabase,
+        userId: job.user_id || 'system',
+        reservationId: job.idempotency_key,
+        reason: 'provider_reconciliation_failed',
+      });
+    }
+
+    if (adminSupabase) {
+      await adminSupabase
+        .from('pipeline_jobs')
+        .update({
+          status: 'failed',
+          error_message: errorMessage || 'Provider mengonfirmasi kegagalan komputasi. Kredit telah di-refund.',
+          completed_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq('id', job.id);
+    }
+
+    return { status: 'failed', settled: false, refunded: true };
   }
 }

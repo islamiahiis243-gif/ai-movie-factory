@@ -101,11 +101,51 @@ export const computeSequenceFingerprint = (
   platform: string = 'youtube_16_9'
 ): string => {
   const clipsSignature = clips
-    .map((c) => `${c.id}:${c.track}:${c.start_time}:${c.duration}:${c.source_url || ''}`)
+    .map(
+      (c) =>
+        `${c.id}:${c.track}:${c.start_time}:${c.duration}:${c.source_url || ''}:${c.volume ?? 1}:${c.transition_in || 'none'}:${c.transition_duration || 0}:${c.text_overlay || ''}`
+    )
     .sort()
     .join('|');
   return `seq_${lut}_${platform}_${clipsSignature}`;
 };
+
+export async function captureVideoFrameToJpeg(
+  videoUrl: string,
+  atTimeSeconds = 1.0
+): Promise<string | null> {
+  if (typeof document === 'undefined') return null;
+  return new Promise((resolve) => {
+    try {
+      const video = document.createElement('video');
+      video.crossOrigin = 'anonymous';
+      video.src = videoUrl;
+      video.currentTime = atTimeSeconds;
+      video.muted = true;
+      video.onloadeddata = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth || 1920;
+          canvas.height = video.videoHeight || 1080;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            resolve(dataUrl);
+            return;
+          }
+        } catch (e) {
+          console.warn('Canvas frame extraction failed:', e);
+        }
+        resolve(null);
+      };
+      video.onerror = () => resolve(null);
+      setTimeout(() => resolve(null), 3500);
+    } catch {
+      resolve(null);
+    }
+  });
+}
 
 export const EditingPostView: React.FC<EditingPostViewProps> = ({
   projects,
@@ -896,20 +936,33 @@ ${chaptersContent}
       );
     }
 
-    // 4. Download Subtitles SRT
+    // 4. Download Thumbnail JPG if available, or capture frame from master video
+    if (thumbnailLink) {
+      setTimeout(() => {
+        downloadFile(`${baseName}_Thumbnail_Cover.jpg`, thumbnailLink);
+      }, 100);
+    } else if (latestRenderedMaster?.file_url) {
+      captureVideoFrameToJpeg(latestRenderedMaster.file_url, 1.0).then((frameDataUrl) => {
+        if (frameDataUrl) {
+          downloadFile(`${baseName}_Thumbnail_Frame.jpg`, frameDataUrl);
+        }
+      });
+    }
+
+    // 5. Download Subtitles SRT
     downloadFile(`${baseName}_Subtitles.srt`, srtContent);
 
-    // 5. Download Subtitles VTT
+    // 6. Download Subtitles VTT
     setTimeout(() => {
       downloadFile(`${baseName}_Subtitles.vtt`, vttContent);
     }, 250);
 
-    // 6. Download Chapters TXT
+    // 7. Download Chapters TXT
     setTimeout(() => {
       downloadFile(`${baseName}_Chapters.txt`, chaptersContent);
     }, 500);
 
-    // 7. Download Distribution Metadata Manifest TXT
+    // 8. Download Distribution Metadata Manifest TXT
     const fullKitManifest = `===============================================================
 AI MOVIE FACTORY — MULTI-CHANNEL PUBLISHING MANIFEST (TC-WF-15)
 ===============================================================

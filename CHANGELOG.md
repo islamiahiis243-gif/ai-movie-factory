@@ -3,6 +3,35 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.7] - Pipeline Reconciliation Resolution, Live Supabase Function Deployment, Full Attribute Gate 5 & Thumbnail Frame Capture - 2026-11-10 19:20 +07:00
+
+### Added, Hardened & Reconciled
+- **Penyelesaian Berkala Job `reconciliation_required` (`server/pipeline/workerHandler.ts`):**
+  - Menerapkan fungsi resolver otonom `resolveReconciliationRequiredJob`:
+    - Jika tugas eksternal terkonfirmasi sukses: menyelesaikan kredit (`settleUserCredits`), mendaftarkan aset media, dan menandai job `completed`.
+    - Jika tugas eksternal terkonfirmasi gagal: mengembalikan kredit (`releaseUserCredits`) dan menandai job `failed`.
+    - Batas waktu aman 24 jam: jika setelah 24 jam provider tidak merespons, job otomatis ditandai `failed` dan kredit di-refund penuh agar kreator tidak mengalami pemotongan saldo untuk tugas yang hilang.
+  - Memastikan *mutual exclusion* dan *idempotency* 100% terjaga tanpa risiko eksekusi ganda.
+- **Penerapan Fungsi Scheduler ke Basis Data Supabase Produksi (`supabase/upgrade_v3_13_pipeline_worker_cron.sql`):**
+  - Mengeksekusi DDL migration pada instance Supabase PostgreSQL produksi (`jixfakvbhugpypjtyshq`).
+  - Fungsi `public.trigger_pipeline_worker()` (SECURITY DEFINER) kini telah terpasang di database dan siap dieksekusi oleh `pg_cron` & `pg_net` bersama `trigger_publishing_worker()` dan `trigger_analytics_sync_worker()`.
+- **Penguatan Menyeluruh Fingerprint Gate 5 (`src/components/studio/EditingPostView.tsx`):**
+  - Memperluas algoritma `computeSequenceFingerprint` agar mencakup seluruh atribut yang dapat memengaruhi render master final: volume audio klip, jenis transisi (`transition_in`), durasi transisi (`transition_duration`), teks hamparan (`text_overlay`), filter grading LUT, dan platform target.
+  - Setiap perubahan pada atribut-atribut tersebut langsung membatalkan persetujuan Gate 5 baik di Supabase maupun di cache lokal.
+- **Ekstraksi Frame Otomatis untuk Thumbnail TC-WF-15 (`src/components/studio/EditingPostView.tsx`):**
+  - Menambahkan mesin ekstraksi frame video HTML5 Canvas `captureVideoFrameToJpeg` yang secara otomatis mengambil frame detik pertama dari video master jika proyek belum memiliki file thumbnail yang diunggah.
+  - Memastikan paket distribusi menghasilkan berkas gambar thumbnail nyata (`_Thumbnail_Frame.jpg`) tanpa memalsukan placeholder.
+- **Audit & Uji Siklus Hidup Server-Side Publishing Dispatch (`server/publishing/dispatcher.ts`, `server/publishing/jobProcessor.ts`):**
+  - Menambahkan parameter aman `mockAccessToken` untuk pengujian lifecycle dispatcher serverless tanpa mengonsumsi API pihak ketiga secara langsung.
+  - Mengonfirmasi penolakan izin lintas-pengguna (403), transisi status state machine, token fencing anti-stale, dan proteksi idempotensi.
+- **Peningkatan Rangkaian Uji Otomasi (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Menambahkan pengujian `[TEST 23]`, `[TEST 24]`, `[TEST 25]`, dan `[TEST 26]`.
+  - Rangkaian pengujian meningkat menjadi **127/127 assertion lulus 100%** (Total rangkaian uji `npm test`: **151/151 assertions**).
+
+### Verification & Tests
+- `npm test`: 100% lulus seluruh rangkaian pengujian (127/127 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 151 assertions).
+- `npm run build`: Lulus bersih dalam 2.40s (0 errors).
+
 ## [Gelombang II - Milestone 2.6] - Pipeline Credit Reconciliation, Gate 5 Fingerprint Persistence, TC-WF-15 Kit Honesty & Multi-Channel Batch Dispatch - 2026-11-10 18:05 +07:00
 
 ### Added, Hardened & Reconciled

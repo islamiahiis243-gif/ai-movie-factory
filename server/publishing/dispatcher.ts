@@ -18,8 +18,9 @@ export class PublishingDispatcher {
     jobId: string;
     userId: string;
     idempotencyKey?: string;
+    mockAccessToken?: string;
   }): Promise<PublishJobRecord> {
-    const { jobId, userId, idempotencyKey } = params;
+    const { jobId, userId, idempotencyKey, mockAccessToken } = params;
 
     const job = await getPublishingJob(jobId);
     if (!job) {
@@ -56,6 +57,7 @@ export class PublishingDispatcher {
     const updated = await executePublishingJob({
       jobId,
       workerClaimId: `disp_${userId.slice(0, 8)}_${Date.now()}`,
+      mockAccessToken,
     });
 
     return updated;
