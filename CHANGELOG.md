@@ -3,6 +3,42 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.9] - OTT Catalog Hierarchy & Multi-Episode Relational Architecture - 2026-11-11 00:45 +07:00
+
+### Added, Hardened & Reconciled
+- **Isolasi Domain Bisnis OTT Commerce vs AMF Creator SaaS Billing:**
+  - Menjaga pemisahan total antara transaksi kreator membeli kredit/kuota AI AMF (`subscriptions`, `payment_orders`, credit ledger) dengan ranah OTT B2C Commerce penonton.
+  - Skema dan entitas OTT dirancang murni untuk transaksi penjualan karya, tiket, dan langganan penonton ke studio kreator.
+- **Fondasi Relasional Katalog OTT Multi-Tenant (`supabase/upgrade_v3_14_ott_catalog_hierarchy.sql`):**
+  - **`ott_channels`**: Akar kanal studio independen ber-slug unik, informasi bio, banner, logo, dan status verifikasi.
+  - **`ott_series`**: Serial web drama episodic (format vertikal 9:16 ala DramaBox/ReelShort maupun sinematik 16:9), metadata genre, tags, maturity rating, dan status tayang.
+  - **`ott_seasons`**: Struktur musim penayangan berurutan (`season_number`).
+  - **`ott_episodes`**: Episode individual dengan nomor urut sekuensial, logline, sinopsis, runtime detik, dan tautan master Gate 5.
+  - **`ott_films`**: Film lepas (standalone feature / short films) dengan aspect ratio sinematik 16:9 atau 2.39:1 tanpa mewajibkan serial.
+  - **`ott_cast_members`**: Kredit pemeran dan kru yang terhubung langsung ke entitas DNA karakter Gate 2.
+- **Integrasi Master Aset Produksi Gate 5 (`src/lib/ottCatalogEngine.ts`):**
+  - Menghubungkan master render video fisik dari Gate 5 (`master_video_url`, `master_video_fingerprint`, subtitle VTT, dan chapter markers) tanpa menyalin atau menduplikasi berkas fisik.
+  - **Security Guard & Publication Invariant:** Mencegah mutlak penerbitan item katalog (`publication_status = 'published'`) jika aset belum disetujui sutradara pada Gate 5 (`master_approval_status !== 'GATE_5_APPROVED'`) atau file video kosong.
+  - **Anti Cross-Tenant Hijacking:** Mencegah studio A menautkan aset master produksi dari studio B secara ilegal (`source_project_id` dan `targetItem.user_id` wajib cocok dengan `requestingUserId`).
+- **Kesiapan Kebijakan Akses (Entitlement-Ready):**
+  - Setiap episode dan film memodelkan kebijakan akses eksplisit: `free` (gratis), `ppv_tvod` (bayar per episode/film), `svod_subscriber` (khusus pelanggan channel), dan `trailer_preview`.
+- **Proyeksi Katalog Publik yang Aman (Data Sanitization):**
+  - Query penonton publik secara otomatis menyaring item draf dan arsip, serta menyanitasi ID internal studio (`source_project_id`, `master_export_id`) agar tidak bocor ke endpoint publik.
+- **Antarmuka Pengelolaan Katalog Creator Studio (`src/components/studio/OttCatalogManagerView.tsx`):**
+  - Dasbor manajemen kanal OTT mandiri terintegrasi ke navigasi Creator Studio (`ott_catalog`).
+  - Pengelolaan serial, musim, dan episode dengan visual poster, badge runtime, dan status tayang.
+  - Alat penaut instan master produksi Gate 5 (*Gate 5 Master Linker*).
+  - Mode pratinjau etalase publik (*Public Storefront Preview*) yang mensimulasikan tampilan portal penonton.
+- **Rangkaian Uji Deterministik (`scripts/test_ott_catalog_hierarchy.ts`):**
+  - 14 skenario pengujian komprehensif mencakup 33 assertions otomatis (100% PASS).
+  - Total pengujian seluruh modul aplikasi meningkat menjadi **235 assertions lulus 100%**.
+- **Pembaruan Versi Produksi & Healthcheck:**
+  - Versi aplikasi ditingkatkan ke `1.16.0` (`V3.18 Phase 6 OTT Catalog Hierarchy & Multi-Episode Architecture`).
+
+### Verification & Tests
+- `npm test`: 100% PASS seluruh rangkaian pengujian (178/178 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync, 33/33 OTT Catalog Hierarchy — Total 235 assertions).
+- `npm run build`: Lulus bersih dalam 3.19s (0 errors, 0 warnings).
+
 ## [Gelombang II - Milestone 2.8.3.1] - Tax Edge Cases, Koperasi 4-Year Limit, VAT Carryforward & Cashflow Reconciliation Hardening - 2026-11-10 23:30 +07:00
 
 ### Added, Hardened & Reconciled

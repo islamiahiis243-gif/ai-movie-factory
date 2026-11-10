@@ -21,6 +21,7 @@ import {
   Scissors,
   Globe,
   TrendingUp,
+  Tv,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -72,6 +73,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       group: t.nav.business,
       items: [
         { id: 'creator_intelligence', label: 'Intelijen Bisnis Kreator', icon: TrendingUp, status: 'active' },
+        { id: 'ott_catalog', label: 'Studio Katalog OTT', icon: Tv, status: 'active' },
         { id: 'subscription', label: t.nav.subscription, icon: CreditCard, status: 'active' },
         { id: 'credits_usage', label: t.nav.creditsUsage, icon: Coins, status: 'active' },
       ],

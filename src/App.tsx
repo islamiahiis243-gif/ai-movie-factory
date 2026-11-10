@@ -65,6 +65,11 @@ const CreatorIntelligenceView = lazy(() =>
     default: m.CreatorIntelligenceView,
   }))
 );
+const OttCatalogManagerView = lazy(() =>
+  import('./components/studio/OttCatalogManagerView').then((m) => ({
+    default: m.OttCatalogManagerView,
+  }))
+);
 const SubscriptionView = lazy(() =>
   import('./components/billing/SubscriptionView').then((m) => ({ default: m.SubscriptionView }))
 );
@@ -505,6 +510,25 @@ function StudioApp() {
             </div>
           )}
 
+          {activeTab === 'ott_catalog' && (
+            <div className="p-6">
+              <OttCatalogManagerView
+                projects={projects}
+                selectedProjectId={inspectProject?.id || projects[0]?.id}
+                onSelectProject={(id) => {
+                  const target = projects.find((p) => p.id === id);
+                  if (target) setInspectProject(target);
+                }}
+                onShowToast={addToast}
+                onNavigateToPostPro={(projectId) => {
+                  const target = projects.find((p) => p.id === projectId);
+                  if (target) setInspectProject(target);
+                  setActiveTab('editing_post');
+                }}
+              />
+            </div>
+          )}
+
           {activeTab === 'workspaces' && (
             <div className="p-6">
               <WorkspaceView />
@@ -587,6 +611,8 @@ function StudioApp() {
             activeTab !== 'subscription' &&
             activeTab !== 'credits_usage' &&
             activeTab !== 'admin_panel' &&
+            activeTab !== 'creator_intelligence' &&
+            activeTab !== 'ott_catalog' &&
             activeTab !== 'settings' &&
             activeTab !== 'landing' && (
               <ModulePlaceholderView

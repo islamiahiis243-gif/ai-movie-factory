@@ -1150,3 +1150,169 @@ export interface CreatorMediaKitSettings {
   share_email?: boolean;
   updated_at?: string;
 }
+
+// ============================================================================
+// Phase 6: Independent OTT & Streaming Catalog Architecture (Milestone 2.9)
+// ============================================================================
+
+export type OttAccessPolicy = 
+  | 'free'                  // Free for all viewers without paywall
+  | 'ppv_tvod'             // Transactional Video on Demand / Pay-Per-View per item/episode
+  | 'svod_subscriber'      // Exclusive to channel/studio active subscribers
+  | 'trailer_preview'      // Free teaser/trailer preview
+  | 'hybrid_early_access'; // Early access for subscribers, PPV for general public
+
+export type OttPublicationStatus = 
+  | 'production_completed' // Video master rendered & approved at Gate 5
+  | 'ready_for_catalog'   // Metadata & artwork drafted, ready for catalog inclusion
+  | 'draft_catalog'       // In creator studio catalog staging (hidden from public)
+  | 'published'           // Live & discoverable in public OTT storefront
+  | 'archived';           // Delisted or retired from public storefront
+
+export type OttContentFormat = 
+  | 'short_form_vertical_9_16' 
+  | 'cinematic_horizontal_16_9' 
+  | 'micro_drama' 
+  | 'commercial_anthology';
+
+export type OttMaturityRating = 'ALL' | '13+' | '17+' | '21+';
+
+export type OttMasterApprovalStatus = 'GATE_5_APPROVED' | 'PENDING_APPROVAL' | 'UNAPPROVED';
+
+export interface OttChannel {
+  id: string;
+  user_id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  logo_url?: string;
+  banner_url?: string;
+  website_url?: string;
+  social_links?: Record<string, string>;
+  is_verified: boolean;
+  status: 'active' | 'suspended' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OttSeries {
+  id: string;
+  channel_id: string;
+  user_id: string;
+  title: string;
+  slug: string;
+  synopsis?: string;
+  content_format: OttContentFormat;
+  genres: string[];
+  tags: string[];
+  poster_url?: string;
+  backdrop_url?: string;
+  total_seasons_count: number;
+  total_episodes_count: number;
+  maturity_rating: OttMaturityRating;
+  default_access_policy: OttAccessPolicy;
+  publication_status: OttPublicationStatus;
+  featured: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OttSeason {
+  id: string;
+  series_id: string;
+  season_number: number;
+  title: string;
+  synopsis?: string;
+  poster_url?: string;
+  episodes_count: number;
+  publication_status: 'draft_catalog' | 'published' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OttEpisode {
+  id: string;
+  series_id: string;
+  season_id: string;
+  user_id: string;
+  episode_number: number;
+  title: string;
+  slug: string;
+  synopsis?: string;
+  runtime_seconds: number;
+  thumbnail_url?: string;
+  access_policy: OttAccessPolicy;
+  ppv_price_idr: number;
+  publication_status: OttPublicationStatus;
+  published_at?: string;
+  scheduled_release_at?: string;
+  
+  // Gate 5 Master Asset Integration
+  source_project_id?: string;
+  master_export_id?: string;
+  master_video_url?: string;
+  master_video_fingerprint?: string;
+  master_approval_status: OttMasterApprovalStatus;
+  subtitle_vtt_url?: string;
+  chapters_json?: Array<{ time: number; title: string }>;
+  
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OttFilm {
+  id: string;
+  channel_id: string;
+  user_id: string;
+  title: string;
+  slug: string;
+  logline?: string;
+  synopsis?: string;
+  runtime_seconds: number;
+  aspect_ratio: '16:9' | '9:16' | '2.39:1' | '4:3';
+  genres: string[];
+  tags: string[];
+  poster_url?: string;
+  backdrop_url?: string;
+  trailer_video_url?: string;
+  access_policy: OttAccessPolicy;
+  ppv_price_idr: number;
+  publication_status: OttPublicationStatus;
+  published_at?: string;
+  scheduled_release_at?: string;
+  
+  // Gate 5 Master Asset Integration
+  source_project_id?: string;
+  master_export_id?: string;
+  master_video_url?: string;
+  master_video_fingerprint?: string;
+  master_approval_status: OttMasterApprovalStatus;
+  subtitle_vtt_url?: string;
+  chapters_json?: Array<{ time: number; title: string }>;
+  
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OttCastMember {
+  id: string;
+  user_id: string;
+  character_id?: string;
+  content_type: 'series' | 'episode' | 'film';
+  content_id: string;
+  person_or_char_name: string;
+  role_type: 'lead_actor' | 'supporting_actor' | 'voice_actor' | 'director' | 'writer' | 'ai_cinematographer';
+  avatar_url?: string;
+  created_at: string;
+}
+
+export interface OttCatalogSummary {
+  channel: OttChannel;
+  totalSeries: number;
+  totalFilms: number;
+  totalEpisodes: number;
+  totalPublishedItems: number;
+  totalDraftItems: number;
+  seriesList: OttSeries[];
+  filmsList: OttFilm[];
+}
