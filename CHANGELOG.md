@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.2] - Pre-Generation Cost Preview, Gate 4 Keyframe Enforcement & Idempotent Auto-Refund Engine - 2026-11-10 08:20 +07:00
+
+### Added & Implemented
+- **Pre-Generation Cost Preview Modal (`src/components/studio/CostPreviewModal.tsx`):**
+  - Menerapkan dialog konfirmasi estimasi biaya sebelum generasi AI dieksekusi di Media Studio (Gambar, Video, Vokal, dan Audio).
+  - Menampilkan nama aset, penyedia AI, model yang digunakan, parameter output (rasio, resolusi, durasi, gerakan kamera), saldo dompet saat ini, biaya kredit yang dibutuhkan, dan estimasi sisa saldo setelah eksekusi.
+  - Memblokir tombol eksekusi dan memberikan peringatan transparan jika saldo tidak mencukupi.
+- **Penegakan Gate 4 (Keyframe Image Approval) di Media Studio (`src/components/studio/MediaStudioView.tsx`):**
+  - Pada generator Image-to-Video, keyframe acuan diperiksa status persetujuannya (`approval_status === 'approved'`).
+  - Menampilkan badge visual status Gate 4 pada setiap thumbnail keyframe (`G4 APPROVED` [hijau] vs `G4 PENDING` [amber]).
+  - Menampilkan bar audit status Gate 4 di atas dan di bawah pemilih gambar dengan tombol 1-klik *Setujui Keyframe (Kunci Gate 4)*.
+  - Di dalam modal *Cost Preview*, jika keyframe belum disetujui, ditampilkan peringatan risiko kredit beserta tombol 1-klik untuk mengesahkan keyframe seketika sebelum video dirender.
+- **Idempotency Token & Jaminan Auto-Refund Kredit Gagal (`api/ai-generate.ts`):**
+  - Menghasilkan token idempotency unik (`amf_job_<timestamp>_<random>`) untuk setiap request generasi guna mencegah tagihan ganda atau duplikasi komputasi.
+  - Mendukung penagihan kredit terukur untuk operasi `image_keyframe` (15 CR), `video_generation` (45 CR), dan `voice_tts` (10 CR).
+  - Mengembalikan status HTTP 502 dengan flag `creditsRefunded: true` dan melepaskan reservasi kredit secara atomik jika provider AI mengalami error atau timeout.
+
+### Verification & Tests
+- `npm run build`: Lulus bersih dalam 2.40s dengan 0 TypeScript error & validasi chunk Vite.
+- `npm test`: 100% lulus seluruh rangkaian pengujian (Vercel Go-Live Readiness, AES-256 OAuth Vault, Publishing Engine, dan Live Analytics Sync).
+
 ## [Gelombang II - Milestone 2.1] - Guided Workflow Engine, Next Best Action, Production Templates & Multi-Gate Controls - 2026-11-10 08:05 +07:00
 
 ### Added & Implemented

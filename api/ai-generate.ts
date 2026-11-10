@@ -22,7 +22,14 @@ import {
 import { calculateProviderCost } from '../server/cost/providerCostEngine.ts';
 
 export interface AiGenerateRequestBody {
-  operation?: 'script_outline' | 'character_seed' | 'continuity_audit' | 'shot_prompt';
+  operation?:
+    | 'script_outline'
+    | 'character_seed'
+    | 'continuity_audit'
+    | 'shot_prompt'
+    | 'image_keyframe'
+    | 'video_generation'
+    | 'voice_tts';
   prompt: string;
   model?: string;
   systemInstruction?: string;
@@ -36,6 +43,9 @@ const OPERATION_CREDIT_COSTS: Record<string, number> = {
   character_seed: 5,
   shot_prompt: 5,
   continuity_audit: 10,
+  image_keyframe: 15,
+  video_generation: 45,
+  voice_tts: 10,
 };
 
 export default async function handler(req: any, res: any) {
@@ -251,6 +261,9 @@ export default async function handler(req: any, res: any) {
       message:
         'Penyedia AI mengalami kendala saat menghasilkan respon. Kredit yang direservasi telah dikembalikan secara otomatis ke saldo Anda.',
       details: providerErr.message || 'Unknown error',
+      creditsRefunded: true,
+      reservationId,
+      idempotencyKey: clientKey,
     });
   }
 }

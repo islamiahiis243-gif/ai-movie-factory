@@ -18,6 +18,7 @@ import {
   fetchCharacters,
   fetchProjectScenes,
   uploadProjectAssetToBucket,
+  fetchCreditTransactions,
 } from '../../lib/supabase';
 import {
   getMediaAdapter,
@@ -25,7 +26,19 @@ import {
   MediaProviderAdapter,
 } from '../../lib/mediaAdapters';
 import { AssetDetailModal } from './AssetDetailModal';
+import { CostPreviewModal } from './CostPreviewModal';
+import { useAuth } from '../../context/AuthContext';
 import { translations } from '../../lib/translations';
+import {
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  ShieldCheck,
+  Coins,
+  Sparkles,
+  Video,
+  ArrowRight,
+} from 'lucide-react';
 
 interface MediaStudioViewProps {
   projects: Project[];
@@ -56,6 +69,44 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
 
   // Inspection Modal
   const [inspectingAsset, setInspectingAsset] = useState<MediaAsset | null>(null);
+
+  // Pre-Generation Cost Preview State & Wallet Balance
+  const { user, profile } = useAuth();
+  const [walletBalance, setWalletBalance] = useState<number>(profile?.credits_balance || 150);
+  const [costPreviewConfig, setCostPreviewConfig] = useState<{
+    isOpen: boolean;
+    assetType: 'image' | 'video' | 'voice' | 'audio';
+    assetName: string;
+    provider: string;
+    model: string;
+    creditCost: number;
+    params: {
+      durationSeconds?: number;
+      aspectRatio?: string;
+      resolution?: string;
+      cameraMotion?: string;
+    };
+    sourceAsset?: MediaAsset | null;
+    onConfirmCallback: (idempotencyKey: string) => Promise<void>;
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const targetId = user?.id || profile?.id;
+    if (targetId) {
+      fetchCreditTransactions(targetId).then((res) => {
+        if (!active) return;
+        if (res.data && res.data.length > 0) {
+          setWalletBalance(res.data[0].balance_after);
+        } else {
+          setWalletBalance(user ? 150 : 0);
+        }
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [user?.id, profile?.id]);
 
   // Library Filters
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -198,11 +249,36 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
     setVidPrompt(`Transform image still into cinematic camera tracking shot. ${asset.prompt.substring(0, 150)}...`);
   };
 
-  // Generators
-  const handleGenerateImage = async (e: React.FormEvent) => {
+  // ============================================================================
+  // PRE-GENERATION COST PREVIEW & IDEMPOTENCY EXECUTION (SSOT Section 10 & Gate 4)
+  // ============================================================================
+
+  // 1. Image Generation Handlers
+  const handleGenerateImage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProject || !imgPrompt || isGenerating) return;
+    const creditCost = imgModel === 'imagen-3.0-generate' ? 20 : 15;
+
+    setCostPreviewConfig({
+      isOpen: true,
+      assetType: 'image',
+      assetName: imgName || `Keyframe Gambar #${assets.length + 1}`,
+      provider: 'Google Gemini / Imagen 3',
+      model: imgModel,
+      creditCost,
+      params: {
+        aspectRatio: imgAspectRatio,
+        resolution: imgResolution,
+      },
+      onConfirmCallback: async (idempotencyKey: string) => {
+        await executeImageGeneration(idempotencyKey);
+      },
+    });
+  };
+
+  const executeImageGeneration = async (idempotencyKey: string) => {
     setIsGenerating(true);
+    const creditCost = imgModel === 'imagen-3.0-generate' ? 20 : 15;
 
     try {
       const adapter = getMediaAdapter('google_gemini');
@@ -221,6 +297,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           resolution: imgResolution,
           negative_prompt: imgNegativePrompt || undefined,
           seed: Math.floor(Math.random() * 999999),
+          idempotency_key: idempotencyKey,
         },
       });
 
@@ -239,9 +316,10 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           resolution: imgResolution,
           seed: result.metadata.seed,
           negative_prompt: imgNegativePrompt || undefined,
+          idempotency_key: idempotencyKey,
         },
         status: 'completed',
-        credit_cost: result.creditCost,
+        credit_cost: result.creditCost || creditCost,
         file_url: result.fileUrl,
         thumbnail_url: result.thumbnailUrl,
         version: 1,
@@ -250,26 +328,56 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
 
       if (newAsset) {
         setAssets((prev) => [newAsset, ...prev]);
+        setWalletBalance((prev) => Math.max(0, prev - (result.creditCost || creditCost)));
         showNotification(t.mediaStudio.actions.generationSuccess);
+        setCostPreviewConfig(null);
         setActiveTab('library');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Image generation error:', err);
+      showNotification(`Generasi gambar gagal: ${err.message || 'Provider error'}. Kredit Anda aman (Auto-refund berhasil).`);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleGenerateVideo = async (e: React.FormEvent) => {
+  // 2. Video Generation Handlers (With Gate 4 Enforcement)
+  const handleGenerateVideo = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProject || !vidPrompt || isGenerating) return;
+
+    const providerId: MediaProviderId = vidModel === 'gen3a_turbo' ? 'runway_gen3' : 'google_gemini';
+    const creditCost = vidModel === 'gen3a_turbo' ? 50 : 45;
+    const sourceAsset = assets.find((a) => a.id === vidSourceAssetId) || null;
+
+    setCostPreviewConfig({
+      isOpen: true,
+      assetType: 'video',
+      assetName: vidName || `Video Klip #${assets.length + 1}`,
+      provider: providerId === 'runway_gen3' ? 'Runway Gen-3 Alpha' : 'Google Gemini / Veo',
+      model: vidModel,
+      creditCost,
+      params: {
+        durationSeconds: vidDuration,
+        aspectRatio: '16:9',
+        resolution: '1080p',
+        cameraMotion: vidCameraMotion,
+      },
+      sourceAsset,
+      onConfirmCallback: async (idempotencyKey: string) => {
+        await executeVideoGeneration(idempotencyKey);
+      },
+    });
+  };
+
+  const executeVideoGeneration = async (idempotencyKey: string) => {
     setIsGenerating(true);
+    const providerId: MediaProviderId = vidModel === 'gen3a_turbo' ? 'runway_gen3' : 'google_gemini';
+    const sourceAsset = assets.find((a) => a.id === vidSourceAssetId);
+    const cost = vidModel === 'gen3a_turbo' ? 50 : 45;
 
     try {
-      const providerId: MediaProviderId = vidModel === 'gen3a_turbo' ? 'runway_gen3' : 'google_gemini';
       const adapter = getMediaAdapter(providerId);
-
-      const sourceAsset = assets.find((a) => a.id === vidSourceAssetId);
 
       const result = await adapter.generateMedia({
         projectId: activeProject.id,
@@ -285,6 +393,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           camera_motion: vidCameraMotion,
           motion_intensity: vidMotionIntensity,
           reference_image_url: sourceAsset?.file_url,
+          idempotency_key: idempotencyKey,
         },
       });
 
@@ -304,9 +413,10 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           camera_motion: vidCameraMotion,
           motion_intensity: vidMotionIntensity,
           reference_image_url: sourceAsset?.file_url,
+          idempotency_key: idempotencyKey,
         },
         status: 'completed',
-        credit_cost: result.creditCost,
+        credit_cost: result.creditCost || cost,
         file_url: result.fileUrl,
         thumbnail_url: result.thumbnailUrl,
         version: 1,
@@ -315,23 +425,47 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
 
       if (newAsset) {
         setAssets((prev) => [newAsset, ...prev]);
-        showNotification(t.mediaStudio.actions.generationSuccess);
+        setWalletBalance((prev) => Math.max(0, prev - (result.creditCost || cost)));
+        showNotification(`Video berhasil dirender! (${result.creditCost || cost} CR terpotong).`);
+        setCostPreviewConfig(null);
         setActiveTab('library');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Video generation error:', err);
+      showNotification(`Generasi video gagal: ${err.message || 'Provider error'}. Kredit Anda aman dan tidak terpotong (Auto-refund berhasil).`);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleGenerateVoice = async (e: React.FormEvent) => {
+  // 3. Voice Generation Handlers
+  const handleGenerateVoice = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProject || !voiceText || isGenerating) return;
+    const creditCost = voiceModel === 'eleven_multilingual_v2' ? 10 : 8;
+
+    setCostPreviewConfig({
+      isOpen: true,
+      assetType: 'voice',
+      assetName: voiceName || `Klip Vokal #${assets.length + 1}`,
+      provider: voiceModel === 'eleven_multilingual_v2' ? 'ElevenLabs Audio' : 'Google Gemini Voice',
+      model: voiceModel,
+      creditCost,
+      params: {
+        durationSeconds: 10,
+      },
+      onConfirmCallback: async (idempotencyKey: string) => {
+        await executeVoiceGeneration(idempotencyKey);
+      },
+    });
+  };
+
+  const executeVoiceGeneration = async (idempotencyKey: string) => {
     setIsGenerating(true);
+    const providerId: MediaProviderId = voiceModel === 'eleven_multilingual_v2' ? 'elevenlabs' : 'google_gemini';
+    const creditCost = voiceModel === 'eleven_multilingual_v2' ? 10 : 8;
 
     try {
-      const providerId: MediaProviderId = voiceModel === 'eleven_multilingual_v2' ? 'elevenlabs' : 'google_gemini';
       const adapter = getMediaAdapter(providerId);
 
       const result = await adapter.generateMedia({
@@ -347,6 +481,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           language: voiceLanguage,
           tempo: voiceTempo,
           emotion_tag: voiceEmotion,
+          idempotency_key: idempotencyKey,
         },
       });
 
@@ -363,9 +498,10 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           language: voiceLanguage,
           tempo: voiceTempo,
           emotion_tag: voiceEmotion,
+          idempotency_key: idempotencyKey,
         },
         status: 'completed',
-        credit_cost: result.creditCost,
+        credit_cost: result.creditCost || creditCost,
         file_url: result.fileUrl,
         version: 1,
         approval_status: 'draft',
@@ -373,23 +509,47 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
 
       if (newAsset) {
         setAssets((prev) => [newAsset, ...prev]);
+        setWalletBalance((prev) => Math.max(0, prev - (result.creditCost || creditCost)));
         showNotification(t.mediaStudio.actions.generationSuccess);
+        setCostPreviewConfig(null);
         setActiveTab('library');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Voice generation error:', err);
+      showNotification(`Generasi vokal gagal: ${err.message || 'Provider error'}. Kredit otomatis di-refund.`);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleGenerateAudio = async (e: React.FormEvent) => {
+  // 4. Audio / Music Generation Handlers
+  const handleGenerateAudio = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProject || !audioPrompt || isGenerating) return;
+    const creditCost = audioModel === 'suno_v3_orchestral' ? 25 : 15;
+
+    setCostPreviewConfig({
+      isOpen: true,
+      assetType: 'audio',
+      assetName: audioName || `Skor Audio #${assets.length + 1}`,
+      provider: audioModel === 'suno_v3_orchestral' ? 'Suno Music Studio' : 'Google Gemini Audio',
+      model: audioModel,
+      creditCost,
+      params: {
+        durationSeconds: audioDuration,
+      },
+      onConfirmCallback: async (idempotencyKey: string) => {
+        await executeAudioGeneration(idempotencyKey);
+      },
+    });
+  };
+
+  const executeAudioGeneration = async (idempotencyKey: string) => {
     setIsGenerating(true);
+    const providerId: MediaProviderId = audioModel === 'suno_v3_orchestral' ? 'suno_audio' : 'google_gemini';
+    const creditCost = audioModel === 'suno_v3_orchestral' ? 25 : 15;
 
     try {
-      const providerId: MediaProviderId = audioModel === 'suno_v3_orchestral' ? 'suno_audio' : 'google_gemini';
       const adapter = getMediaAdapter(providerId);
 
       const result = await adapter.generateMedia({
@@ -404,6 +564,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           duration_seconds: audioDuration,
           music_genre: audioGenre,
           instrumentation: audioInstrumentation,
+          idempotency_key: idempotencyKey,
         },
       });
 
@@ -419,9 +580,10 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           duration_seconds: audioDuration,
           music_genre: audioGenre,
           instrumentation: audioInstrumentation,
+          idempotency_key: idempotencyKey,
         },
         status: 'completed',
-        credit_cost: result.creditCost,
+        credit_cost: result.creditCost || creditCost,
         file_url: result.fileUrl,
         version: 1,
         approval_status: 'draft',
@@ -429,11 +591,14 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
 
       if (newAsset) {
         setAssets((prev) => [newAsset, ...prev]);
+        setWalletBalance((prev) => Math.max(0, prev - (result.creditCost || creditCost)));
         showNotification(t.mediaStudio.actions.generationSuccess);
+        setCostPreviewConfig(null);
         setActiveTab('library');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Audio generation error:', err);
+      showNotification(`Generasi audio gagal: ${err.message || 'Provider error'}. Kredit otomatis di-refund.`);
     } finally {
       setIsGenerating(false);
     }
@@ -1117,14 +1282,22 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
       {/* TAB 3: VIDEO & MOTION GENERATOR */}
       {activeTab === 'videoGen' && (
         <div className="max-w-4xl p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-5">
-          <div>
-            <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
-              <span>🎥</span>
-              {t.mediaStudio.videoStudio.title}
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {t.mediaStudio.videoStudio.subtitle}
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                <span>🎥</span>
+                {t.mediaStudio.videoStudio.title}
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {t.mediaStudio.videoStudio.subtitle}
+              </p>
+            </div>
+
+            {/* Gate 4 Indicator Badge */}
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-400/10 border border-amber-400/30 rounded-lg text-amber-300 text-xs font-semibold shrink-0">
+              <ShieldCheck className="w-4 h-4 text-amber-400" />
+              <span>Gate 4: Keyframe Approval Guard Active</span>
+            </div>
           </div>
 
           <form onSubmit={handleGenerateVideo} className="space-y-4 text-xs font-mono">
@@ -1153,38 +1326,103 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
                   onChange={(e) => setVidSubtype(e.target.value as AssetSubtype)}
                   className="w-full px-3 py-2 bg-slate-950/80 border border-slate-700/80 rounded-lg text-slate-200 focus:outline-none focus:border-amber-500"
                 >
-                  <option value="image_to_video">Image-to-Video Animation</option>
+                  <option value="image_to_video">Image-to-Video Animation (Rekomendasi Utama)</option>
                   <option value="text_to_video">Text-to-Video Synthesis</option>
                   <option value="action_sequence">Martial Arts Action Sequence</option>
                 </select>
               </div>
             </div>
 
-            {/* Source Image Selector */}
+            {/* Source Image Selector with Gate 4 Badges */}
             <div>
-              <label className="block text-slate-400 uppercase tracking-wider mb-1.5">
-                {t.mediaStudio.videoStudio.sourceImage}
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-slate-400 uppercase tracking-wider">
+                  {t.mediaStudio.videoStudio.sourceImage}
+                </label>
+                <span className="text-[10px] text-slate-500">
+                  Prasyarat: Keyframe harus lulus Gate 4
+                </span>
+              </div>
               {imageAssets.length === 0 ? (
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg text-slate-400 text-xs">
                   {currentLang === 'id' ? 'Belum ada gambar di perpustakaan. Sintesis gambar terlebih dahulu pada tab "Sintesis Gambar AI".' : 'No images in library. Generate an image first in Image Studio.'}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 max-h-48 overflow-y-auto p-2 bg-slate-950/60 border border-slate-800/80 rounded-lg">
-                  {imageAssets.map((img) => (
-                    <div
-                      key={img.id}
-                      onClick={() => setVidSourceAssetId(img.id)}
-                      className={`relative aspect-video rounded overflow-hidden border cursor-pointer transition-all ${
-                        vidSourceAssetId === img.id ? 'border-amber-500 ring-2 ring-amber-500/50' : 'border-slate-800 hover:border-slate-600'
-                      }`}
-                    >
-                      <img src={img.thumbnail_url || img.file_url} alt={img.asset_name} className="w-full h-full object-cover" />
-                      <span className="absolute bottom-1 left-1 right-1 bg-black/80 text-[9px] text-slate-200 truncate px-1 rounded">
-                        {img.asset_name}
-                      </span>
-                    </div>
-                  ))}
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 max-h-48 overflow-y-auto p-2 bg-slate-950/60 border border-slate-800/80 rounded-lg">
+                    {imageAssets.map((img) => {
+                      const isApproved = img.approval_status === 'approved';
+                      const isSelected = vidSourceAssetId === img.id;
+                      return (
+                        <div
+                          key={img.id}
+                          onClick={() => setVidSourceAssetId(img.id)}
+                          className={`relative aspect-video rounded overflow-hidden border cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-amber-500 ring-2 ring-amber-500/50'
+                              : 'border-slate-800 hover:border-slate-600'
+                          }`}
+                        >
+                          <img src={img.thumbnail_url || img.file_url} alt={img.asset_name} className="w-full h-full object-cover" />
+                          
+                          {/* Gate 4 Badge Overlay */}
+                          <div className="absolute top-1 right-1">
+                            <span
+                              className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded shadow ${
+                                isApproved
+                                  ? 'bg-emerald-500/90 text-white'
+                                  : 'bg-amber-500/90 text-slate-950'
+                              }`}
+                            >
+                              {isApproved ? 'G4 APPROVED' : 'G4 PENDING'}
+                            </span>
+                          </div>
+
+                          <span className="absolute bottom-1 left-1 right-1 bg-black/80 text-[9px] text-slate-200 truncate px-1 rounded">
+                            {img.asset_name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Selected Keyframe Gate 4 Audit Bar */}
+                  {vidSourceAssetId && (() => {
+                    const selectedImg = imageAssets.find((a) => a.id === vidSourceAssetId);
+                    if (!selectedImg) return null;
+                    const isApproved = selectedImg.approval_status === 'approved';
+                    return (
+                      <div
+                        className={`p-2.5 rounded-lg border text-xs flex flex-wrap items-center justify-between gap-2.5 ${
+                          isApproved
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                            : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isApproved ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                          )}
+                          <span>
+                            <strong>Gate 4 Status:</strong> Keyframe acuan "{selectedImg.asset_name}"{' '}
+                            {isApproved ? 'telah disahkan sutradara.' : `masih berstatus '${selectedImg.approval_status}'.`}
+                          </span>
+                        </div>
+
+                        {!isApproved && (
+                          <button
+                            type="button"
+                            onClick={() => handleApprove(selectedImg.id)}
+                            className="px-2.5 py-1 bg-amber-400 text-slate-950 text-[11px] font-bold rounded hover:bg-amber-300 transition-colors cursor-pointer"
+                          >
+                            Setujui Keyframe (Kunci Gate 4)
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -1280,10 +1518,10 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
               <button
                 type="submit"
                 disabled={isGenerating}
-                className="px-6 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-lg disabled:opacity-50"
+                className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-amber-400/20 disabled:opacity-50 cursor-pointer"
               >
                 <span>{isGenerating ? '⏳' : '🎬'}</span>
-                <span>{isGenerating ? t.mediaStudio.actions.generating : t.mediaStudio.videoStudio.generateBtn}</span>
+                <span>{isGenerating ? t.mediaStudio.actions.generating : 'Konfirmasi & Estimasi Biaya (Gate 4)'}</span>
               </button>
             </div>
           </form>
@@ -1600,6 +1838,25 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           onDelete={handleDelete}
           onUseAsVideoSource={handleUseAsVideoSource}
           currentLang={currentLang}
+        />
+      )}
+
+      {/* Pre-Generation Cost Preview & Gate 4 Audit Modal */}
+      {costPreviewConfig && (
+        <CostPreviewModal
+          isOpen={costPreviewConfig.isOpen}
+          onClose={() => setCostPreviewConfig(null)}
+          onConfirm={costPreviewConfig.onConfirmCallback}
+          assetType={costPreviewConfig.assetType}
+          assetName={costPreviewConfig.assetName}
+          provider={costPreviewConfig.provider}
+          model={costPreviewConfig.model}
+          creditCost={costPreviewConfig.creditCost}
+          walletBalance={walletBalance}
+          params={costPreviewConfig.params}
+          sourceAsset={costPreviewConfig.sourceAsset}
+          onApproveSourceAsset={(assetId) => handleApprove(assetId)}
+          isGenerating={isGenerating}
         />
       )}
     </div>
