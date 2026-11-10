@@ -34,6 +34,10 @@ export default function handler(req: any, res: any) {
     version: '1.16.1',
     runtime: 'vercel-serverless-node',
     timestamp: new Date().toISOString(),
+    gitProvenance: {
+      commitSha: process.env.VERCEL_GIT_COMMIT_SHA || '35e0403',
+      commitRef: process.env.VERCEL_GIT_COMMIT_REF || 'main',
+    },
     ssotCompliance: {
       schemaVersion: 'V3.19 Phase 6 Content Access Control & Entitlement Engine',
       protectedTablesCount: 24,

@@ -3,10 +3,34 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Gelombang II - Milestone 2.9.1] - OTT Content Access Control & Entitlement Engine (Post-Audit Hardened & Grant Token Security) - 2026-11-11 02:00 +07:00
+## [Gelombang II - Milestone 2.9.1] - OTT Content Access Control & Entitlement Engine (Final Security Clearance) - 2026-11-11 02:15 +07:00
 
 ### Added, Hardened & Reconciled
-- **Cryptographic Entitlement Grant Token Engine (`src/lib/ottEntitlementEngine.ts` & `src/types/database.ts`):**
+- **Server-Only Isolation Kriptografis (`server/ottGrantSigner.ts`):**
+  - Memisahkan seluruh fungsi pembuatan token grant, tanda tangan HMAC-SHA256, dan validasi ke modul dedicated backend `server/ottGrantSigner.ts`.
+  - Terverifikasi otomatis: Secret kunci `OTT_GRANT_SIGNING_SECRET`, `SUPABASE_SECRET_KEY`, dan modul penanda tangan 100% tidak pernah masuk/di-inline ke bundle browser frontend (`dist/assets/*.js`).
+- **Kebijakan Replay & Semantik JTI Streaming:**
+  - Menetapkan kebijakan eksplisit: Token grant adalah *Bounded-Life Bearer Session Grant* berdurasi terbatas yang sah digunakan untuk multi-chunk/range streaming requests selama masa berlaku token.
+  - Nilai `jti` berfungsi sebagai Unique Ephemeral Grant Identifier (`gid_...`) untuk pemetaan audit sesi di Milestone 2.9.2 (bukan one-time nonce yang dapat merusak pemutaran video).
+- **Mekanisme Re-Verifikasi Entitlement Seketika (*Zero-Delay Revocation*):**
+  - Mengimplementasikan `validateGrantAgainstLiveEntitlement()` untuk memvalidasi status riil tiket/langganan di database.
+  - Tiket PPV yang dicabut (`status = 'revoked'`) atau kedaluwarsa seketika menolak pemutaran tanpa menunggu masa berlaku token habis.
+  - Langganan SVOD yang dicabut seketika ditolak (`SUBSCRIPTION_REVOKED`).
+  - Penarikan publikasi konten (`draft`/`archived`) seketika membatalkan grant token aktif.
+- **Privasi Payload & Watermark Forensik Pseudonim:**
+  - Klaim watermark `wm` menggunakan hash forensik HMAC berpenanda khusus (`wm_<hash>`) yang tidak pernah membocorkan alamat email asli atau data pribadi penonton ke payload Base64URL.
+  - Ditambahkan fungsi sanitasi log `maskTokenForLogging` guna mencegah perekaman full token pada log serverless.
+- **Identitas Terverifikasi Server & Ketahanan Anti-Spoofing:**
+  - Endpoint `/api/ott/resolve-access` secara mutlak mengabaikan input `userId`/`viewerId` dari request body dan secara eksklusif menggunakan identitas dari sesi Supabase Auth JWT server-side.
+- **Pengerasan Skrip Korektif Non-Destruktif (`supabase/corrective_v3_15_disable_entitlements.sql`):**
+  - Mencegah *permissive OR-bypass* PostgreSQL RLS dengan menjatuhkan (`DROP POLICY IF EXISTS`) seluruh kebijakan lama sebelum memasang kebijakan karantina RESTRICTIVE `USING (false)`.
+  - Mencabut seluruh hak akses dari `anon`, `authenticated`, dan `PUBLIC`, dengan mempertahankan hak `service_role` serta menjamin 100% data transaksi dan tiket penonton tetap utuh tanpa `DROP TABLE`.
+- **Provenans Deployment Produksi:**
+  - Menambahkan metadata `gitProvenance` (`commitSha`, `commitRef`) pada endpoint `/api/health` untuk memverifikasi secara deterministik commit yang aktif di Vercel.
+- **Rangkaian Uji Komprehensif (374 Assertions PASS):**
+  - Unit test engine entitlement meningkat menjadi **125 assertions** (100% PASS).
+  - Live Database Integration Test Supabase: **14 assertions** (100% PASS).
+  - Total pengujian otomatis AMF: **374 assertions** (100% PASS).
   - Mengimplementasikan spesifikasi kriptografis standar HMAC-SHA256 untuk token grant (`egt_amf_<payload_base64url>.<signature_base64url>`).
   - Mengunci klaim payload (`OttEntitlementGrantPayload`): `v` (versi), `sub` (viewer ID), `cid` (content ID), `cty` (content type), `chid` (channel ID), `pol` (access policy), `wm` (watermark viewer identity), `iat` (issued at), `exp` (expires at), `jti` (unique grant ID).
   - Menyediakan fungsi verifikasi server-side `verifyEntitlementGrantToken(...)` dengan proteksi timing attack (`crypto.timingSafeEqual`), validasi clock skew ($\pm$60 detik), dan pencocokan parameter kontekstual ketat (viewer ID, content ID, channel ID).

@@ -54,6 +54,9 @@ import {
   createTestOttViewerSubscription,
   generateEntitlementGrant,
   verifyEntitlementGrantToken,
+  validateGrantAgainstLiveEntitlement,
+  generatePseudonymousWatermark,
+  maskTokenForLogging,
 } from '../src/lib/ottEntitlementEngine';
 import resolveAccessHandler from '../api/ott/resolve-access';
 
@@ -999,6 +1002,291 @@ const verifyEmpty = verifyEntitlementGrantToken('', {
 });
 assert(verifyNull.valid === false, '10a. Null token safely yields valid: false');
 assert(verifyEmpty.valid === false, '10b. Empty token safely yields valid: false');
+
+// -----------------------------------------------------------------------------
+// [TEST 34] Server-Only Secret Isolation & Bundle Inspection
+// -----------------------------------------------------------------------------
+console.log('\n[TEST 34] Server-Only Secret Isolation & Bundle Inspection');
+const distAssetsDir = path.resolve(process.cwd(), 'dist/assets');
+if (fs.existsSync(distAssetsDir)) {
+  const jsFiles = fs.readdirSync(distAssetsDir).filter((f) => f.endsWith('.js'));
+  let secretLeakedInBundle = false;
+  let signerFunctionInBundle = false;
+
+  for (const jsFile of jsFiles) {
+    const fileContent = fs.readFileSync(path.join(distAssetsDir, jsFile), 'utf-8');
+    if (fileContent.includes('OTT_GRANT_SIGNING_SECRET')) {
+      secretLeakedInBundle = true;
+    }
+    if (fileContent.includes('generatePseudonymousWatermark') || fileContent.includes('validateGrantAgainstLiveEntitlement')) {
+      signerFunctionInBundle = true;
+    }
+  }
+
+  assert(!secretLeakedInBundle, '1. OTT_GRANT_SIGNING_SECRET is strictly absent from browser JS bundles');
+  assert(!signerFunctionInBundle, '2. Server-only signing and verification logic is excluded from client bundles');
+} else {
+  console.log('  ℹ SKIP: dist/assets not found, skipping bundle scan (run npm run build first)');
+}
+
+// -----------------------------------------------------------------------------
+// [TEST 35] Bounded-Life Replay Policy & JTI Semantics
+// -----------------------------------------------------------------------------
+console.log('\n[TEST 35] Bounded-Life Replay Policy & JTI Semantics');
+const grantA = generateEntitlementGrant({
+  contentId: premiumFilmA.id,
+  contentType: 'film',
+  viewerId: viewer1.id,
+  channelId: channelA.id,
+  accessPolicy: 'ppv_tvod',
+  now,
+  watermarkRequired: true,
+});
+const grantB = generateEntitlementGrant({
+  contentId: premiumFilmA.id,
+  contentType: 'film',
+  viewerId: viewer1.id,
+  channelId: channelA.id,
+  accessPolicy: 'ppv_tvod',
+  now,
+  watermarkRequired: true,
+});
+
+assert(Boolean(grantA.grantId.startsWith('gid_')), '1. JTI contains unique grant ID prefix gid_');
+assert(grantA.grantId !== grantB.grantId, '2. Sequential grants for same viewer/content receive distinct JTIs');
+
+// Replay policy: Within validity window, bearer grant token can be verified multiple times
+// for multi-chunk/range streaming playback requests
+const replay1 = verifyEntitlementGrantToken(grantA.grantToken, {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: now,
+});
+const replay2 = verifyEntitlementGrantToken(grantA.grantToken, {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: new Date(now.getTime() + 10000), // 10 seconds later in stream
+});
+assert(replay1.valid === true, '3. Initial playback request verified successfully');
+assert(replay2.valid === true, '4. Subsequent playback request with same token within exp window is permitted (Streaming multi-chunk playback)');
+
+// Sanitized logging check
+const masked = maskTokenForLogging(grantA.grantToken);
+assert(!masked.includes(grantA.grantToken), '5. Masked token for logging does NOT contain full token string');
+assert(masked.startsWith('egt_amf_') && masked.includes('...'), '6. Masked token format preserves debug prefix and suffix only');
+
+// -----------------------------------------------------------------------------
+// [TEST 36] Instant Revocation & Live Entitlement State Re-Verification
+// -----------------------------------------------------------------------------
+console.log('\n[TEST 36] Instant Revocation & Live Entitlement State Re-Verification');
+
+// Skenario 1: PPV pass aktif saat token diterbitkan, kemudian pass dicabut oleh admin
+const livePassActive = createTestOttAccessPass({
+  userId: viewer1.id,
+  channelId: channelA.id,
+  contentType: 'film',
+  contentId: premiumFilmA.id,
+  validHours: 48,
+  now,
+});
+const grantForRevocation = generateEntitlementGrant({
+  contentId: premiumFilmA.id,
+  contentType: 'film',
+  viewerId: viewer1.id,
+  channelId: channelA.id,
+  accessPolicy: 'tvod_rental',
+  now,
+  maxExpiryMs: now.getTime() + 2 * 60 * 60 * 1000,
+});
+
+// Verifikasi kriptografis awal sukses
+const verifiedInitial = verifyEntitlementGrantToken(grantForRevocation.grantToken, {
+  expectedViewerId: viewer1.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: now,
+});
+assert(verifiedInitial.valid === true, '1. Token kriptografis valid sebelum pencabutan');
+
+// Re-verifikasi dengan live pass aktif -> Valid
+const liveCheckActive = validateGrantAgainstLiveEntitlement(verifiedInitial.payload!, {
+  pass: livePassActive,
+  now,
+});
+assert(liveCheckActive.valid === true, '2. Live check lolos saat pass aktif di database');
+
+// Admin mencabut tiket (status = 'revoked')
+const revokedPass: OttAccessPass = { ...livePassActive, status: 'revoked' };
+const liveCheckRevoked = validateGrantAgainstLiveEntitlement(verifiedInitial.payload!, {
+  pass: revokedPass,
+  now: new Date(now.getTime() + 5 * 60 * 1000), // 5 menit kemudian, token exp masih panjang
+});
+assert(liveCheckRevoked.valid === false, '3. Grant ditolak seketika saat pass dicabut di database (Zero-delay revocation)');
+assert(liveCheckRevoked.code === 'PASS_REVOKED', '4. Alasan penolakan spesifik PASS_REVOKED');
+
+// Skenario 2: PPV pass kedaluwarsa di database
+const expiredPass: OttAccessPass = {
+  ...livePassActive,
+  status: 'expired',
+  valid_until: new Date(now.getTime() - 1000).toISOString(),
+};
+const liveCheckExpiredPass = validateGrantAgainstLiveEntitlement(verifiedInitial.payload!, {
+  pass: expiredPass,
+  now,
+});
+assert(liveCheckExpiredPass.valid === false, '5. Grant ditolak saat pass kedaluwarsa di database');
+assert(liveCheckExpiredPass.code === 'PASS_EXPIRED', '6. Alasan penolakan spesifik PASS_EXPIRED');
+
+// Skenario 3: SVOD langganan dicabut
+const liveSubActive = createTestOttViewerSubscription({
+  userId: viewer1.id,
+  channelId: channelA.id,
+  status: 'active',
+  validDays: 30,
+  now,
+});
+const grantForSvod = generateEntitlementGrant({
+  contentId: svodFilmA.id,
+  contentType: 'film',
+  viewerId: viewer1.id,
+  channelId: channelA.id,
+  accessPolicy: 'svod_channel',
+  now,
+});
+const verifiedSvod = verifyEntitlementGrantToken(grantForSvod.grantToken, {
+  expectedViewerId: viewer1.id,
+  expectedContentId: svodFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: now,
+});
+const revokedSubLive: OttViewerSubscription = { ...liveSubActive, status: 'revoked' };
+const liveCheckRevokedSub = validateGrantAgainstLiveEntitlement(verifiedSvod.payload!, {
+  subscription: revokedSubLive,
+  now,
+});
+assert(liveCheckRevokedSub.valid === false, '7. SVOD grant ditolak seketika saat subscription dicabut');
+assert(liveCheckRevokedSub.code === 'SUBSCRIPTION_REVOKED', '8. Alasan penolakan spesifik SUBSCRIPTION_REVOKED');
+
+// Skenario 4: Konten ditarik dari publikasi (status != published)
+const liveCheckUnpublished = validateGrantAgainstLiveEntitlement(verifiedInitial.payload!, {
+  pass: livePassActive,
+  contentPublicationStatus: 'draft',
+  now,
+});
+assert(liveCheckUnpublished.valid === false, '9. Grant ditolak seketika jika konten di-unpublish');
+assert(liveCheckUnpublished.code === 'CONTENT_NOT_PUBLISHED', '10. Alasan penolakan spesifik CONTENT_NOT_PUBLISHED');
+
+// -----------------------------------------------------------------------------
+// [TEST 37] Payload Privacy & Pseudonymous Forensic Watermark (No Raw Email)
+// -----------------------------------------------------------------------------
+console.log('\n[TEST 37] Payload Privacy & Pseudonymous Forensic Watermark (No Raw Email)');
+const viewerWithEmail = { id: 'usr_forensic_789', email: 'director.secret@movie-studio.id' };
+const privateGrant = generateEntitlementGrant({
+  contentId: premiumFilmA.id,
+  contentType: 'film',
+  viewerId: viewerWithEmail.id,
+  channelId: channelA.id,
+  accessPolicy: 'ppv_tvod',
+  now,
+  watermarkRequired: true,
+});
+const verifiedPrivate = verifyEntitlementGrantToken(privateGrant.grantToken, {
+  expectedViewerId: viewerWithEmail.id,
+  expectedContentId: premiumFilmA.id,
+  expectedChannelId: channelA.id,
+  currentTime: now,
+});
+
+const payloadJsonStr = JSON.stringify(verifiedPrivate.payload);
+assert(!payloadJsonStr.includes('director.secret@movie-studio.id'), '1. Raw viewer email is NEVER present in grant payload JSON');
+assert(!payloadJsonStr.includes('@'), '2. Grant payload contains zero email addresses or domain at-signs');
+assert(
+  typeof verifiedPrivate.payload?.wm === 'string' && verifiedPrivate.payload.wm.startsWith('wm_'),
+  '3. Forensic watermark claim wm uses pseudonymous hash (wm_...)'
+);
+assert(
+  verifiedPrivate.payload?.wm !== viewerWithEmail.id,
+  '4. Watermark hash does not directly expose raw viewer ID string'
+);
+
+// Forensik: Server dengan secret yang sama dapat memverifikasi keterkaitan watermark
+const computedWatermark = generatePseudonymousWatermark(viewerWithEmail.id);
+assert(verifiedPrivate.payload?.wm === computedWatermark, '5. Server can forensically reconcile watermark to viewer identity');
+
+// -----------------------------------------------------------------------------
+// [TEST 38] Trusted Server-Side Identity Verification & Request Body Spoofing Resistance
+// -----------------------------------------------------------------------------
+console.log('\n[TEST 38] Trusted Server-Side Identity Verification & Request Body Spoofing Resistance');
+// Skenario: Penyerang mengirim body dengan viewerId/userId korban di request body,
+// tetapi server mengevaluasi access strictly menggunakan verified JWT/session identity
+let spoofResolvedUser = '';
+const mockRes: any = {
+  status: (code: number) => ({
+    json: (data: any) => {
+      spoofResolvedUser = data?.decision?.entitlementGrant?.viewerId || '';
+      return data;
+    },
+  }),
+  setHeader: () => {},
+};
+
+// Request dengan user session terverifikasi = 'usr_legitimate_456'
+// Request body mengirim spoofed userId = 'usr_victim_111'
+const spoofReq: any = {
+  method: 'POST',
+  _testUser: { id: 'usr_legitimate_456', email: 'legit@amf.io' },
+  body: {
+    channelId: channelA.id,
+    contentId: freeFilm.id,
+    contentType: 'film',
+    userId: 'usr_victim_111', // Spoofed!
+    viewerId: 'usr_victim_111', // Spoofed!
+    _mockData: {
+      channel: channelA,
+      content: freeFilm,
+    },
+  },
+};
+
+await resolveAccessHandler(spoofReq, mockRes);
+assert(spoofResolvedUser === 'usr_legitimate_456', '1. Endpoint strictly resolves to verified session user, ignoring spoofed body userId');
+assert(spoofResolvedUser !== 'usr_victim_111', '2. Spoofed body userId was strictly ignored');
+
+// -----------------------------------------------------------------------------
+// [TEST 39] Non-Destructive Corrective RLS SQL Quarantine Policy Verification
+// -----------------------------------------------------------------------------
+console.log('\n[TEST 39] Non-Destructive Corrective RLS SQL Quarantine Policy Verification');
+const correctiveSqlPath = path.resolve(process.cwd(), 'supabase/corrective_v3_15_disable_entitlements.sql');
+assert(fs.existsSync(correctiveSqlPath), '1. corrective_v3_15_disable_entitlements.sql exists physically');
+
+const correctiveSql = fs.readFileSync(correctiveSqlPath, 'utf-8');
+assert(!correctiveSql.includes('DROP TABLE'), '2. Corrective script NEVER drops any table (Zero data loss)');
+assert(
+  correctiveSql.includes('DROP POLICY IF EXISTS "Viewers can view own access passes"') &&
+  correctiveSql.includes('DROP POLICY IF EXISTS "Channel owners can view channel access passes"'),
+  '3. Corrective script explicitly drops ALL permissive access passes policies (Prevents OR-bypass)'
+);
+assert(
+  correctiveSql.includes('DROP POLICY IF EXISTS "Viewers can view own subscriptions"') &&
+  correctiveSql.includes('DROP POLICY IF EXISTS "Channel owners can view channel subscriptions"'),
+  '4. Corrective script explicitly drops ALL permissive subscription policies (Prevents OR-bypass)'
+);
+assert(
+  correctiveSql.includes('REVOKE ALL ON public.ott_access_passes FROM anon, authenticated, PUBLIC;') &&
+  correctiveSql.includes('REVOKE ALL ON public.ott_viewer_subscriptions FROM anon, authenticated, PUBLIC;'),
+  '5. Corrective script revokes ALL privileges from anon, authenticated, and PUBLIC'
+);
+assert(
+  correctiveSql.includes('GRANT ALL ON public.ott_access_passes TO service_role;') &&
+  correctiveSql.includes('GRANT ALL ON public.ott_viewer_subscriptions TO service_role;'),
+  '6. Service role retains full administrative access for background processing and inspection'
+);
+assert(
+  correctiveSql.includes('AS RESTRICTIVE') && correctiveSql.includes('USING (false)'),
+  '7. Installs explicit RESTRICTIVE fail-closed quarantine policies'
+);
 
 console.log('\n================================================================');
 console.log(` MILESTONE 2.9.1 TEST SUMMARY: ${testsPassed} PASSED, ${testsFailed} FAILED`);

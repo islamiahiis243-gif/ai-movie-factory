@@ -1378,7 +1378,7 @@ export interface OttEntitlementGrantPayload {
   cty: 'episode' | 'film';
   chid: string;
   pol: OttAccessPolicy;
-  wm: boolean;
+  wm: boolean | string;
   iat: number;
   exp: number;
   jti: string;
