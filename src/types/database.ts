@@ -1323,13 +1323,13 @@ export interface OttCatalogSummary {
 
 export type OttAccessPassStatus = 'active' | 'expired' | 'revoked';
 
-export type OttViewerSubscriptionStatus = 'active' | 'cancelled' | 'expired' | 'past_due';
+export type OttViewerSubscriptionStatus = 'active' | 'cancelled' | 'expired' | 'past_due' | 'revoked';
 
 export interface OttAccessPass {
   id: string;
   user_id: string;
   channel_id: string;
-  content_type: 'episode' | 'film' | 'series_season_pass';
+  content_type: 'episode' | 'film' | 'season' | 'series_season_pass';
   content_id: string;
   order_ref_id?: string;
   price_paid_idr: number;
@@ -1371,9 +1371,19 @@ export type OttAccessDecisionStatus =
   | 'ACCESS_REVOKED'
   | 'TENANT_ACCESS_DENIED';
 
+export interface OttEntitlementGrant {
+  grantToken: string;
+  expiresAt: string;
+  accessPolicy: OttAccessPolicy;
+  watermarkRequired: boolean;
+  viewerId: string;
+  contentId: string;
+  channelId: string;
+}
+
 export interface OttPlaybackSession {
   ticketId: string;
-  videoUrl: string;
+  videoUrl?: string;
   expiresAt: string;
   isWatermarked: boolean;
   sessionToken: string;
@@ -1399,6 +1409,8 @@ export interface OttAccessDecisionResult {
   contentId: string;
   contentType: 'episode' | 'film';
   channelId: string;
+  entitlementGrant?: OttEntitlementGrant;
+  previewUrl?: string;
   playbackSession?: OttPlaybackSession;
   monetizationPrompt?: OttMonetizationPrompt;
   evaluatedAt: string;

@@ -1,12 +1,15 @@
 /**
  * AI Movie Factory — Phase 6: Web & Independent OTT Publishing Studio
- * Milestone 2.9.1: Content Access Control & Entitlement Engine (SSOT Core Module)
+ * Milestone 2.9.1: Content Access Control & Entitlement Engine (SSOT Hardened Module)
  * 
- * Architectural Guarantees:
- * 1. Strict Isolation: Completely segregated from Creator Studio SaaS Billing & AI Credits.
- * 2. Fail-Closed Security: Access is denied by default; playbackSession is NEVER returned without verified entitlement.
- * 3. Identity & Cross-Tenant Defense: Viewer cannot use another viewer's passes; Channel A subscription never grants Channel B access.
- * 4. Deterministic State Machine: 13 unambiguous decision outcomes.
+ * Strict Architectural Invariants:
+ * 1. Strict Domain Isolation: Completely segregated from Creator Studio SaaS Billing & AI Credits.
+ * 2. Strict Entitlement vs Playback Separation: Milestone 2.9.1 decides access and grants ephemeral tickets.
+ *    Raw master video Storage URLs are NEVER leaked or returned in this milestone.
+ * 3. Fail-Closed Security: Access is denied by default; entitlementGrant is strictly undefined when denied.
+ * 4. Granular Season Pass Verification: A Season Pass is linked to a specific season_id (never leaks across seasons).
+ * 5. Deterministic Timezone Handling: True UTC epoch comparisons without session drift.
+ * 6. SVOD Cancellation Grace Period: Cancelled auto-renew keeps access until current_period_end.
  */
 
 import {
@@ -19,19 +22,48 @@ import {
   OttAccessDecisionResult,
   OttAccessDecisionStatus,
   ResolveOttAccessParams,
+  OttEntitlementGrant,
   OttPlaybackSession,
   OttMonetizationPrompt,
+  OttAccessPolicy,
 } from '../types/database';
 
 /**
- * Generates an opaque, cryptographically formatted playback session token.
+ * Generates an opaque, cryptographically formatted entitlement grant token.
  * Valid for 6 hours by default.
+ * Does NOT contain or expose raw video storage URLs.
+ */
+export function generateEntitlementGrant(
+  contentId: string,
+  viewerId: string,
+  channelId: string,
+  accessPolicy: OttAccessPolicy,
+  now: Date = new Date(),
+  watermarkRequired: boolean = true
+): OttEntitlementGrant {
+  const expiresAt = new Date(now.getTime() + 6 * 60 * 60 * 1000).toISOString();
+  const rawId = `${contentId}:${viewerId}:${channelId}:${now.getTime()}:${Math.random().toString(36).substring(2, 9)}`;
+  const grantToken = `egt_amf_${Buffer.from(rawId).toString('base64url')}`;
+
+  return {
+    grantToken,
+    expiresAt,
+    accessPolicy,
+    watermarkRequired,
+    viewerId,
+    contentId,
+    channelId,
+  };
+}
+
+/**
+ * Generates a playback ticket reference for client state.
+ * Raw video URL is explicitly omitted (deferred to Milestone 2.9.2 streaming player session).
  */
 export function generatePlaybackSession(
   contentId: string,
   userId: string,
   channelId: string,
-  videoUrl: string,
   now: Date = new Date(),
   isWatermarked: boolean = true
 ): OttPlaybackSession {
@@ -42,15 +74,15 @@ export function generatePlaybackSession(
 
   return {
     ticketId,
-    videoUrl,
     expiresAt,
     isWatermarked,
     sessionToken,
+    // videoUrl intentionally omitted to prevent raw storage URL exposure in Milestone 2.9.1
   };
 }
 
 /**
- * Checks if scheduled release time has passed.
+ * Checks if scheduled release time has passed using UTC epoch milliseconds.
  */
 export function isContentReleased(
   scheduledReleaseAt?: string | null,
@@ -62,20 +94,10 @@ export function isContentReleased(
 
 /**
  * Evaluates OTT content access rights using the SSOT Priority Decision Matrix.
- * 
- * Decision Priority:
- * 1. Channel Active Check
- * 2. Multi-Tenant Cross-Channel Integrity
- * 3. Content Publication Status
- * 4. Scheduled Release Date
- * 5. Preview Mode Request
- * 6. Free Access Policy
- * 7. Viewer Authentication Check
- * 8. Entitlement Verification (PPV Pass / SVOD Channel Subscription / Hybrid)
- * 9. Fail-Closed Default Denial
  */
 export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAccessDecisionResult {
   const now = params.currentTime || new Date();
+  const nowMs = now.getTime();
   const evaluatedAt = now.toISOString();
 
   // 1. Channel Existence & Active Status
@@ -206,7 +228,9 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
           contentId: content.id,
           contentType: params.contentType,
           channelId: channel.id,
-          playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, film.trailer_video_url, now, false),
+          previewUrl: film.trailer_video_url, // ONLY promotional trailer URL, NEVER master
+          entitlementGrant: generateEntitlementGrant(content.id, params.viewer?.id || 'anon', channel.id, 'trailer_preview', now, false),
+          playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, now, false),
           evaluatedAt,
         };
       }
@@ -219,7 +243,8 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
         contentId: content.id,
         contentType: params.contentType,
         channelId: channel.id,
-        playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, content.master_video_url || '', now, false),
+        entitlementGrant: generateEntitlementGrant(content.id, params.viewer?.id || 'anon', channel.id, 'trailer_preview', now, false),
+        playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, now, false),
         evaluatedAt,
       };
     }
@@ -235,7 +260,8 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
       contentId: content.id,
       contentType: params.contentType,
       channelId: channel.id,
-      playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, content.master_video_url || '', now, false),
+      entitlementGrant: generateEntitlementGrant(content.id, params.viewer?.id || 'anon', channel.id, 'free', now, false),
+      playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, now, false),
       evaluatedAt,
     };
   }
@@ -249,7 +275,8 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
       contentId: content.id,
       contentType: params.contentType,
       channelId: channel.id,
-      playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, content.master_video_url || '', now, false),
+      entitlementGrant: generateEntitlementGrant(content.id, params.viewer?.id || 'anon', channel.id, 'trailer_preview', now, false),
+      playbackSession: generatePlaybackSession(content.id, params.viewer?.id || 'anon', channel.id, now, false),
       evaluatedAt,
     };
   }
@@ -279,7 +306,7 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
   const userPasses = params.userPasses || [];
   const userSubs = params.userSubscriptions || [];
 
-  // 10. Policy: PPV / TVOD (Single-item ticket or Season pass)
+  // 10. Policy: PPV / TVOD (Single-item ticket or Granular Season pass)
   if (content.access_policy === 'ppv_tvod') {
     return evaluatePpvEntitlement({
       viewer,
@@ -289,6 +316,7 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
       contentType: params.contentType,
       userPasses,
       now,
+      nowMs,
       evaluatedAt,
     });
   }
@@ -302,6 +330,7 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
       contentType: params.contentType,
       userSubs,
       now,
+      nowMs,
       evaluatedAt,
     });
   }
@@ -316,6 +345,7 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
       contentType: params.contentType,
       userSubs,
       now,
+      nowMs,
       evaluatedAt,
     });
 
@@ -332,6 +362,7 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
       contentType: params.contentType,
       userPasses,
       now,
+      nowMs,
       evaluatedAt,
     });
 
@@ -339,12 +370,12 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
       return ppvResult;
     }
 
-    // If either resulted in revoked or expired, prioritize specific status
+    // Specific error priority
     if (ppvResult.status === 'ACCESS_REVOKED') return ppvResult;
     if (ppvResult.status === 'ENTITLEMENT_EXPIRED' && svodResult.status !== 'ENTITLEMENT_EXPIRED') return ppvResult;
     if (svodResult.status === 'ENTITLEMENT_EXPIRED') return svodResult;
 
-    // Both not owned: present dual monetization prompt
+    // Both unowned: present prompt
     return {
       allowed: false,
       status: 'PAYMENT_REQUIRED',
@@ -377,6 +408,7 @@ export function resolveOttContentAccess(params: ResolveOttAccessParams): OttAcce
 
 /**
  * Internal evaluator for PPV / TVOD entitlements.
+ * Granular Season Pass: Matches content_id against season_id for episodes.
  */
 function evaluatePpvEntitlement(args: {
   viewer: { id: string };
@@ -386,15 +418,17 @@ function evaluatePpvEntitlement(args: {
   contentType: 'episode' | 'film';
   userPasses: OttAccessPass[];
   now: Date;
+  nowMs: number;
   evaluatedAt: string;
 }): OttAccessDecisionResult {
-  const { viewer, channel, content, parentSeries, contentType, userPasses, now, evaluatedAt } = args;
+  const { viewer, channel, content, contentType, userPasses, now, nowMs, evaluatedAt } = args;
   const contentTitle = content.title || 'Untitled Content';
   const ppvPrice = (content as any).ppv_price_idr || 0;
 
   // Find candidate passes:
   // Must match viewer.id AND channel.id
-  // Must match either direct content_id OR parent series id if pass is 'series_season_pass'
+  // 1. Direct item pass: content_id === content.id AND content_type === contentType
+  // 2. Season pass: contentType === 'episode' AND content_type IN ('season', 'series_season_pass') AND content_id === (content as OttEpisode).season_id
   const matchingPass = userPasses.find((p) => {
     if (p.user_id !== viewer.id) return false;
     if (p.channel_id !== channel.id) return false;
@@ -404,12 +438,11 @@ function evaluatePpvEntitlement(args: {
       return true;
     }
 
-    // Series season pass unlocking any episode within that series
+    // Granular Season pass: Matches the specific season_id of this episode
     if (
       contentType === 'episode' &&
-      parentSeries &&
-      p.content_id === parentSeries.id &&
-      p.content_type === 'series_season_pass'
+      (p.content_type === 'season' || p.content_type === 'series_season_pass') &&
+      p.content_id === (content as OttEpisode).season_id
     ) {
       return true;
     }
@@ -454,8 +487,21 @@ function evaluatePpvEntitlement(args: {
     };
   }
 
-  // Status check: Expired
-  const isTimeExpired = matchingPass.valid_until && new Date(matchingPass.valid_until).getTime() < now.getTime();
+  // Time boundaries: valid_from and valid_until
+  const validFromMs = new Date(matchingPass.valid_from).getTime();
+  if (nowMs < validFromMs) {
+    return {
+      allowed: false,
+      status: 'ENTITLEMENT_EXPIRED',
+      reason: 'Access pass is not yet active.',
+      contentId: content.id,
+      contentType,
+      channelId: channel.id,
+      evaluatedAt,
+    };
+  }
+
+  const isTimeExpired = matchingPass.valid_until && new Date(matchingPass.valid_until).getTime() <= nowMs;
   if (matchingPass.status === 'expired' || isTimeExpired) {
     return {
       allowed: false,
@@ -475,7 +521,7 @@ function evaluatePpvEntitlement(args: {
     };
   }
 
-  // Valid Active PPV Pass
+  // Valid Active PPV Pass -> Return Ephemeral Grant (NO raw master URL)
   return {
     allowed: true,
     status: 'ALLOWED_PPV',
@@ -483,11 +529,18 @@ function evaluatePpvEntitlement(args: {
     contentId: content.id,
     contentType,
     channelId: channel.id,
+    entitlementGrant: generateEntitlementGrant(
+      content.id,
+      viewer.id,
+      channel.id,
+      'ppv_tvod',
+      now,
+      true
+    ),
     playbackSession: generatePlaybackSession(
       content.id,
       viewer.id,
       channel.id,
-      content.master_video_url || '',
       now,
       true
     ),
@@ -497,6 +550,7 @@ function evaluatePpvEntitlement(args: {
 
 /**
  * Internal evaluator for SVOD channel subscriptions.
+ * Handles lifecycle: active, cancelled (grace period until end), expired, past_due, revoked.
  */
 function evaluateSvodEntitlement(args: {
   viewer: { id: string };
@@ -505,9 +559,10 @@ function evaluateSvodEntitlement(args: {
   contentType: 'episode' | 'film';
   userSubs: OttViewerSubscription[];
   now: Date;
+  nowMs: number;
   evaluatedAt: string;
 }): OttAccessDecisionResult {
-  const { viewer, channel, content, contentType, userSubs, now, evaluatedAt } = args;
+  const { viewer, channel, content, contentType, userSubs, now, nowMs, evaluatedAt } = args;
   const contentTitle = content.title || 'Untitled Content';
 
   const matchingSub = userSubs.find((s) => s.user_id === viewer.id && s.channel_id === channel.id);
@@ -529,9 +584,42 @@ function evaluateSvodEntitlement(args: {
     };
   }
 
-  const periodEndMs = new Date(matchingSub.current_period_end).getTime();
-  const hasEnded = periodEndMs < now.getTime();
+  // Revocation
+  if (matchingSub.status === 'revoked') {
+    return {
+      allowed: false,
+      status: 'ACCESS_REVOKED',
+      reason: 'Your channel subscription access has been revoked.',
+      contentId: content.id,
+      contentType,
+      channelId: channel.id,
+      monetizationPrompt: {
+        requiredAction: 'contact_support',
+        channelId: channel.id,
+        contentTitle,
+      },
+      evaluatedAt,
+    };
+  }
 
+  const startMs = new Date(matchingSub.current_period_start).getTime();
+  const endMs = new Date(matchingSub.current_period_end).getTime();
+
+  // Period not yet started
+  if (nowMs < startMs) {
+    return {
+      allowed: false,
+      status: 'ENTITLEMENT_EXPIRED',
+      reason: 'Subscription period has not commenced yet.',
+      contentId: content.id,
+      contentType,
+      channelId: channel.id,
+      evaluatedAt,
+    };
+  }
+
+  // Period expired or past due
+  const hasEnded = nowMs >= endMs;
   if (matchingSub.status === 'expired' || matchingSub.status === 'past_due' || hasEnded) {
     return {
       allowed: false,
@@ -549,19 +637,29 @@ function evaluateSvodEntitlement(args: {
     };
   }
 
-  if (matchingSub.status === 'active' || (matchingSub.status === 'cancelled' && !hasEnded)) {
+  // Active OR Cancelled where paid period is still valid (nowMs < endMs)
+  if (matchingSub.status === 'active' || matchingSub.status === 'cancelled') {
     return {
       allowed: true,
       status: 'ALLOWED_SVOD',
-      reason: 'Active channel subscription entitlement confirmed.',
+      reason: matchingSub.status === 'cancelled'
+        ? 'Subscription renewal cancelled, but paid access is active until end of billing cycle.'
+        : 'Active channel subscription entitlement confirmed.',
       contentId: content.id,
       contentType,
       channelId: channel.id,
+      entitlementGrant: generateEntitlementGrant(
+        content.id,
+        viewer.id,
+        channel.id,
+        'svod_subscriber',
+        now,
+        true
+      ),
       playbackSession: generatePlaybackSession(
         content.id,
         viewer.id,
         channel.id,
-        content.master_video_url || '',
         now,
         true
       ),
@@ -592,15 +690,17 @@ export function createTestOttAccessPass(
   params: {
     userId: string;
     channelId: string;
-    contentType: 'episode' | 'film' | 'series_season_pass';
+    contentType: 'episode' | 'film' | 'season' | 'series_season_pass';
     contentId: string;
     status?: 'active' | 'expired' | 'revoked';
     validHours?: number;
     pricePaidIdr?: number;
+    validFrom?: string;
     now?: Date;
   }
 ): OttAccessPass {
   const now = params.now || new Date();
+  const validFrom = params.validFrom || now.toISOString();
   const validUntil = params.validHours !== undefined
     ? new Date(now.getTime() + params.validHours * 60 * 60 * 1000).toISOString()
     : null;
@@ -615,7 +715,7 @@ export function createTestOttAccessPass(
     price_paid_idr: params.pricePaidIdr !== undefined ? params.pricePaidIdr : 15000,
     currency: 'IDR',
     status: params.status || 'active',
-    valid_from: now.toISOString(),
+    valid_from: validFrom,
     valid_until: validUntil,
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
@@ -629,16 +729,21 @@ export function createTestOttViewerSubscription(
   params: {
     userId: string;
     channelId: string;
-    status?: 'active' | 'cancelled' | 'expired' | 'past_due';
+    status?: 'active' | 'cancelled' | 'expired' | 'past_due' | 'revoked';
     tierName?: string;
     validDays?: number;
+    startDaysOffset?: number;
     pricePaidIdr?: number;
+    autoRenew?: boolean;
     now?: Date;
   }
 ): OttViewerSubscription {
   const now = params.now || new Date();
+  const startOffsetDays = params.startDaysOffset !== undefined ? params.startDaysOffset : 0;
   const validDays = params.validDays !== undefined ? params.validDays : 30;
-  const currentPeriodEnd = new Date(now.getTime() + validDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const currentPeriodStart = new Date(now.getTime() + startOffsetDays * 24 * 60 * 60 * 1000).toISOString();
+  const currentPeriodEnd = new Date(now.getTime() + (startOffsetDays + validDays) * 24 * 60 * 60 * 1000).toISOString();
 
   return {
     id: `vsub_${Math.random().toString(36).substring(2, 10)}`,
@@ -648,9 +753,9 @@ export function createTestOttViewerSubscription(
     billing_cycle: 'monthly',
     status: params.status || 'active',
     price_paid_idr: params.pricePaidIdr !== undefined ? params.pricePaidIdr : 49000,
-    current_period_start: now.toISOString(),
+    current_period_start: currentPeriodStart,
     current_period_end: currentPeriodEnd,
-    auto_renew: true,
+    auto_renew: params.autoRenew !== undefined ? params.autoRenew : true,
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
   };

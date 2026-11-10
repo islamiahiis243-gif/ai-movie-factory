@@ -27,8 +27,8 @@ CREATE TABLE IF NOT EXISTS public.ott_channels (
     social_links JSONB NOT NULL DEFAULT '{}'::jsonb,
     is_verified BOOLEAN NOT NULL DEFAULT false,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'archived')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ----------------------------------------------------------------------------
@@ -56,8 +56,8 @@ CREATE TABLE IF NOT EXISTS public.ott_series (
     publication_status TEXT NOT NULL DEFAULT 'draft_catalog'
         CHECK (publication_status IN ('draft_catalog', 'ready_for_catalog', 'published', 'archived')),
     featured BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(channel_id, slug)
 );
 
@@ -74,8 +74,8 @@ CREATE TABLE IF NOT EXISTS public.ott_seasons (
     episodes_count INTEGER NOT NULL DEFAULT 0,
     publication_status TEXT NOT NULL DEFAULT 'draft_catalog'
         CHECK (publication_status IN ('draft_catalog', 'published', 'archived')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(series_id, season_number)
 );
 
@@ -111,8 +111,8 @@ CREATE TABLE IF NOT EXISTS public.ott_episodes (
     subtitle_vtt_url TEXT,
     chapters_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(season_id, episode_number)
 );
 
@@ -153,8 +153,8 @@ CREATE TABLE IF NOT EXISTS public.ott_films (
     subtitle_vtt_url TEXT,
     chapters_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(channel_id, slug)
 );
 
@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS public.ott_cast_members (
     role_type TEXT NOT NULL DEFAULT 'lead_actor'
         CHECK (role_type IN ('lead_actor', 'supporting_actor', 'voice_actor', 'director', 'writer', 'ai_cinematographer')),
     avatar_url TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ----------------------------------------------------------------------------
@@ -274,30 +274,35 @@ ALTER TABLE public.ott_films ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ott_cast_members ENABLE ROW LEVEL SECURITY;
 
 -- Channels Policies
+DROP POLICY IF EXISTS "Channel owner full access" ON public.ott_channels;
 CREATE POLICY "Channel owner full access"
     ON public.ott_channels
     FOR ALL
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Public read active channels" ON public.ott_channels;
 CREATE POLICY "Public read active channels"
     ON public.ott_channels
     FOR SELECT
     USING (status = 'active');
 
 -- Series Policies
+DROP POLICY IF EXISTS "Series owner full access" ON public.ott_series;
 CREATE POLICY "Series owner full access"
     ON public.ott_series
     FOR ALL
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Public read published series" ON public.ott_series;
 CREATE POLICY "Public read published series"
     ON public.ott_series
     FOR SELECT
     USING (publication_status = 'published');
 
 -- Seasons Policies
+DROP POLICY IF EXISTS "Seasons owner full access" ON public.ott_seasons;
 CREATE POLICY "Seasons owner full access"
     ON public.ott_seasons
     FOR ALL
@@ -309,42 +314,49 @@ CREATE POLICY "Seasons owner full access"
         )
     );
 
+DROP POLICY IF EXISTS "Public read published seasons" ON public.ott_seasons;
 CREATE POLICY "Public read published seasons"
     ON public.ott_seasons
     FOR SELECT
     USING (publication_status = 'published');
 
 -- Episodes Policies
+DROP POLICY IF EXISTS "Episodes owner full access" ON public.ott_episodes;
 CREATE POLICY "Episodes owner full access"
     ON public.ott_episodes
     FOR ALL
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Public read published episodes" ON public.ott_episodes;
 CREATE POLICY "Public read published episodes"
     ON public.ott_episodes
     FOR SELECT
     USING (publication_status = 'published');
 
 -- Films Policies
+DROP POLICY IF EXISTS "Films owner full access" ON public.ott_films;
 CREATE POLICY "Films owner full access"
     ON public.ott_films
     FOR ALL
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Public read published films" ON public.ott_films;
 CREATE POLICY "Public read published films"
     ON public.ott_films
     FOR SELECT
     USING (publication_status = 'published');
 
 -- Cast Members Policies
+DROP POLICY IF EXISTS "Cast owner full access" ON public.ott_cast_members;
 CREATE POLICY "Cast owner full access"
     ON public.ott_cast_members
     FOR ALL
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Public read cast members" ON public.ott_cast_members;
 CREATE POLICY "Public read cast members"
     ON public.ott_cast_members
     FOR SELECT

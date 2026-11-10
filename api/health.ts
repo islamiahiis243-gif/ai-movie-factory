@@ -42,6 +42,7 @@ export default function handler(req: any, res: any) {
     },
     configuredServices: {
       supabasePublicClient: isSupabasePublicConfigured,
+      supabaseUserAuthReady: isSupabasePublicConfigured,
       supabaseServiceRoleServerOnly: Boolean(
         supabaseSecretKey && !supabaseSecretKey.includes('your-supabase')
       ),
@@ -50,6 +51,8 @@ export default function handler(req: any, res: any) {
       stripeWebhookVerifier: Boolean(stripeWebhookSecret),
       cronWorkerConfigured: Boolean(cronSecret),
       oauthVaultConfigured: Boolean(oauthEncryptionKey),
+      // Server-side Social Publishing APIs (Phase 4 Distribution Engine):
+      // Note: User sign-in with Google is handled directly via Supabase Auth (supabaseUserAuthReady).
       googleOAuthConfigured: Boolean(
         (process.env.YOUTUBE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID) &&
         (process.env.YOUTUBE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET)

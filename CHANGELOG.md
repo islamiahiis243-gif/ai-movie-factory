@@ -3,9 +3,45 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Gelombang II - Milestone 2.9.1] - OTT Content Access Control & Entitlement Engine - 2026-11-11 01:15 +07:00
+## [Gelombang II - Milestone 2.9.1] - OTT Content Access Control & Entitlement Engine (Post-Audit Hardened) - 2026-11-11 01:35 +07:00
 
 ### Added, Hardened & Reconciled
+- **Penerapan Nyata Migrasi Database Produksi Supabase (`upgrade_v3_14` & `upgrade_v3_15`):**
+  - Seluruh 8 tabel katalog dan entitlement OTT telah diterapkan secara live di database PostgreSQL Supabase produksi (`jixfakvbhugpypjtyshq`):
+    * `public.ott_channels` (13 kolom, indeks unik slug & user_id, RLS aktif)
+    * `public.ott_series` (19 kolom, format vertikal 9:16 / sinematik, RLS aktif)
+    * `public.ott_seasons` (10 kolom, nomor urut musim, RLS aktif)
+    * `public.ott_episodes` (24 kolom, relasi Gate 5 master asset, trigger guard publikasi, RLS aktif)
+    * `public.ott_films` (28 kolom, standalone movie catalog, RLS aktif)
+    * `public.ott_cast_members` (9 kolom, kredit DNA karakter, RLS aktif)
+    * `public.ott_access_passes` (13 kolom, tiket PPV & Season Pass granular, RLS aktif)
+    * `public.ott_viewer_subscriptions` (12 kolom, langganan SVOD tingkat kanal, RLS aktif)
+  - **Pencabutan Hak Tulis Langsung (Privilege Hardening):** Hak `INSERT`, `UPDATE`, `DELETE` secara tegas dicabut (`REVOKE`) dari role `anon` dan `authenticated`. Penulisan entitlement hanya dapat dilakukan oleh `service_role` (backend webhook fulfillment).
+  - **Isolasi Baca RLS:** Role `anon` dibatasi total (0 rows visible) pada tabel entitlement privat.
+  - **Prosedur Rollback Terverifikasi:** Disediakan file `supabase/rollback_v3_15_ott_entitlement_engine.sql` untuk membatalkan skema entitlement secara atomik dan aman tanpa memengaruhi data Creator SaaS.
+- **Pemisahan Tegas Entitlement Otorisasi vs Playback (Anti-URL Leakage):**
+  - Mengeliminasi mutlak pembocoran raw master video storage URL (`master_video_url`) pada respons keputusan otorisasi penonton.
+  - Penonton yang berhak menerima token grant terenkripsi berdurasi 6 jam (`entitlementGrant.grantToken`) yang akan diverifikasi oleh video player streaming pada Milestone 2.9.2.
+  - Pratinjau cuplikan (`isPreviewRequest === true` / `ALLOWED_PREVIEW`) secara ketat hanya mengembalikan `previewUrl` (trailer promosi), bukan file master produksi.
+- **Granularitas Season Pass & Integritas Relasi:**
+  - `content_type` mendukung `'season'` dan `'series_season_pass'` yang secara presisi mengunci `content_id` ke ID musim spesifik (`ott_seasons.id`).
+  - Tiket Musim 1 terbukti secara otomatis membuka Episode 1 & 2 pada Musim 1, namun ditolak secara mutlak pada Episode Musim 2 (`PAYMENT_REQUIRED`).
+  - Dilengkapi trigger database `check_ott_access_pass_channel_integrity()` yang mencegah tiket diterbitkan untuk konten yang berbeda dengan kanal target.
+- **Semantik Lifecycle SVOD & Masa Tenggang Pembatalan (Grace Period):**
+  - Penonton yang membatalkan perpanjangan otomatis (`status = 'cancelled'`) tetap memiliki hak akses penuh (`ALLOWED_SVOD`) selama periode tagihan berjalan (`now < current_period_end`).
+  - Begitu waktu kedaluwarsa terlewati (`now >= current_period_end`), akses langsung ditutup (`ENTITLEMENT_EXPIRED`).
+  - Status `revoked` secara langsung mencabut hak akses (`ACCESS_REVOKED`).
+- **Standardisasi Waktu UTC (`now()`):**
+  - Mengganti seluruh `timezone('utc'::text, now())` menjadi `now()` langsung pada kolom `TIMESTAMPTZ` untuk mencegah pergeseran zona waktu sesi database.
+  - Pengujian batas waktu presisi: tepat pada saat mulai (`valid_from`), sebelum mulai, dan tepat saat kedaluwarsa (`valid_until`).
+- **Klarifikasi Indikator Healthcheck OAuth:**
+  - Menambahkan `supabaseUserAuthReady: true` pada `/api/health` untuk mengonfirmasi ketersediaan autentikasi login pengguna via Google OAuth Supabase.
+  - Menjelaskan bahwa `googleOAuthConfigured` merujuk secara spesifik ke kredensial YouTube / Google Publishing API server-side pada Fase 4 Distribusi Medsos.
+- **Pemisahan Rangkaian Uji Unit, Integrasi Database & Live Production:**
+  - **Unit & Logic Tests (`scripts/test_ott_entitlement_engine.ts`):** 72 assertions deterministik (100% PASS).
+  - **Live Database Integration Tests (`scripts/test_ott_database_integration.ts`):** 14 assertions langsung terhadap Supabase PostgreSQL produksi (100% PASS).
+  - **Total Rangkaian Otomatis AMF:** 321 assertions (100% PASS).
+
 - **Isolasi Domain Bisnis Total (OTT Commerce vs Creator SaaS):**
   - Mempertahankan segregasi mutlak antara domain penagihan internal kreator AI Movie Factory (`subscriptions`, `payment_orders`, kuota/kredit AI AMF) dengan entitas kepemilikan akses dan tiket penonton (`ott_access_passes`, `ott_viewer_subscriptions`).
 - **Skema Relasional Hak Akses Penonton (`supabase/upgrade_v3_15_ott_entitlement_engine.sql`):**

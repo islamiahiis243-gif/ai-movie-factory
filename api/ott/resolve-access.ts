@@ -1,12 +1,15 @@
 /**
  * Vercel Serverless Function: /api/ott/resolve-access
  * AI Movie Factory — Phase 6: Web & Independent OTT Publishing Studio
- * Milestone 2.9.1: Content Access Control & Entitlement Engine Endpoint
+ * Milestone 2.9.1: Hardened Content Access Control & Entitlement Engine Endpoint
  * 
  * Strict Architectural Invariants:
  * 1. Strict Isolation from AMF Creator Studio SaaS Billing & AI Credits.
- * 2. Fail-Closed: Never returns videoUrl unless entitlement is 100% verified.
- * 3. Sanitized Logs: Never logs bearer tokens, secret keys, or sensitive credentials.
+ * 2. Identity Guard: Never trusts user_id from client request. User identity is derived
+ *    strictly from verified Supabase Auth JWT.
+ * 3. URL Privacy: Master video storage URLs are NEVER returned. The response provides
+ *    an ephemeral entitlement grant token (Milestone 2.9.1 scope).
+ * 4. Sanitized Logs: Never logs bearer tokens, secret keys, or sensitive credentials.
  */
 
 import { authenticateServerlessRequest, getSupabaseAdmin } from '../../server/supabaseAdmin.ts';
@@ -49,7 +52,7 @@ export default async function handler(req: any, res: any) {
     contentId,
     contentType,
     isPreview = false,
-    _mockData, // In-memory deterministic injection for test suites
+    _mockData, // For deterministic test suites without database connection
   } = body || {};
 
   if (!channelId || !contentId || !contentType) {
@@ -66,7 +69,8 @@ export default async function handler(req: any, res: any) {
     });
   }
 
-  // 1. Resolve viewer identity (if Authorization provided or testUser injected)
+  // 1. Resolve viewer identity strictly from authenticated JWT
+  // NEVER trust body.user_id or body.userId
   let viewer: { id: string; email?: string } | null = null;
   let adminSupabase: any = null;
 
@@ -83,8 +87,17 @@ export default async function handler(req: any, res: any) {
       }
     }
   } catch {
-    // If bearer token was invalid, viewer remains null (anonymous)
+    // If bearer token was invalid, viewer remains null (anonymous visitor)
     viewer = null;
+  }
+
+  // If adminSupabase is not initialized yet (e.g. anonymous visitor), initialize it to query catalog
+  if (!adminSupabase) {
+    try {
+      adminSupabase = getSupabaseAdmin();
+    } catch {
+      adminSupabase = null;
+    }
   }
 
   // 2. Fetch Channel, Content, and Entitlements
@@ -94,7 +107,7 @@ export default async function handler(req: any, res: any) {
   let userPasses: OttAccessPass[] = [];
   let userSubscriptions: OttViewerSubscription[] = [];
 
-  // If deterministic mock data is provided in request (e.g. unit/integration test harness)
+  // Deterministic mock injection path (for isolated unit tests)
   if (_mockData) {
     channel = _mockData.channel || null;
     content = _mockData.content || null;
@@ -102,28 +115,40 @@ export default async function handler(req: any, res: any) {
     userPasses = _mockData.userPasses || [];
     userSubscriptions = _mockData.userSubscriptions || [];
   } else if (adminSupabase) {
+    // Live database query path
     try {
-      // Query database via Admin client
-      const { data: chanData } = await adminSupabase
+      const { data: chanData, error: chanErr } = await adminSupabase
         .from('ott_channels')
         .select('*')
         .eq('id', channelId)
-        .single();
+        .maybeSingle();
+
+      if (chanErr) {
+        console.error('[OTT Entitlement] Error fetching channel:', chanErr.message);
+      }
       channel = chanData;
 
       if (contentType === 'film') {
-        const { data: filmData } = await adminSupabase
+        const { data: filmData, error: filmErr } = await adminSupabase
           .from('ott_films')
           .select('*')
           .eq('id', contentId)
-          .single();
+          .maybeSingle();
+
+        if (filmErr) {
+          console.error('[OTT Entitlement] Error fetching film:', filmErr.message);
+        }
         content = filmData;
       } else {
-        const { data: epData } = await adminSupabase
+        const { data: epData, error: epErr } = await adminSupabase
           .from('ott_episodes')
           .select('*')
           .eq('id', contentId)
-          .single();
+          .maybeSingle();
+
+        if (epErr) {
+          console.error('[OTT Entitlement] Error fetching episode:', epErr.message);
+        }
         content = epData;
 
         if (content && (content as OttEpisode).series_id) {
@@ -131,28 +156,37 @@ export default async function handler(req: any, res: any) {
             .from('ott_series')
             .select('*')
             .eq('id', (content as OttEpisode).series_id)
-            .single();
+            .maybeSingle();
           parentSeries = serData || undefined;
         }
       }
 
+      // Query entitlements only for verified authenticated viewer
       if (viewer && viewer.id) {
-        const { data: passes } = await adminSupabase
+        const { data: passes, error: passErr } = await adminSupabase
           .from('ott_access_passes')
           .select('*')
           .eq('user_id', viewer.id)
           .eq('channel_id', channelId);
+
+        if (passErr) {
+          console.error('[OTT Entitlement] Error fetching passes:', passErr.message);
+        }
         userPasses = passes || [];
 
-        const { data: subs } = await adminSupabase
+        const { data: subs, error: subErr } = await adminSupabase
           .from('ott_viewer_subscriptions')
           .select('*')
           .eq('user_id', viewer.id)
           .eq('channel_id', channelId);
+
+        if (subErr) {
+          console.error('[OTT Entitlement] Error fetching subscriptions:', subErr.message);
+        }
         userSubscriptions = subs || [];
       }
     } catch (err: any) {
-      console.error('[OTT Entitlement] Error fetching catalog entities:', err.message);
+      console.error('[OTT Entitlement] Fatal error during database resolution:', err.message);
     }
   }
 
@@ -171,9 +205,11 @@ export default async function handler(req: any, res: any) {
   const decision = resolveOttContentAccess(resolveParams);
 
   // 4. Strict Security Sanitation Post-Condition:
-  // If decision is not allowed, NEVER return playbackSession or URLs
+  // Zero master video URL exposure in Milestone 2.9.1!
   if (!decision.allowed) {
+    delete decision.entitlementGrant;
     delete decision.playbackSession;
+    delete decision.previewUrl;
   }
 
   // 5. Response Mapping
