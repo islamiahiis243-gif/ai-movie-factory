@@ -1846,75 +1846,287 @@ async function runMilestoneGatesAudit() {
   );
 
   // --------------------------------------------------------------------------
-  // [TEST 28] Verifying DJP Legal Tax Regimes & Eligibility Compliance
+  // [TEST 28] Verifying DJP Legal Tax Model Separation & Calculation Validation (Milestone 2.8.3)
   // --------------------------------------------------------------------------
-  console.log('\n[TEST 28] Verifying DJP Legal Tax Regimes & Eligibility Compliance');
+  console.log('\n[TEST 28] Verifying DJP Legal Tax Model Separation & Calculation Validation (Milestone 2.8.3)');
 
-  // PPh Final UMKM for WP OP with omzet <= 500M (Fasilitas bebas pajak UU HPP)
-  const reportUmkmUnder500M = calculateComprehensiveFinancialReport({
-    milestones: mockMilestones,
-    creditTransactions: mockCreditTransactions,
-    paymentOrders: mockPaymentOrders,
+  // 1. PPh Final UMKM WP OP progressive threshold (omzet Rp 650 juta: 500M exempt, 150M taxable @ 0.5% = 750.000)
+  const reportProgressive500M = calculateComprehensiveFinancialReport({
+    milestones: [
+      {
+        id: 'm-650m',
+        user_id: 'usr-fin-1',
+        project_id: 'proj-sci-fi-01',
+        project_name: 'Hit Movie Release',
+        platform: 'youtube' as const,
+        views_count: 5000000,
+        likes_count: 200000,
+        comments_count: 10000,
+        revenue_earned: 650000000,
+        currency: 'IDR',
+        release_date: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      },
+    ],
+    creditTransactions: [],
     taxRegime: 'pph_final_umkm',
     taxPayerCategory: 'wp_op_umkm',
-    isUmkmRevenueOver500M: false,
+    cumulativeAnnualGrossRevenue: 650000000,
   });
   assert(
-    reportUmkmUnder500M.taxIdr === 0,
-    'PPh Final UMKM applies Rp 0 tax when WP OP annual gross revenue is under Rp 500M threshold (UU HPP)',
-    `Expected 0, got ${reportUmkmUnder500M.taxIdr}`
+    reportProgressive500M.taxBreakdown.pphTaxableBaseIdr === 150000000,
+    'DPP PPh Final WP OP is strictly the excess above Rp 500M (650M - 500M = Rp 150.000.000)',
+    `Expected 150.000.000, got ${reportProgressive500M.taxBreakdown.pphTaxableBaseIdr}`
+  );
+  assert(
+    reportProgressive500M.taxBreakdown.pphStudioIdr === 750000,
+    'PPh Final is 0.5% x 150M = Rp 750.000 (strictly NOT 0.5% x 650M)',
+    `Expected 750.000, got ${reportProgressive500M.taxBreakdown.pphStudioIdr}`
   );
 
-  // PPN 11% Efektif (PMK 131/2024): Dikenakan pada DPP Penyerahan (5.100.000 * 11% = 561.000), BUKAN laba bersih!
-  const reportPpn = calculateComprehensiveFinancialReport({
+  // 2. PP 20/2026 Subject Eligibility Validation
+  // 2a. PT Perorangan 1 Orang (Eligible 0.5% without 500M OP exemption)
+  const reportPtPerorangan = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-pt', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 100000000, currency: 'IDR' }],
+    creditTransactions: [],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'pt_perorangan_umkm',
+  });
+  assert(
+    reportPtPerorangan.taxBreakdown.isPphEligible === true && reportPtPerorangan.taxBreakdown.pphStudioIdr === 500000,
+    'PT Perorangan 1 orang per PP 20/2026 is eligible for 0.5% PPh Final UMKM',
+    `Expected eligible with 500.000 tax, got ${reportPtPerorangan.taxBreakdown.pphStudioIdr}`
+  );
+
+  // 2b. Koperasi Dalam Negeri (Eligible 0.5% per PP 20/2026)
+  const reportKoperasi = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-kop', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 100000000, currency: 'IDR' }],
+    creditTransactions: [],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'koperasi_umkm',
+  });
+  assert(
+    reportKoperasi.taxBreakdown.isPphEligible === true && reportKoperasi.taxBreakdown.pphStudioIdr === 500000,
+    'Koperasi dalam negeri per PP 20/2026 is eligible for 0.5% PPh Final UMKM'
+  );
+
+  // 2c. CV, Firma, PT Baru (Non-eligible 0.5% per PP 20/2026 - must use Pasal 17)
+  const reportCvFirma = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-cv', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 100000000, currency: 'IDR' }],
+    creditTransactions: [],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'cv_firma_pt_baru',
+  });
+  assert(
+    reportCvFirma.taxBreakdown.isPphEligible === false,
+    'CV, Firma, dan PT Baru per PP 20/2026 are strictly ineligible for 0.5% PPh Final UMKM'
+  );
+
+  // 2d. Omzet limit > 4.8 Miliar
+  const reportOver48B = calculateComprehensiveFinancialReport({
+    milestones: [{ id: 'm-big', user_id: 'u1', platform: 'youtube' as const, revenue_earned: 5000000000, currency: 'IDR' }],
+    creditTransactions: [],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'wp_op_umkm',
+    cumulativeAnnualGrossRevenue: 5000000000,
+  });
+  assert(
+    reportOver48B.taxBreakdown.isPphEligible === false,
+    'Cumulative revenue above Rp 4.8 Billion is strictly ineligible for PPh Final UMKM'
+  );
+
+  // 3. PPN Non-Mewah PMK 131/2024 (DPP Nilai Lain 11/12 -> Effective 11%)
+  // 3a. Pricing Scheme: Inclusive (DPP = Harga / 1,11)
+  const reportPpnInclusive = calculateComprehensiveFinancialReport({
+    milestones: [],
+    creditTransactions: [],
+    paymentOrders: [
+      {
+        id: 'ord-ppn-1',
+        order_number: 'ORD-PPN-INCL-01',
+        amount: 11100000,
+        status: 'completed',
+        payment_method: 'qris',
+        package_name: 'Tiket VIP Screening',
+        created_at: new Date().toISOString(),
+      },
+    ],
+    isPkp: true,
+    ppnPricingScheme: 'inclusive',
+  });
+  assert(
+    reportPpnInclusive.taxBreakdown.ppnDppIdr === 10000000,
+    'PPN non-mewah inclusive ticket separates DPP with 1.11 divisor (11.100.000 / 1.11 = 10.000.000)',
+    `Expected DPP 10.000.000, got ${reportPpnInclusive.taxBreakdown.ppnDppIdr}`
+  );
+  assert(
+    reportPpnInclusive.taxBreakdown.ppnOutputCollectedIdr === 1100000,
+    'PPN Keluaran 11% efektif = 11.100.000 - 10.000.000 = Rp 1.100.000',
+    `Expected PPN 1.100.000, got ${reportPpnInclusive.taxBreakdown.ppnOutputCollectedIdr}`
+  );
+
+  // 3b. Pricing Scheme: Exclusive (DPP = Harga, PPN = 11% x DPP)
+  const reportPpnExclusive = calculateComprehensiveFinancialReport({
+    milestones: [],
+    creditTransactions: [],
+    paymentOrders: [
+      {
+        id: 'ord-ppn-2',
+        order_number: 'ORD-PPN-EXCL-02',
+        amount: 10000000,
+        status: 'completed',
+        payment_method: 'qris',
+        package_name: 'Tiket Studio Exclusive',
+        created_at: new Date().toISOString(),
+      },
+    ],
+    isPkp: true,
+    ppnPricingScheme: 'exclusive',
+  });
+  assert(
+    reportPpnExclusive.taxBreakdown.ppnDppIdr === 10000000 && reportPpnExclusive.taxBreakdown.ppnOutputCollectedIdr === 1100000,
+    'PPN exclusive ticket applies 11% on DPP (10.000.000 * 11% = 1.100.000)'
+  );
+
+  // 4. Domestic Tickets vs Foreign Platform Revenue (AdSense / TikTok Rewards)
+  const reportAdsenseExport = calculateComprehensiveFinancialReport({
+    milestones: [
+      {
+        id: 'm-adsense',
+        user_id: 'u1',
+        platform: 'youtube' as const,
+        project_name: 'YouTube Global AdSense',
+        revenue_earned: 50000000,
+        currency: 'IDR',
+      },
+    ],
+    creditTransactions: [],
+    paymentOrders: [
+      {
+        id: 'ord-loc',
+        order_number: 'ORD-LOC-01',
+        amount: 11100000,
+        status: 'completed',
+        payment_method: 'qris',
+        package_name: 'Tiket Nobar Lokal',
+        created_at: new Date().toISOString(),
+      },
+    ],
+    isPkp: true,
+    isExportServiceVerified: true,
+  });
+  assert(
+    reportAdsenseExport.taxBreakdown.foreignPlatformTaxStatus === 'EXPORT_ZERO_RATED',
+    'Verified YouTube AdSense from Google Asia Pacific is classified as 0% export service, not lumped into domestic VAT'
+  );
+  assert(
+    reportAdsenseExport.taxBreakdown.ppnDppIdr === 10000000,
+    'Domestic VAT DPP strictly contains local ticket sales (Rp 10.000.000), excluding foreign AdSense'
+  );
+
+  // 5. Non-PKP Exemption
+  const reportNonPkp = calculateComprehensiveFinancialReport({
+    milestones: [],
+    creditTransactions: [],
+    paymentOrders: [
+      {
+        id: 'ord-non-pkp',
+        order_number: 'ORD-NON-PKP-01',
+        amount: 10000000,
+        status: 'completed',
+        payment_method: 'qris',
+        created_at: new Date().toISOString(),
+      },
+    ],
+    taxPayerCategory: 'non_pkp_op',
+    isPkp: false,
+  });
+  assert(
+    reportNonPkp.taxBreakdown.ppnOutputCollectedIdr === 0,
+    'Non-PKP creators are strictly prohibited from collecting VAT (PPN Keluaran = Rp 0)'
+  );
+
+  // 6. Directional Withholding Taxes: Client Tax Credit vs AMF Obligation
+  const reportDirectionalTax = calculateComprehensiveFinancialReport({
+    milestones: [
+      {
+        id: 'm-corp',
+        user_id: 'u1',
+        platform: 'web_drama' as const,
+        project_name: 'Commercial Production for Brand X',
+        revenue_earned: 50000000,
+        currency: 'IDR',
+      },
+    ],
+    creditTransactions: [],
+    taxRegime: 'pph_final_umkm',
+    taxPayerCategory: 'wp_op_umkm',
+    isUmkmRevenueOver500M: false, // 0 PPh studio
+    withholdingTaxCreditsReceivedIdr: 1000000, // 2% PPh 23 withheld by corporate client
+    withholdingCreditType: 'pph_23_jasa',
+    withholdingTaxObligationsPayableIdr: 250000, // PPh 21 withheld from freelance animator
+  });
+  assert(
+    reportDirectionalTax.taxBreakdown.withholdingTaxCreditsReceivedIdr === 1000000,
+    'Client withholding proof (PPh 23) is recorded as a tax credit (prepaid tax asset), NOT an operating expense',
+    `Expected 1.000.000, got ${reportDirectionalTax.taxBreakdown.withholdingTaxCreditsReceivedIdr}`
+  );
+  assert(
+    reportDirectionalTax.taxBreakdown.withholdingTaxObligationsPayableIdr === 250000,
+    'Freelancer tax withheld by AMF is recorded as a payable obligation to DJP, NOT a credit of AMF',
+    `Expected 250.000, got ${reportDirectionalTax.taxBreakdown.withholdingTaxObligationsPayableIdr}`
+  );
+  assert(
+    reportDirectionalTax.netProfitIdr === 50000000,
+    'Net Operating Cash Profit strictly DOES NOT deduct tax credits or third-party tax obligations',
+    `Expected 50.000.000, got ${reportDirectionalTax.netProfitIdr}`
+  );
+
+  // 7. PPN Input Credit & Operating Profit Isolation
+  const reportPpnMasukan = calculateComprehensiveFinancialReport({
+    milestones: [],
+    creditTransactions: [],
+    paymentOrders: [
+      {
+        id: 'ord-in-out',
+        order_number: 'ORD-IN-OUT-01',
+        amount: 11100000,
+        status: 'completed',
+        payment_method: 'qris',
+        created_at: new Date().toISOString(),
+      },
+    ],
+    isPkp: true,
+    ppnInputCreditableIdr: 300000, // PPN Masukan from PKP server hosting
+  });
+  assert(
+    reportPpnMasukan.taxBreakdown.ppnOutputCollectedIdr === 1100000,
+    'PPN Keluaran = Rp 1.100.000'
+  );
+  assert(
+    reportPpnMasukan.taxBreakdown.ppnInputCreditableIdr === 300000,
+    'PPN Masukan creditable = Rp 300.000'
+  );
+  assert(
+    reportPpnMasukan.taxBreakdown.ppnNetPayableIdr === 800000,
+    'Net PPN payable to DJP = 1.100.000 - 300.000 = Rp 800.000',
+    `Expected 800.000, got ${reportPpnMasukan.taxBreakdown.ppnNetPayableIdr}`
+  );
+  assert(
+    reportPpnMasukan.netProfitIdr === 11100000 - 77700, // Deducts only 0.7% QRIS MDR, strictly NOT PPN liability
+    'Net Operating Cash Profit is strictly NOT deducted by VAT liability or VAT input credit'
+  );
+
+  // 8. Safe Default for Unconfirmed Profiles
+  const reportDefaultUnconfirmed = calculateComprehensiveFinancialReport({
     milestones: mockMilestones,
     creditTransactions: mockCreditTransactions,
     paymentOrders: mockPaymentOrders,
-    taxRegime: 'ppn_11_dpp_nilai_lain',
-    taxPayerCategory: 'pkp_badan',
   });
   assert(
-    reportPpn.taxIdr === 561000,
-    'PPN correctly applies 11% on DPP Penyerahan JKP (Gross), strictly NOT on net operating profit',
-    `Expected 561.000, got ${reportPpn.taxIdr}`
-  );
-
-  // PPh 21 Imbalan Jasa Kreatif OP (TER PP 58/2023: 2.5% of Gross = 127.500)
-  const reportPph21 = calculateComprehensiveFinancialReport({
-    milestones: mockMilestones,
-    creditTransactions: mockCreditTransactions,
-    paymentOrders: mockPaymentOrders,
-    taxRegime: 'pph_21_freelance',
-  });
-  assert(
-    reportPph21.taxIdr === 127500,
-    'PPh 21 correctly calculates withholding on creative freelancer compensation',
-    `Expected 127.500, got ${reportPph21.taxIdr}`
-  );
-
-  // PPh 23 Jasa Pembuatan Konten (2% of Gross = 102.000)
-  const reportPph23 = calculateComprehensiveFinancialReport({
-    milestones: mockMilestones,
-    creditTransactions: mockCreditTransactions,
-    paymentOrders: mockPaymentOrders,
-    taxRegime: 'pph_23_jasa',
-  });
-  assert(
-    reportPph23.taxIdr === 102000,
-    'PPh 23 correctly calculates 2% withholding by corporate clients on creative production services',
-    `Expected 102.000, got ${reportPph23.taxIdr}`
-  );
-
-  // Unconfirmed Tax Basis (Data Incomplete)
-  const reportUnconfirmed = calculateComprehensiveFinancialReport({
-    milestones: mockMilestones,
-    creditTransactions: mockCreditTransactions,
-    paymentOrders: mockPaymentOrders,
-    taxRegime: 'tax_basis_unconfirmed',
-  });
-  assert(
-    reportUnconfirmed.taxIdr === 0 && reportUnconfirmed.taxBasisStatus === 'UNCONFIRMED_DATA_PENDING',
-    'Unconfirmed tax basis safely sets tax to Rp 0 with UNCONFIRMED_DATA_PENDING status, preventing fabricated numbers'
+    reportDefaultUnconfirmed.taxBasisStatus === 'UNCONFIRMED_DATA_PENDING' && reportDefaultUnconfirmed.taxIdr === 0,
+    'Default profile without confirmed tax configuration is strictly TAX_BASIS_UNCONFIRMED with Rp 0 tax',
+    `Expected UNCONFIRMED with 0 tax, got ${reportDefaultUnconfirmed.taxBasisStatus} and ${reportDefaultUnconfirmed.taxIdr}`
   );
 
   // --------------------------------------------------------------------------

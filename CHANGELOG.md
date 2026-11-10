@@ -3,6 +3,45 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.8.3] - Tax Model Separation, Directional Withholding & VAT Liability Hardening - 2026-11-10 23:05 +07:00
+
+### Added, Hardened & Reconciled
+- **Pemisahan Model Pajak 4-Dimensi (`src/lib/creatorBusinessEngine.ts` & `src/components/studio/CreatorIntelligenceView.tsx`):**
+  - Mengakhiri pencampuran konseptual antara beban PPh studio, PPN titipan konsumen, dan bukti potong pihak ketiga.
+  - Memecah struktur data hasil estimasi perpajakan (`DetailedTaxBreakdown`) menjadi 4 bagian independen:
+    1. **PPh Kewajiban Studio**: Beban pajak penghasilan usaha yang mengurangi laba bersih operasional.
+    2. **PPN Penyerahan BKP/JKP**: Kewajiban perpajakan titipan penonton/konsumen (*tax liability*), secara mutlak **TIDAK** memotong laba operasional studio.
+    3. **Kredit Pajak (Withholding Tax Inflow)**: Bukti potong PPh 23 (2%) atau PPh 21 yang diterima studio dari klien korporat. Dicatat sebagai aset pajak dibayar di muka (Pasal 28A UU PPh) pengurang PPh di SPT Tahunan, **BUKAN** beban operasional yang hangus.
+    4. **Utang Pajak Potput (Withholding Tax Outflow)**: Pajak yang dipotong studio saat membayar honor vendor produksi atau animator/freelancer lepas, dicatat sebagai kewajiban penyetoran ke kas negara.
+- **Koreksi PPh Final UMKM PP 55/2022 jo. PP 20/2026:**
+  - **Fasilitas Progresif Rp 500 Juta (WP OP):** Menghapus saklar biner on/off; hanya bagian omzet kumulatif tahunan di atas Rp 500 juta yang dikenai tarif 0,5% ($\text{DPP} = \text{Omzet} - 500\text{ jt}$).
+  - **Validasi Kelayakan Subjek Pajak PP 20/2026:**
+    - WP Orang Pribadi dan PT Perorangan 1 Orang: Memenuhi syarat tarif 0,5% selama omzet $\le$ Rp 4,8 Miliar.
+    - Koperasi Dalam Negeri: Memenuhi syarat tarif 0,5% selama omzet $\le$ Rp 4,8 Miliar.
+    - CV, Firma, dan PT Baru: Per PP 20/2026 tidak lagi memenuhi syarat tarif 0,5%, wajib menggunakan tarif umum Pasal 17 (pembukuan).
+    - Omzet Kumulatif > Rp 4,8 Miliar: Ditolak otomatis dari PPh Final 0,5%, wajib pembukuan Pasal 17.
+- **Koreksi Model PPN Non-Mewah PMK 131/2024 & PMK 11/2025:**
+  - Menerapkan mekanisme tarif efektif **11%** ($12\% \times 11/12 \text{ DPP Nilai Lain}$).
+  - **Pemisahan Harga Inklusif PPN:** Menggunakan pembagi 1,11 ($\text{DPP} = \text{Harga} / 1,11$ dan $\text{PPN Keluaran} = \text{Harga} - \text{DPP}$), mengeliminasi asumsi keliru pembagi 1,12.
+  - **Isolasi Tiket Domestik vs Pendapatan Luar Negeri:** PPN domestik hanya dikenakan pada penjualan tiket lokal. Pendapatan platform luar negeri (YouTube AdSense / TikTok Creator Rewards dari entitas luar daerah pabean) diklasifikasikan terpisah (Ekspor Jasa 0% bila terverifikasi / pending unconfirmed) dan tidak dicampur ke PPN dalam negeri.
+  - **Perhitungan PPN Masukan:** Memperhitungkan PPN Masukan dari faktur masukan belanja operasional PKP untuk menghasilkan PPN Net Kurang Bayar ($\max(0, \text{Keluaran} - \text{Masukan})$).
+- **Default Aman `TAX_BASIS_UNCONFIRMED`:**
+  - Seluruh pengguna baru atau profil yang belum melengkapi data subjek pajak secara default berstatus `TAX_BASIS_UNCONFIRMED` dengan nilai beban pajak Rp 0, mencegah klaim kepastian sepihak.
+- **Koreksi Simulator Laba Warisan:**
+  - Menghapus rumus lama yang menghitung PPN 11% dari laba operasional bersih simulator, menggantikannya dengan simulasi PPh Final UMKM 0,5% dari omzet bruto.
+- **Perombakan UI Creator Intelligence:**
+  - Menghapus dropdown tunggal yang menyamarkan perbedaan kewajiban pajak.
+  - Menggantinya dengan 4 kartu konfigurasi modular transparan lengkap dengan rincian subjek, pihak penanggung, pihak penyetor, dan sifat akuntansinya.
+- **Rangkaian Uji Deterministik (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Memperbarui `[TEST 28]` dengan pengujian komprehensif atas seluruh 12 parameter kepatuhan fiskal baru.
+  - Total pengujian seluruh modul lulus 100% (**186 assertions**).
+- **Pembaruan Versi Produksi & Healthcheck:**
+  - Versi aplikasi ditingkatkan ke `1.15.11` (`V3.16 Tax Model Separation & Directional Withholding Hardening`).
+
+### Verification & Tests
+- `npm test`: 100% PASS seluruh rangkaian pengujian (162/162 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 186 assertions).
+- `npm run build`: Lulus bersih dalam 2.42s (0 errors).
+
 ## [Gelombang II - Milestone 2.8.1] - Financial Accuracy, Gross Deduplication, Refund Partitioning & Legal DJP Tax Hardening - 2026-11-10 22:45 +07:00
 
 ### Added, Hardened & Reconciled

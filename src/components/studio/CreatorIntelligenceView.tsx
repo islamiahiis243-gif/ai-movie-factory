@@ -205,10 +205,15 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
   const [isLoadingFinancials, setIsLoadingFinancials] = useState<boolean>(false);
   const [profitabilitySubTab, setProfitabilitySubTab] = useState<'actual_financial' | 'simulation_projection'>('actual_financial');
   const [financialPeriod, setFinancialPeriod] = useState<FinancialTimePeriod>('all_time');
-  const [taxRegime, setTaxRegime] = useState<TaxRegimeType>('pph_final_umkm');
-  const [taxPayerCategory, setTaxPayerCategory] = useState<TaxPayerCategory>('wp_op_umkm');
-  const [isUmkmOver500M, setIsUmkmOver500M] = useState<boolean>(true);
+  const [taxRegime, setTaxRegime] = useState<TaxRegimeType>('tax_basis_unconfirmed');
+  const [taxPayerCategory, setTaxPayerCategory] = useState<TaxPayerCategory>('unconfirmed');
+  const [isUmkmOver500M, setIsUmkmOver500M] = useState<boolean>(false);
   const [customTaxRate, setCustomTaxRate] = useState<number>(5);
+  const [isPkp, setIsPkp] = useState<boolean>(false);
+  const [ppnPricingScheme, setPpnPricingScheme] = useState<'inclusive' | 'exclusive'>('inclusive');
+  const [ppnInputCreditable, setPpnInputCreditable] = useState<number>(0);
+  const [withholdingCreditsReceived, setWithholdingCreditsReceived] = useState<number>(0);
+  const [withholdingObligationsPayable, setWithholdingObligationsPayable] = useState<number>(0);
   const [isGrossPrePlatformCut, setIsGrossPrePlatformCut] = useState<boolean>(false);
 
   // Load Milestones
@@ -410,6 +415,11 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       customTaxRate,
       isGrossPrePlatformCut,
       isUmkmRevenueOver500M: isUmkmOver500M,
+      isPkp,
+      ppnPricingScheme,
+      ppnInputCreditableIdr: ppnInputCreditable,
+      withholdingTaxCreditsReceivedIdr: withholdingCreditsReceived,
+      withholdingTaxObligationsPayableIdr: withholdingObligationsPayable,
     });
   }, [
     milestones,
@@ -422,6 +432,11 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     customTaxRate,
     isGrossPrePlatformCut,
     isUmkmOver500M,
+    isPkp,
+    ppnPricingScheme,
+    ppnInputCreditable,
+    withholdingCreditsReceived,
+    withholdingObligationsPayable,
   ]);
 
   // Dynamic AI Business Advisor Directives (Evidence-based from actual AMF metrics)
@@ -481,7 +496,8 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     const aiProductionCost = simAiCreditsCost;
     const hostingCdnCost = Math.round((simViews / 10000) * 25000); // CDN bandwidth streaming
     const subtotalOperatingCosts = refunds + platformFees + paymentGatewayFees + aiProductionCost + hostingCdnCost;
-    const estimatedTax = Math.round(Math.max(totalGrossRevenue - subtotalOperatingCosts, 0) * 0.11); // 11% PPN tax
+    // Estimasi PPh Final UMKM 0,5% dari omzet bruto PP 55/2022 jo. PP 20/2026 (bukan PPN atas laba operasional!)
+    const estimatedTax = Math.round(totalGrossRevenue * 0.005);
 
     const totalDeductionsStandard = refunds + platformFees + aiProductionCost + hostingCdnCost + estimatedTax;
     const totalDeductionsWithPPV = totalDeductionsStandard + paymentGatewayFees;
@@ -1234,90 +1250,230 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                   </div>
                 </div>
 
-                {/* Tax Regime & Double Counting Configuration Bar */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-800/80">
-                  {/* Tax Regime Selector */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Scale className="w-3.5 h-3.5 text-blue-400" />
-                        Rezim & Tarif Pajak (Legal Tax Basis):
-                      </span>
-                      <span className="text-[10px] text-blue-300 font-mono">
-                        {comprehensiveReport.taxRegime.legalReference}
-                      </span>
-                    </label>
-                    <select
-                      value={taxRegime}
-                      onChange={(e) => setTaxRegime(e.target.value as TaxRegimeType)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="pph_final_umkm">PPh Final UMKM (0.5% Omzet - PP 55/2022)</option>
-                      <option value="ppn_11_dpp_nilai_lain">PPN 11% Efektif atas DPP (PMK 131/2024 - Khusus PKP)</option>
-                      <option value="pph_21_freelance">PPh 21 Imbalan Jasa Kreatif OP (TER PP 58/2023)</option>
-                      <option value="pph_23_jasa">PPh 23 Jasa Pembuatan Konten oleh Badan (2% Bruto)</option>
-                      <option value="non_pkp_exempt">Non-PKP (Bebas PPN; omzet &lt; Rp 4,8 M)</option>
-                      <option value="tax_basis_unconfirmed">Basis Pajak Belum Terkonfirmasi (Data belum lengkap)</option>
-                      <option value="custom">Kustom Mandiri (Persentase Fleksibel)</option>
-                    </select>
+                {/* 4 Modular Tax Dimension Configuration Panels (Milestone 2.8.3) */}
+                <div className="space-y-3 pt-3 border-t border-slate-800/80">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Scale className="w-4 h-4 text-blue-400" />
+                      Arsitektur & Model Perpajakan Terpisah (DJP Compliance - Milestone 2.8.3)
+                    </span>
+                    <span className="text-[10px] text-blue-300 font-mono">
+                      UU HPP / PP 55/2022 jo. PP 20/2026 / PMK 131/2024
+                    </span>
+                  </div>
 
-                    {/* Taxpayer Category Selector */}
-                    <div className="pt-2 border-t border-slate-800/60 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* PANEL 1: PPh Kewajiban Studio */}
+                    <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-blue-300 uppercase tracking-wide">1. PPh Studio</span>
+                        <span className="text-[9px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded font-mono truncate max-w-[100px]">
+                          {comprehensiveReport.taxBreakdown.pphStudioRegime}
+                        </span>
+                      </div>
+                      
                       <div>
-                        <label className="text-slate-400 block mb-1">Status Subjek Wajib Pajak:</label>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Bentuk / Subjek Pajak:</label>
                         <select
                           value={taxPayerCategory}
-                          onChange={(e) => setTaxPayerCategory(e.target.value as TaxPayerCategory)}
-                          className="w-full px-2 py-1 bg-slate-950 border border-slate-800 rounded text-xs text-white"
+                          onChange={(e) => {
+                            const val = e.target.value as TaxPayerCategory;
+                            setTaxPayerCategory(val);
+                            if (val === 'unconfirmed') setTaxRegime('tax_basis_unconfirmed');
+                            else if (val === 'cv_firma_pt_baru') setTaxRegime('pph_badan_pasal_17');
+                            else if (val === 'wp_op_umkm' || val === 'pt_perorangan_umkm' || val === 'koperasi_umkm') setTaxRegime('pph_final_umkm');
+                          }}
+                          className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
                         >
+                          <option value="unconfirmed">Belum Dikonfirmasi (Pending)</option>
                           <option value="wp_op_umkm">Orang Pribadi (WP OP UMKM)</option>
-                          <option value="wp_badan_umkm">Badan Usaha UMKM (CV/Firma/PT)</option>
-                          <option value="pkp_badan">Pengusaha Kena Pajak (PKP Badan)</option>
-                          <option value="non_pkp_op">Non-PKP / Freelancer Kreatif Bebas</option>
-                          <option value="custom_jurisdiction">Yurisdiksi Luar Negeri / Kustom</option>
+                          <option value="pt_perorangan_umkm">PT Perorangan 1 Orang (PP 20/2026)</option>
+                          <option value="koperasi_umkm">Koperasi Dalam Negeri (PP 20/2026)</option>
+                          <option value="cv_firma_pt_baru">CV / Firma / PT Baru (Wajib Ps 17)</option>
+                          <option value="pkp_badan">Badan Usaha Umum (Pasal 17)</option>
+                          <option value="non_pkp_op">Non-PKP / Freelancer Bebas</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Rezim PPh Terpilih:</label>
+                        <select
+                          value={taxRegime}
+                          onChange={(e) => setTaxRegime(e.target.value as TaxRegimeType)}
+                          className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
+                        >
+                          <option value="tax_basis_unconfirmed">Basis Belum Terkonfirmasi (Rp 0)</option>
+                          <option value="pph_final_umkm">PPh Final UMKM 0,5% (PP 55/2022 jo. PP 20/2026)</option>
+                          <option value="pph_badan_pasal_17">PPh Badan Tarif Umum 22% (Pasal 17)</option>
+                          <option value="pph_op_pasal_17">PPh OP Tarif Umum / NPPN (Pasal 17)</option>
+                          <option value="custom">Kustom Mandiri (%)</option>
                         </select>
                       </div>
 
                       {taxPayerCategory === 'wp_op_umkm' && taxRegime === 'pph_final_umkm' && (
-                        <div className="flex items-center gap-2 pt-4">
-                          <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={isUmkmOver500M}
-                              onChange={(e) => setIsUmkmOver500M(e.target.checked)}
-                              className="rounded border-slate-700 text-blue-500 focus:ring-0 cursor-pointer"
-                            />
-                            <span className="text-[10px] text-slate-300">
-                              Omzet tahunan melebihi Rp 500 jt (Fasilitas bebas pajak UU HPP)
-                            </span>
-                          </label>
+                        <label className="flex items-start gap-1.5 pt-1 text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isUmkmOver500M}
+                            onChange={(e) => setIsUmkmOver500M(e.target.checked)}
+                            className="mt-0.5 rounded border-slate-700 text-blue-500 focus:ring-0 cursor-pointer"
+                          />
+                          <span className="text-[10px] text-slate-300 leading-tight">
+                            Omzet tahunan kumulatif &gt; Rp 500 jt (Fasilitas bebas pajak Pasal 60 PP 55/2022)
+                          </span>
+                        </label>
+                      )}
+
+                      {comprehensiveReport.taxBreakdown.ineligibilityReason && (
+                        <div className="p-1.5 bg-rose-500/10 border border-rose-500/30 rounded text-[9px] text-rose-300 leading-tight">
+                          {comprehensiveReport.taxBreakdown.ineligibilityReason}
                         </div>
                       )}
+
+                      <div className="pt-1 text-[9px] text-slate-400 space-y-0.5 border-t border-slate-800/60">
+                        <p>• <span className="text-slate-300">Penanggung:</span> Studio Sendiri</p>
+                        <p>• <span className="text-slate-300">Penyetor:</span> Studio ke Kas Negara</p>
+                        <p>• <span className="text-slate-300">Sifat:</span> Beban Laba Rugi Operasional</p>
+                      </div>
                     </div>
 
-                    {taxRegime === 'custom' && (
-                      <div className="flex items-center gap-2 pt-1">
-                        <span className="text-[11px] text-slate-400">Tarif Kustom:</span>
+                    {/* PANEL 2: Status PKP & PPN Penyerahan */}
+                    <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wide">2. PPN Penyerahan</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${isPkp ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-800 text-slate-400'}`}>
+                          {isPkp ? 'PKP AKTIF' : 'NON-PKP'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isPkp}
+                            onChange={(e) => setIsPkp(e.target.checked)}
+                            className="rounded border-slate-700 text-amber-500 focus:ring-0 cursor-pointer"
+                          />
+                          <span className="text-[11px] text-slate-300 font-semibold">
+                            Telah Dikukuhkan Sebagai PKP
+                          </span>
+                        </label>
+                      </div>
+
+                      {isPkp ? (
+                        <div className="space-y-2 pt-1 border-t border-slate-800/60">
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">Skema Harga Tiket Penonton:</label>
+                            <select
+                              value={ppnPricingScheme}
+                              onChange={(e) => setPpnPricingScheme(e.target.value as 'inclusive' | 'exclusive')}
+                              className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
+                            >
+                              <option value="inclusive">Termasuk PPN 11% Efektif (DPP = Harga / 1,11)</option>
+                              <option value="exclusive">Belum Termasuk PPN (PPN = 11% x DPP)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">PPN Masukan (Faktur Masukan):</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={ppnInputCreditable}
+                              onChange={(e) => setPpnInputCreditable(Number(e.target.value))}
+                              placeholder="Rp 0"
+                              className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-400 leading-relaxed">
+                          Status Non-PKP (omzet &lt; Rp 4,8 M). Bebas PPN dan dilarang memungut PPN dari penonton tiket.
+                        </p>
+                      )}
+
+                      <div className="pt-1 text-[9px] text-slate-400 space-y-0.5 border-t border-slate-800/60">
+                        <p>• <span className="text-slate-300">Penanggung:</span> Konsumen / Penonton</p>
+                        <p>• <span className="text-slate-300">Kanal Luar Negeri:</span> {comprehensiveReport.taxBreakdown.foreignPlatformTaxStatus}</p>
+                        <p>• <span className="text-slate-300">Sifat:</span> Titipan Negara (Bukan Beban Laba)</p>
+                      </div>
+                    </div>
+
+                    {/* PANEL 3: Bukti Potong Diterima AMF */}
+                    <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-emerald-300 uppercase tracking-wide">3. Kredit Pajak Klien</span>
+                        <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-mono">
+                          ASET SPT
+                        </span>
+                      </div>
+
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        Pajak yang dipotong oleh klien/agensi (PPh 23 2% / PPh 21) atas pembayaran jasa komersial studio.
+                      </p>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Nilai Bukti Potong Diterima (Rp):</label>
                         <input
                           type="number"
                           min="0"
-                          max="50"
-                          step="0.5"
-                          value={customTaxRate}
-                          onChange={(e) => setCustomTaxRate(Number(e.target.value))}
-                          className="w-20 px-2 py-1 bg-slate-950 border border-slate-800 rounded text-xs text-white"
+                          value={withholdingCreditsReceived}
+                          onChange={(e) => setWithholdingCreditsReceived(Number(e.target.value))}
+                          placeholder="Rp 0"
+                          className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
                         />
-                        <span className="text-xs text-slate-400">%</span>
                       </div>
-                    )}
 
-                    <div className="p-2 bg-blue-500/5 border border-blue-500/20 rounded-lg text-[10px] text-slate-400 leading-relaxed mt-1">
-                      <span className="font-bold text-blue-300 block mb-0.5">Catatan Regulasi DJP:</span>
-                      {comprehensiveReport.taxDisclaimer}
+                      <div className="pt-2 text-[9px] text-slate-400 space-y-0.5 border-t border-slate-800/60">
+                        <p>• <span className="text-slate-300">Pemotong:</span> Klien Korporat / Agensi</p>
+                        <p>• <span className="text-slate-300">Pemberi Bukti:</span> Formulir Bupot 23/21</p>
+                        <p>• <span className="text-slate-300">Sifat:</span> Kredit Pajak Ps 28A (Bukan Beban)</p>
+                      </div>
+                    </div>
+
+                    {/* PANEL 4: Kewajiban Pemotongan Pajak oleh AMF */}
+                    <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-purple-300 uppercase tracking-wide">4. Utang Potput AMF</span>
+                        <span className="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded font-mono">
+                          SETORAN AMF
+                        </span>
+                      </div>
+
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        Pajak yang dipotong AMF saat membayar honor vendor produksi atau animator/freelancer lepas.
+                      </p>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Nilai Pajak Dipotong ke Vendor (Rp):</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={withholdingObligationsPayable}
+                          onChange={(e) => setWithholdingObligationsPayable(Number(e.target.value))}
+                          placeholder="Rp 0"
+                          className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white"
+                        />
+                      </div>
+
+                      <div className="pt-2 text-[9px] text-slate-400 space-y-0.5 border-t border-slate-800/60">
+                        <p>• <span className="text-slate-300">Pemotong:</span> AMF Studio</p>
+                        <p>• <span className="text-slate-300">Pihak Ditanggung:</span> Freelancer / Vendor</p>
+                        <p>• <span className="text-slate-300">Sifat:</span> Kewajiban Penyetoran ke DJP</p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Double Counting Protection Switch */}
+                  {/* Legal Disclaimer Box */}
+                  <div className="p-2.5 bg-blue-500/5 border border-blue-500/20 rounded-lg text-[10px] text-slate-400 leading-relaxed flex items-start gap-2">
+                    <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-blue-300 block mb-0.5">Klausul Kepatuhan & Disclaimer Hukum DJP:</span>
+                      {comprehensiveReport.taxDisclaimer}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Double Counting Protection Switch */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -1343,7 +1499,6 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                     </div>
                   </div>
                 </div>
-              </div>
 
               {/* SSOT Master Formula Breakdown Banner */}
               <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-slate-900 to-slate-950 border border-emerald-500/30 rounded-xl space-y-2">
@@ -1419,21 +1574,21 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                   </p>
                 </div>
 
-                {/* 4. Tax */}
+                {/* 4. Tax (Studio Income Tax Expense) */}
                 <div className="p-3.5 bg-[#101726] border border-slate-800 rounded-xl space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Estimasi Pajak</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Beban PPh Studio</span>
                     <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${
                       comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? 'bg-blue-500/20 text-blue-300' : 'bg-amber-500/20 text-amber-300'
                     }`}>
-                      {comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? `${comprehensiveReport.taxRegime.ratePercent}%` : 'UNCONFIRMED'}
+                      {comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? `${comprehensiveReport.taxBreakdown.pphEffectiveRatePercent}%` : 'UNCONFIRMED'}
                     </span>
                   </div>
                   <p className={`text-base sm:text-lg font-black font-mono ${comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? 'text-rose-400/90' : 'text-amber-400'}`}>
-                    {comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? `-Rp ${comprehensiveReport.taxIdr.toLocaleString('id-ID')}` : 'Rp 0 (Pending)'}
+                    {comprehensiveReport.taxBasisStatus === 'CONFIRMED' ? `-Rp ${comprehensiveReport.taxBreakdown.pphStudioIdr.toLocaleString('id-ID')}` : 'Rp 0 (Pending)'}
                   </p>
                   <p className="text-[10px] text-slate-400 truncate">
-                    {comprehensiveReport.taxRegime.label}
+                    PPN Titipan: Rp {comprehensiveReport.taxBreakdown.ppnOutputCollectedIdr.toLocaleString('id-ID')} | Bupot: Rp {comprehensiveReport.taxBreakdown.withholdingTaxCreditsReceivedIdr.toLocaleString('id-ID')}
                   </p>
                 </div>
 
@@ -1684,7 +1839,7 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
                         <span className="font-mono">-Rp {simCalculation.platformFees.toLocaleString('id-ID')}</span>
                       </div>
                       <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
-                        <span>• Estimasi Pajak PPN (11%):</span>
+                        <span>• Estimasi PPh Final UMKM (0.5% Omzet):</span>
                         <span className="font-mono">-Rp {simCalculation.estimatedTax.toLocaleString('id-ID')}</span>
                       </div>
                       <div className="flex justify-between items-center font-bold text-slate-400 pt-1.5 border-t border-slate-800 text-[11px]">
