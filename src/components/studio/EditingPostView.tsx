@@ -312,6 +312,24 @@ export const EditingPostView: React.FC<EditingPostViewProps> = ({
   // Persist sequence changes locally
   const saveSequence = (updatedClips: TimelineClip[], lut = colorGradeLut, platform = activePlatform) => {
     if (!activeProject) return;
+
+    // Invalidate Gate 5 on timeline modification (Invariant TC-WF-14)
+    if (isGate5Approved) {
+      setIsGate5Approved(false);
+      setGate5ApprovedAt(null);
+      try {
+        localStorage.removeItem(`${LOCAL_STORAGE_GATE5_KEY}_${activeProject.id}`);
+      } catch (e) {
+        console.warn('Failed clearing Gate 5 on sequence update:', e);
+      }
+      onShowToast(
+        isId
+          ? 'Materi timeline berubah: Persetujuan Gate 5 dibatalkan otomatis dan memerlukan peninjauan ulang sebelum ekspor master.'
+          : 'Timeline modified: Gate 5 approval automatically invalidated for re-approval.',
+        'warning'
+      );
+    }
+
     const payload = {
       title: sequenceTitle,
       color_grade_lut: lut,
@@ -779,6 +797,60 @@ ${chaptersContent}
         ? 'Persetujuan Gate 5 dibatalkan. Timeline kembali ke mode revisi.'
         : 'Gate 5 approval revoked. Timeline returned to draft/revision mode.',
       'info'
+    );
+  };
+
+  // Download Unified Distribution Kit (SSOT TC-WF-15)
+  const handleDownloadCompleteDistributionKit = () => {
+    if (!activeProject) return;
+    const baseName = activeProject.name.replace(/\s+/g, '_');
+
+    // 1. Download Subtitles SRT
+    downloadFile(`${baseName}_Subtitles.srt`, srtContent);
+
+    // 2. Download Subtitles VTT
+    setTimeout(() => {
+      downloadFile(`${baseName}_Subtitles.vtt`, vttContent);
+    }, 250);
+
+    // 3. Download Chapters TXT
+    setTimeout(() => {
+      downloadFile(`${baseName}_Chapters.txt`, chaptersContent);
+    }, 500);
+
+    // 4. Download Distribution Metadata Manifest TXT
+    const fullKitManifest = `===============================================================
+AI MOVIE FACTORY — MULTI-CHANNEL PUBLISHING MANIFEST (TC-WF-15)
+===============================================================
+Proyek: ${activeProject.name}
+Genre: ${activeProject.genre}
+Preset Master: ${exportTierPreset.toUpperCase()}
+Platform Target: ${activePlatform.toUpperCase()}
+Dibuat: ${new Date().toISOString()}
+
+--- JUDUL VIDEO (SEO OPTIMIZED) ---
+${videoTitleOptions[selectedTitleIndex] || activeProject.name}
+
+--- CAPTION & HASHTAGS MEDIA SOSIAL ---
+${seoDescriptionText}
+
+--- TAGAR TRENDING ---
+${suggestedTags.join(' ')}
+
+--- TIMESTAMP DAFTAR CHAPTER ---
+${chaptersContent}
+`;
+
+    setTimeout(() => {
+      downloadFile(`${baseName}_Publishing_Kit_Manifest.txt`, fullKitManifest);
+    }, 750);
+
+    copyToClipboard(seoDescriptionText, 'distribution_kit');
+    onShowToast(
+      isId
+        ? 'Paket Distribusi Lengkap (TC-WF-15: Subtitle SRT/VTT, Metadata, & Caption) berhasil diunduh!'
+        : 'Complete Distribution Kit (TC-WF-15) downloaded and caption copied!',
+      'success'
     );
   };
 
@@ -2462,10 +2534,23 @@ ${chaptersContent}
 
                     {/* Export Companion Assets Grid (.SRT, .VTT, .TXT, Copy Kit) */}
                     <div>
-                      <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-amber-400" />
-                        Aset Pendukung Distribusi (1-Click Download)
-                      </h4>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-amber-400" />
+                          Aset Pendukung Distribusi (TC-WF-15)
+                        </h4>
+                        <span className="text-[10px] text-amber-400/90 font-mono font-semibold">1-Click Kit Ready</span>
+                      </div>
+
+                      {/* One-Click Complete Distribution Kit Button (TC-WF-15) */}
+                      <button
+                        onClick={handleDownloadCompleteDistributionKit}
+                        className="w-full mb-2.5 py-2.5 px-3 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-slate-950 font-black text-xs rounded-lg transition-all shadow-md shadow-amber-400/20 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Download className="w-4 h-4 fill-current" />
+                        <span>📦 Unduh Paket Distribusi Lengkap 1-Klik (TC-WF-15)</span>
+                      </button>
+
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <button
                           onClick={() => downloadFile(`${activeProject.name.replace(/\s+/g, '_')}_Subtitles.srt`, srtContent)}

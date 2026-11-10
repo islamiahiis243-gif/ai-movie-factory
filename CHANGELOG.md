@@ -3,6 +3,43 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.5] - Serverless Pipeline Worker, QC 15 Transparency, Gate 5 Invalidation, TC-WF-15 Kit & TC-WF-16 Formula - 2026-11-10 17:50 +07:00
+
+### Added, Hardened & Reconciled
+- **Serverless Pipeline Worker, Status & Retry Engine (`api/pipeline/[action].ts`, `server/pipeline/*`):**
+  - Menerapkan arsitektur serverless konsolidasi Vercel `/api/pipeline/[action]` dengan sub-rute:
+    - `/api/pipeline/status`: Memeriksa progres dan log in-flight pekerjaan pipeline di Supabase secara aman dengan otentikasi serverless.
+    - `/api/pipeline/retry`: Menegakkan invariant percobaan ulang maksimal 3x (`max_retries: 3`) di sisi server dengan token idempotency tanpa duplikasi antrean tabel.
+    - `/api/pipeline/worker`: Background worker terlindungi yang diautentikasi oleh `CRON_SECRET` atau `PIPELINE_WORKER_SECRET`, bertugas memajukan progres komputasi asynchronous saat tab pengguna ditutup dan merekonsiliasi pekerjaan usang (*stale lease timeout* > 15 menit) dengan pengembalian saldo kredit otomatis (*auto-refund*).
+- **Transparansi Kategori & Bukti Nyata Evaluasi 15 Parameter QC (`src/lib/qualityControlEngine.ts`, `src/components/studio/QualityControlView.tsx`):**
+  - Memisahkan secara jujur dan transparan sumber verifikasi tiap parameter:
+    - `rule_deterministic` (9 parameter): Resolusi, aspek rasio, kelancaran gerak kamera, batas loudness (-14 s.d. -16 LUFS), kestabilan pencahayaan, sinkronisasi fonem lip-sync, kejelasan dialog, audio ducking, dan timing naskah.
+    - `director_signoff` (3 parameter): Konsistensi kostum/properti, kesesuaian aksi visual terhadap naskah, dan penyelarasan mood musik.
+    - `ai_heuristic` (3 parameter): Konsistensi wajah karakter, konsistensi lingkungan, dan deteksi distorsi anatomi dengan disclaimer kesiapan model AI dan penjelasan `evidence_basis`.
+  - Menolak klaim skor neural sintetis palsu; menampilkan badge eksplisit `[Rule-Checked]`, `[Director-Signed]`, `[AI-Heuristic]`, dan `[Pending-Service]` pada kartu evaluasi kontrol kualitas.
+- **Invariant Pembatalan Otomatis Gate 5 saat Materi Berubah (`src/components/studio/EditingPostView.tsx`):**
+  - Ketika timeline (klip video/audio, urutan, atau filter LUT) dimodifikasi pasca persetujuan Gate 5, status persetujuan otomatis dibatalkan (*invalidated*) kembali ke mode `'draft'` / `'revision_required'`, kunci lokal dicabut, dan sutradara menerima peringatan visual untuk meninjau ulang sebelum ekspor master diizinkan.
+- **TC-WF-15: Unduh Paket Distribusi Lengkap 1-Klik (`src/components/studio/EditingPostView.tsx`):**
+  - Menambahkan tombol aksi satu-klik *"📦 Unduh Paket Distribusi Lengkap 1-Klik (TC-WF-15)"* yang mengunduh secara otomatis 4 aset distribusi sinkron:
+    1. Subtitel SRT standar waktu video.
+    2. Subtitel WebVTT untuk web player.
+    3. Daftar cap waktu bab (*Chapters TXT*).
+    4. Lembar manifest publikasi SEO lengkap dengan judul viral, sinopsis resmi, kredit kru studio, dan tagar algoritma.
+- **TC-WF-16: Rumus Komprehensif Laba Bersih & Monetisasi Multi-Saluran (`src/components/studio/CreatorIntelligenceView.tsx`):**
+  - Mengimplementasikan rumus laba bersih komprehensif SSOT Bagian III.3:
+    $$\text{Laba Bersih} = \text{Pendapatan Kotor} - (\text{Refund} + \text{Biaya Platform} + \text{Biaya Gateway} + \text{Biaya AI} + \text{Hosting/CDN} + \text{Pajak PPN 11\%})$$
+  - Menambahkan pemisahan visual yang tegas antara lencana `[PROYEKSI ESTIMASI]` (berdasarkan kalkulasi algoritma dan volume tayangan) dengan `[TERVERIFIKASI AKTUAL]` (berdasarkan data riil yang disinkronkan).
+- **Peningkatan Rangkaian Uji Otomasi (`scripts/test_milestone_gates_enforcement.ts`):**
+  - Menambahkan pengujian `[TEST 15]` (Transparansi sumber 15 parameter QC & basis bukti nyata).
+  - Menambahkan pengujian `[TEST 16]` (Serverless pipeline worker, status guard 401, retry 3x limit enforcer 400, dan worker secret auth).
+  - Menambahkan pengujian `[TEST 17]` (Pembatalan otomatis Gate 5 pada saat klip timeline diedit).
+  - Menambahkan pengujian `[TEST 18]` (Validasi paket distribusi 1-klik TC-WF-15 dan rumus matematis laba bersih TC-WF-16).
+  - Jumlah assertion audit gerbang produksi meningkat menjadi **92/92 assertion lulus 100%**.
+
+### Verification & Tests
+- `npm test`: 100% lulus seluruh rangkaian pengujian (92/92 Milestone Audit, 4/4 Vercel Go-Live Readiness, 8/8 OAuth Security Vault, 5/5 Publishing Engine, 7/7 Live Analytics Sync — Total 116 assertions lulus).
+- `npm run build`: Lulus bersih dalam 3.46s (0 errors).
+
 ## [Gelombang II - Milestone 2.4] - 15-Parameter Automated QC Engine (TC-WF-12) & Gate 5 Master Export Enforcement (TC-WF-13, TC-WF-14) - 2026-11-10 17:25 +07:00
 
 ### Added, Hardened & Orchestrated

@@ -592,6 +592,7 @@ export type PipelineJobPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type QCCheckStatus = 'passed' | 'warning' | 'failed';
 export type QCEvaluationMode = 'auto_ai' | 'technical_rule' | 'director_manual';
 export type QCSeverity = 'critical_blocker' | 'warning_advisory';
+export type QCVerificationSource = 'rule_deterministic' | 'director_signoff' | 'ai_heuristic' | 'pending_live_service';
 
 export type QCPillarCategory =
   // SSOT Section 8: 15 Mandatory Quality Parameters
@@ -635,6 +636,8 @@ export interface QCCheckItem {
   pillar?: QCPillarCategory;
   evaluation_mode?: QCEvaluationMode;
   severity?: QCSeverity;
+  verification_source?: QCVerificationSource;
+  evidence_basis?: string;
   overridden?: boolean;
   override_reason?: string;
   overridden_by?: string;

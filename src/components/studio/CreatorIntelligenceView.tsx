@@ -368,7 +368,7 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     };
   }, [milestones]);
 
-  // Profitability Simulator Calculations
+  // Profitability Simulator Calculations (SSOT Section III.3 Comprehensive Breakdown)
   const simCalculation = useMemo(() => {
     const ytAdsense = Math.round((simViews / 1000) * simGenreRpm);
     const tiktokRewards = Math.round((simViews / 1000) * 8500);
@@ -388,11 +388,24 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
     const totalGrossRevenue = ytAdsense + tiktokRewards + sponsorship;
     const totalWithPayPerView = totalGrossRevenue + webDramaPayPerView;
 
-    const netProfitStandard = Math.max(totalGrossRevenue - simAiCreditsCost, 0);
-    const netProfitWithPayPerView = Math.max(totalWithPayPerView - simAiCreditsCost, 0);
+    // Comprehensive SSOT Section III.3 Net Profit Breakdown Formula:
+    // Net Profit = Gross Revenue - (Refunds + Platform Fees + Payment Gateway Fees + AI Production Cost + Hosting & CDN Cost + Tax)
+    const refunds = Math.round(webDramaPayPerView * 0.01); // 1% refund tolerance
+    const platformFees = Math.round((ytAdsense + tiktokRewards) * 0.10); // 10% platform service fee
+    const paymentGatewayFees = Math.round(webDramaPayPerView * 0.029 + (buyers > 0 ? buyers * 2000 : 0)); // 2.9% + Rp 2.000 gateway
+    const aiProductionCost = simAiCreditsCost;
+    const hostingCdnCost = Math.round((simViews / 10000) * 25000); // CDN bandwidth streaming
+    const subtotalOperatingCosts = refunds + platformFees + paymentGatewayFees + aiProductionCost + hostingCdnCost;
+    const estimatedTax = Math.round(Math.max(totalGrossRevenue - subtotalOperatingCosts, 0) * 0.11); // 11% PPN tax
 
-    const marginStandard = Math.round((netProfitStandard / totalGrossRevenue) * 100);
-    const marginWithPayPerView = Math.round((netProfitWithPayPerView / totalWithPayPerView) * 100);
+    const totalDeductionsStandard = refunds + platformFees + aiProductionCost + hostingCdnCost + estimatedTax;
+    const totalDeductionsWithPPV = totalDeductionsStandard + paymentGatewayFees;
+
+    const netProfitStandard = Math.max(totalGrossRevenue - totalDeductionsStandard, 0);
+    const netProfitWithPayPerView = Math.max(totalWithPayPerView - totalDeductionsWithPPV, 0);
+
+    const marginStandard = totalGrossRevenue > 0 ? Math.round((netProfitStandard / totalGrossRevenue) * 100) : 0;
+    const marginWithPayPerView = totalWithPayPerView > 0 ? Math.round((netProfitWithPayPerView / totalWithPayPerView) * 100) : 0;
 
     return {
       ytAdsense,
@@ -402,6 +415,14 @@ export const CreatorIntelligenceView: React.FC<CreatorIntelligenceViewProps> = (
       webDramaPayPerView,
       totalGrossRevenue,
       totalWithPayPerView,
+      refunds,
+      platformFees,
+      paymentGatewayFees,
+      aiProductionCost,
+      hostingCdnCost,
+      estimatedTax,
+      totalDeductionsStandard,
+      totalDeductionsWithPPV,
       netProfitStandard,
       netProfitWithPayPerView,
       marginStandard,
@@ -1155,31 +1176,59 @@ Official AMF Verified Creator • Hollywood AI Production Engine`;
               {/* Right Column: Biaya Produksi & Laba Bersih */}
               <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-3 flex flex-col justify-between">
                 <div>
-                  <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                    <Award className="w-3.5 h-3.5" />
-                    <span>Perhitungan Laba Bersih (Net Profit)</span>
-                  </h4>
-                  <div className="space-y-2 text-xs mt-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                      <Award className="w-3.5 h-3.5" />
+                      <span>Formula Laba Bersih (SSOT Bagian III.3)</span>
+                    </h4>
+                    <span className="text-[9px] bg-amber-500/20 text-amber-300 font-mono px-2 py-0.5 rounded font-bold">
+                      [ESTIMATED PROJECTION]
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 text-xs mt-3">
                     <div className="flex justify-between items-center text-slate-300">
-                      <span>Estimasi Pemasukan Kotor:</span>
-                      <span className="font-mono text-white">
+                      <span>Estimasi Pemasukan Kotor (Gross):</span>
+                      <span className="font-mono text-white font-bold">
                         Rp {simCalculation.totalGrossRevenue.toLocaleString('id-ID')}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-rose-400">
-                      <span>Biaya Pembuatan Film (Kredit AI):</span>
+                    <div className="flex justify-between items-center text-rose-400 text-[11px]">
+                      <span>• Biaya Pembuatan Film (Kredit AI):</span>
                       <span className="font-mono">-Rp {simAiCreditsCost.toLocaleString('id-ID')}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
+                      <span>• Hosting & Streaming CDN (Bandwidth):</span>
+                      <span className="font-mono">-Rp {simCalculation.hostingCdnCost.toLocaleString('id-ID')}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
+                      <span>• Potongan Platform & Store Fees (10%):</span>
+                      <span className="font-mono">-Rp {simCalculation.platformFees.toLocaleString('id-ID')}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-rose-400/90 text-[11px]">
+                      <span>• Estimasi Pajak PPN (11%):</span>
+                      <span className="font-mono">-Rp {simCalculation.estimatedTax.toLocaleString('id-ID')}</span>
+                    </div>
+                    <div className="flex justify-between items-center font-bold text-slate-400 pt-1.5 border-t border-slate-800 text-[11px]">
+                      <span>Total Seluruh Potongan:</span>
+                      <span className="font-mono text-rose-400">
+                        -Rp {simCalculation.totalDeductionsStandard.toLocaleString('id-ID')}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="p-3 bg-black/60 rounded-xl border border-emerald-500/30 text-center space-y-1">
-                  <span className="text-[11px] text-slate-400 block">ESTIMASI LABA BERSIH KREATOR</span>
+                <div className="p-3 bg-black/60 rounded-xl border border-emerald-500/30 text-center space-y-1 mt-2">
+                  <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">LABA BERSIH RIIL (NET PROFIT)</span>
+                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-mono px-1.5 py-0.2 rounded font-bold">
+                      BERSIH
+                    </span>
+                  </div>
                   <p className="text-2xl font-black text-emerald-400 font-mono">
                     Rp {simCalculation.netProfitStandard.toLocaleString('id-ID')}
                   </p>
                   <span className="text-[10px] text-emerald-300 font-semibold bg-emerald-500/20 px-2 py-0.5 rounded-full inline-block">
-                    Margin Keuntungan: {simCalculation.marginStandard}%
+                    Margin Keuntungan Bersih: {simCalculation.marginStandard}%
                   </span>
                 </div>
               </div>
