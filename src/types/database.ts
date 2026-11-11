@@ -1257,6 +1257,12 @@ export interface OttEpisode {
   master_approval_status: OttMasterApprovalStatus;
   subtitle_vtt_url?: string;
   chapters_json?: Array<{ time: number; title: string }>;
+
+  // Milestone 2.9.2D: HLS Adaptive Bitrate Streaming
+  hls_master_playlist_url?: string | null;
+  transcoding_status?: 'not_started' | 'queued' | 'processing' | 'ready' | 'failed';
+  available_resolutions?: string[];
+  transcoded_at?: string | null;
   
   created_at: string;
   updated_at: string;
@@ -1291,6 +1297,12 @@ export interface OttFilm {
   master_approval_status: OttMasterApprovalStatus;
   subtitle_vtt_url?: string;
   chapters_json?: Array<{ time: number; title: string }>;
+
+  // Milestone 2.9.2D: HLS Adaptive Bitrate Streaming
+  hls_master_playlist_url?: string | null;
+  transcoding_status?: 'not_started' | 'queued' | 'processing' | 'ready' | 'failed';
+  available_resolutions?: string[];
+  transcoded_at?: string | null;
   
   created_at: string;
   updated_at: string;
@@ -1504,5 +1516,37 @@ export interface OttCreatorRevenueSummary {
   ppv_tickets_sold_count: number;
   data_mode: 'VERIFIED_ACTUAL';
 }
+
+export type HlsResolution = '1080p' | '720p' | '480p' | '360p';
+
+export interface HlsStreamRendition {
+  resolution: HlsResolution;
+  width: number;
+  height: number;
+  bandwidth: number;
+  videoBitrateKbps: number;
+  audioBitrateKbps: number;
+  playlistPath: string;
+}
+
+export interface OttTranscodingJob {
+  id: string;
+  user_id: string;
+  channel_id: string;
+  content_id: string;
+  content_type: 'film' | 'episode';
+  source_video_url: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  target_resolutions: HlsResolution[];
+  hls_output_prefix: string;
+  master_playlist_path?: string | null;
+  progress_percent: number;
+  error_message?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  updated_at: string;
+}
+
 
 

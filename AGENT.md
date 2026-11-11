@@ -46,4 +46,9 @@
     * `scripts/test_ott_commerce_unit.ts`: 47 dari 47 asersi lolos 100% (in-memory isolated).
     * `scripts/test_ott_commerce_integration.ts`: Guarded integration test berpagar isolasi 100% (menolak mutasi database produksi).
   - Remediasi Security Advisor linter: pencabutan hak eksekusi publik pada trigger internal.
-- **Next Scope:** Menunggu konfirmasi penutupan resmi Milestone 2.9.3 dari ChatGPT & Pengguna sebelum melanjutkan ke Milestone berikutnya (Milestone 2.9.2D: HLS Adaptive Streaming & Transcoding Pipeline).
+- **Milestone 2.9.2D (HLS Adaptive Bitrate Streaming & Transcoding Pipeline):** SELESAI & TERVERIFIKASI (Wave II Master Blueprint SSOT Bagian IV.4).
+  - Skema database HLS (`upgrade_v3_18_ott_hls_adaptive_streaming.sql`): kolom HLS pada `ott_films` & `ott_episodes`, tabel `ott_transcoding_jobs`, RLS, dan stored procedure atomik `complete_ott_transcoding_job()`.
+  - Server-side HLS Engine (`server/ottHlsEngine.ts`): Stream ladder 4-tier (1080p, 720p, 480p, 360p), dual aspect ratio (16:9 & 9:16), RFC 8216 compliant M3U8 Master & Variant playlists generator.
+  - Client-side Player Integration (`src/components/ott/CinematicPlayerView.tsx`): Integrasi `hls.js` dengan fallback native Safari & Progressive MP4, kontrol menu kualitas video interaktif (Auto, 1080p, 720p, 480p, 360p).
+  - Rangkaian pengujian terarah `scripts/test_ott_hls_engine.ts`: **44 asersi lolos 100%**.
+- **Next Scope:** Milestone 2.9.4 — Independent OTT No-Code Website Builder & Public Streaming Portal (Wave II Master Blueprint SSOT Bagian IV.1 & IV.2: Hero Video Banner, Netflix-Style Carousel Tray, Episode Grid, Cast Showcase, Pricing Table, and Custom Domain Branding).

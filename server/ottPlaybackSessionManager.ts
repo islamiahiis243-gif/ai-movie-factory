@@ -85,6 +85,10 @@ export interface PlaybackSessionResult {
     playbackUrl: string;
     signedUrlExpiresAt: string;
     sessionExpiresAt: string;
+    streamMode?: 'hls' | 'progressive';
+    hlsMasterPlaylistUrl?: string | null;
+    availableResolutions?: string[];
+    isAdaptive?: boolean;
     watermark: {
       text: string;
       intervalSeconds: number;
@@ -285,6 +289,12 @@ export async function acquirePlaybackSession(
   // Dynamic forensic watermark text (strictly pseudonymous, no email or PII)
   const watermarkText = generatePseudonymousWatermark(viewer.id);
 
+  // Milestone 2.9.2D: Resolve HLS Adaptive Bitrate mode vs Progressive MP4 fallback
+  const hlsStatus = (content as any).transcoding_status;
+  const hlsMasterUrl = (content as any).hls_master_playlist_url;
+  const availableResolutions = (content as any).available_resolutions || ['1080p'];
+  const isHlsReady = Boolean(hlsMasterUrl && hlsStatus === 'ready');
+
   return {
     success: true,
     session: {
@@ -292,6 +302,10 @@ export async function acquirePlaybackSession(
       playbackUrl: signedUrlResult.signedUrl,
       signedUrlExpiresAt: signedUrlResult.expiresAt,
       sessionExpiresAt,
+      streamMode: isHlsReady ? 'hls' : 'progressive',
+      hlsMasterPlaylistUrl: isHlsReady ? hlsMasterUrl : null,
+      availableResolutions: isHlsReady ? availableResolutions : ['1080p'],
+      isAdaptive: isHlsReady,
       watermark: {
         text: watermarkText,
         intervalSeconds: 20,

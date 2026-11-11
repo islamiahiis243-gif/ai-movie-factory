@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.9.2D] - HLS Adaptive Bitrate Streaming & Transcoding Pipeline - 2026-11-11 23:35 +07:00
+
+### Added, Hardened & Reconciled (Master Blueprint Gelombang II Bagian IV.4)
+- **HLS Transcoding Pipeline Schema (`upgrade_v3_18_ott_hls_adaptive_streaming.sql`):**
+  - Menambahkan kolom `hls_master_playlist_url`, `transcoding_status` (`not_started`, `queued`, `processing`, `ready`, `failed`), `available_resolutions`, dan `transcoded_at` pada tabel `public.ott_films` dan `public.ott_episodes`.
+  - Membuat tabel `public.ott_transcoding_jobs` dengan indeks komposit `(content_type, content_id)` dan `(status, created_at)`.
+  - Menerapkan Row-Level Security (RLS) pada `ott_transcoding_jobs` dengan hak akses pemilik dan `service_role`.
+  - Menerapkan fungsi tersimpan atomik `public.complete_ott_transcoding_job()` dengan `SECURITY DEFINER` untuk publikasi otomatis ladder HLS ke katalog.
+- **Server-Side HLS Engine (`server/ottHlsEngine.ts`):**
+  - Mendefinisikan ladder multi-resolusi 4-tier: 1080p (FHD ~4500 kbps), 720p (HD ~2500 kbps), 480p (SD ~1200 kbps), dan 360p (Mobile/Data Saver ~600 kbps).
+  - Mendukung dual aspect ratio: 16:9 Landscape (1920x1080) dan 9:16 Vertical Drama (1080x1920).
+  - Generator Master Playlist (M3U8) sesuai spesifikasi RFC 8216 (`#EXT-X-VERSION:3`, `#EXT-X-INDEPENDENT-SEGMENTS`, `#EXT-X-STREAM-INF`).
+  - Generator Variant Media Playlist (M3U8) per resolusi (`#EXT-X-TARGETDURATION`, `#EXT-X-MEDIA-SEQUENCE:0`, `#EXT-X-ENDLIST`).
+  - Backward-compatible resolver: Konten yang belum selesai di-transcode otomatis jatuh ke progressive MP4 tanpa regresi.
+- **Client-Side HLS Player Integration (`src/components/ott/CinematicPlayerView.tsx`):**
+  - Mengintegrasikan `hls.js` dengan fallback otomatis native Safari (`application/vnd.apple.mpegurl`) dan HTML5 Progressive MP4.
+  - Menambahkan menu kontrol kualitas interaktif (Settings Gear) dengan pilihan Auto (ABR), 1080p, 720p, 480p, dan 360p.
+  - Mempertahankan seluruh fitur eksisting (Dynamic Visible Watermark, Session Heartbeat & Renewal setiap 45 detik, resume watching, dan checkout modal).
+- **Rangkaian Uji Terarah (`scripts/test_ott_hls_engine.ts`):**
+  - Rangkaian pengujian HLS Adaptive Bitrate: **44 asersi lolos (100% PASS)**.
+
 ## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization (Hardened & Certified v3.17.5) - 2026-11-11 23:00 +07:00
 
 ### Added, Hardened & Reconciled (Final Quality Review Closure — Blockers 1–5 Resolution)

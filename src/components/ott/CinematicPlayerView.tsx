@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { OttDynamicWatermark } from './OttDynamicWatermark.tsx';
 import { OttCheckoutModal } from './OttCheckoutModal.tsx';
+import Hls from 'hls.js';
 
 export interface ChapterMarker {
   time: number;
@@ -83,6 +84,7 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
   const controlsTimeoutRef = useRef<any>(null);
   const heartbeatTimerRef = useRef<any>(null);
   const renewalTimerRef = useRef<any>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
   // Playback state
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -98,6 +100,13 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
   const [isSubtitlesActive, setIsSubtitlesActive] = useState<boolean>(Boolean(subtitleVttUrl));
   const [showChaptersMenu, setShowChaptersMenu] = useState<boolean>(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState<boolean>(false);
+
+  // Milestone 2.9.2D: HLS Adaptive Bitrate Streaming State
+  const [streamMode, setStreamMode] = useState<'hls' | 'progressive'>('progressive');
+  const [availableLevels, setAvailableLevels] = useState<Array<{ id: number; height: number; bitrate: number; label: string }>>([]);
+  const [selectedLevel, setSelectedLevel] = useState<number>(-1); // -1 = Auto ABR
+  const [activeResolutionLabel, setActiveResolutionLabel] = useState<string>('Auto');
+  const [showQualityMenu, setShowQualityMenu] = useState<boolean>(false);
 
   // Sesi & Security State
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -173,19 +182,86 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
       setCurrentDeliveryUrl(data.session.playbackUrl);
       setUrlExpiresAt(data.session.signedUrlExpiresAt);
 
+      const isHls = data.session.streamMode === 'hls' && Boolean(data.session.hlsMasterPlaylistUrl);
+      const streamUrl = isHls ? data.session.hlsMasterPlaylistUrl : data.session.playbackUrl;
+
       if (videoRef.current) {
-        videoRef.current.src = data.session.playbackUrl;
+        // Destroy existing HLS instance if any
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
 
         // Check resume position
         const savedTime = localStorage.getItem(resumeStorageKey);
         const resumePos = savedTime ? parseFloat(savedTime) : initialPositionSeconds;
-        if (resumePos > 5) {
-          videoRef.current.currentTime = resumePos;
-        }
 
-        videoRef.current.play().catch(() => {
-          setIsPlaying(false);
-        });
+        if (isHls && Hls.isSupported()) {
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            backBufferLength: 90,
+          });
+          hlsRef.current = hls;
+
+          hls.loadSource(streamUrl);
+          hls.attachMedia(videoRef.current);
+
+          hls.on(Hls.Events.MANIFEST_PARSED, (_, manifestData) => {
+            setStreamMode('hls');
+            const levels = manifestData.levels.map((lvl, idx) => ({
+              id: idx,
+              height: lvl.height,
+              bitrate: lvl.bitrate,
+              label: `${lvl.height}p`,
+            }));
+            setAvailableLevels(levels);
+            setSelectedLevel(-1);
+            setActiveResolutionLabel('Auto');
+
+            if (resumePos > 5 && videoRef.current) {
+              videoRef.current.currentTime = resumePos;
+            }
+            videoRef.current?.play().catch(() => setIsPlaying(false));
+          });
+
+          hls.on(Hls.Events.LEVEL_SWITCHED, (_, levelData) => {
+            const currentLvl = hls.levels[levelData.level];
+            if (currentLvl) {
+              setActiveResolutionLabel(selectedLevel === -1 ? `Auto (${currentLvl.height}p)` : `${currentLvl.height}p`);
+            }
+          });
+
+          hls.on(Hls.Events.ERROR, (_, errorData) => {
+            if (errorData.fatal) {
+              console.warn('[HLS Player] Fatal HLS error encountered, falling back to progressive MP4:', errorData.details);
+              hls.destroy();
+              hlsRef.current = null;
+              setStreamMode('progressive');
+              if (videoRef.current) {
+                videoRef.current.src = data.session.playbackUrl;
+                if (resumePos > 5) videoRef.current.currentTime = resumePos;
+                videoRef.current.play().catch(() => setIsPlaying(false));
+              }
+            }
+          });
+        } else if (isHls && videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+          // Native Safari / iOS HLS
+          setStreamMode('hls');
+          videoRef.current.src = streamUrl;
+          if (resumePos > 5) videoRef.current.currentTime = resumePos;
+          videoRef.current.play().catch(() => setIsPlaying(false));
+        } else {
+          // Standard Progressive MP4 mode
+          setStreamMode('progressive');
+          videoRef.current.src = data.session.playbackUrl;
+          if (resumePos > 5) {
+            videoRef.current.currentTime = resumePos;
+          }
+          videoRef.current.play().catch(() => {
+            setIsPlaying(false);
+          });
+        }
       }
     } catch (err: any) {
       const errorInfo = {
@@ -446,6 +522,20 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
     setShowSpeedMenu(false);
     if (videoRef.current) {
       videoRef.current.playbackRate = rate;
+    }
+  };
+
+  const changeQualityLevel = (levelIndex: number) => {
+    setSelectedLevel(levelIndex);
+    setShowQualityMenu(false);
+    if (hlsRef.current) {
+      hlsRef.current.currentLevel = levelIndex;
+      if (levelIndex === -1) {
+        setActiveResolutionLabel('Auto');
+      } else {
+        const lvl = hlsRef.current.levels[levelIndex];
+        if (lvl) setActiveResolutionLabel(`${lvl.height}p`);
+      }
     }
   };
 
@@ -845,6 +935,56 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
                           {rate}x
                         </button>
                       ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Milestone 2.9.2D: HLS Adaptive Quality Selector */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowQualityMenu(!showQualityMenu)}
+                    className={`font-mono text-[11px] hover:text-emerald-400 transition-colors cursor-pointer px-1.5 py-0.5 rounded border border-slate-700 flex items-center gap-1 ${
+                      streamMode === 'hls' ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10' : 'text-slate-300'
+                    }`}
+                    title={streamMode === 'hls' ? 'HLS Adaptive Bitrate Quality' : 'Progressive Stream (1080p)'}
+                  >
+                    <Settings className="w-3 h-3" />
+                    <span>{activeResolutionLabel}</span>
+                  </button>
+                  {showQualityMenu && (
+                    <div className="absolute bottom-8 right-0 bg-[#111827] border border-slate-700 rounded-xl p-1.5 shadow-2xl space-y-0.5 z-30 min-w-36">
+                      <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 mb-1">
+                        Kualitas Video {streamMode === 'hls' ? '(HLS)' : '(MP4)'}
+                      </div>
+                      {streamMode === 'hls' ? (
+                        <>
+                          <button
+                            onClick={() => changeQualityLevel(-1)}
+                            className={`w-full text-left px-2.5 py-1 text-xs rounded hover:bg-slate-800 flex items-center justify-between ${
+                              selectedLevel === -1 ? 'text-emerald-400 font-bold bg-emerald-500/10' : 'text-slate-300'
+                            }`}
+                          >
+                            <span>Otomatis (ABR)</span>
+                            <span className="text-[10px] font-mono text-emerald-400">Auto</span>
+                          </button>
+                          {availableLevels.map((lvl) => (
+                            <button
+                              key={lvl.id}
+                              onClick={() => changeQualityLevel(lvl.id)}
+                              className={`w-full text-left px-2.5 py-1 text-xs rounded hover:bg-slate-800 flex items-center justify-between ${
+                                selectedLevel === lvl.id ? 'text-emerald-400 font-bold bg-emerald-500/10' : 'text-slate-300'
+                              }`}
+                            >
+                              <span>{lvl.height}p</span>
+                              <span className="text-[10px] font-mono text-slate-400">{Math.round(lvl.bitrate / 1000)}k</span>
+                            </button>
+                          ))}
+                        </>
+                      ) : (
+                        <div className="px-2.5 py-1.5 text-xs text-slate-400">
+                          Mode Progressive MP4 (1080p Full HD)
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
