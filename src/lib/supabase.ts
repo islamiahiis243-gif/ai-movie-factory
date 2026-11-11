@@ -1592,13 +1592,18 @@ export async function deleteSceneRecord(sceneId: string): Promise<{ success: boo
 // --- Approval & Versioning Workflow (SSOT Section 10 & 37) ---
 export async function approveSceneScript(
   sceneId: string,
-  approverName: string = 'Director'
-): Promise<{ success: boolean; error: string | null }> {
+  approverName: string = 'Director',
+  snapshotOptions?: {
+    blocks?: ScriptBlock[];
+    versionNumber?: number;
+    changelogNote?: string;
+  }
+): Promise<{ success: boolean; versionSnapshotCreated: boolean; error: string | null }> {
   const now = new Date().toISOString();
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase
+      const { error: updateErr } = await supabase
         .from('scenes')
         .update({
           approval_status: 'approved',
@@ -1608,17 +1613,65 @@ export async function approveSceneScript(
         })
         .eq('id', sceneId);
 
-      if (error) throw error;
-      return { success: true, error: null };
+      if (updateErr) throw updateErr;
+
+      let snapshotCreated = false;
+      if (snapshotOptions && snapshotOptions.blocks && snapshotOptions.blocks.length > 0) {
+        const verNum = snapshotOptions.versionNumber || 1;
+        const { error: verErr } = await createScriptVersionRecord(sceneId, {
+          version_number: verNum,
+          changelog_note:
+            snapshotOptions.changelogNote ||
+            `LOCKED_V${verNum} - Gate 1 Director Script Approval Checkpoint`,
+          blocks: snapshotOptions.blocks,
+          created_by: approverName,
+        });
+
+        if (verErr) {
+          // Rollback approval status to draft to prevent split-brain state (Temuan 4)
+          await supabase
+            .from('scenes')
+            .update({
+              approval_status: 'draft',
+              approved_at: null,
+              approved_by: null,
+              updated_at: now,
+            })
+            .eq('id', sceneId);
+          throw new Error(
+            `Audit trail snapshot failed: ${verErr}. Persetujuan dibatalkan untuk menjaga integritas data.`
+          );
+        }
+        snapshotCreated = true;
+      }
+
+      return { success: true, versionSnapshotCreated: snapshotCreated, error: null };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Failed to approve scene' };
+      return { success: false, versionSnapshotCreated: false, error: err.message || 'Failed to approve scene' };
     }
   }
 
   // Local fallback
   const all = getLocalScenes();
-  const idx = all.findIndex(s => s.id === sceneId);
+  const idx = all.findIndex((s) => s.id === sceneId);
   if (idx !== -1) {
+    let snapshotCreated = false;
+    if (snapshotOptions && snapshotOptions.blocks && snapshotOptions.blocks.length > 0) {
+      const verNum = snapshotOptions.versionNumber || 1;
+      const verRes = await createScriptVersionRecord(sceneId, {
+        version_number: verNum,
+        changelog_note:
+          snapshotOptions.changelogNote ||
+          `LOCKED_V${verNum} - Gate 1 Director Script Approval Checkpoint`,
+        blocks: snapshotOptions.blocks,
+        created_by: approverName,
+      });
+      if (verRes.error) {
+        return { success: false, versionSnapshotCreated: false, error: verRes.error };
+      }
+      snapshotCreated = true;
+    }
+
     all[idx] = {
       ...all[idx],
       approval_status: 'approved',
@@ -1627,9 +1680,9 @@ export async function approveSceneScript(
       updated_at: now,
     };
     saveLocalScenes(all);
-    return { success: true, error: null };
+    return { success: true, versionSnapshotCreated: snapshotCreated, error: null };
   }
-  return { success: false, error: 'Scene not found' };
+  return { success: false, versionSnapshotCreated: false, error: 'Scene not found' };
 }
 
 export async function invalidateSceneApproval(

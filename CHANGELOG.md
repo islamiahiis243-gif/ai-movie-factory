@@ -3,6 +3,38 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Sprint 5 Hari - Day 2 Reconciled] - Resolusi Audit Temuan 1–10: Simulasi Transparan, Gate Audit Rollback, Gate 2 & 3 Enforcement, dan Persistent Storyboard - 2026-11-12 01:45 +07:00
+
+### Added, Hardened & Reconciled (Audit Findings 1–10 Resolution)
+- **Pelabelan Eksplisit Mode Simulasi & Pemotongan Kredit 0 CR (Temuan 1 & 2):**
+  - Mengeliminasi ambiguitas antara generasi AI Cloud produksi dan generasi simulasi lokal di browser.
+  - Generasi aset preview lokal (SVG/Canvas/Audio Synthesizer) kini secara eksplisit mencantumkan flag `is_simulation_mode: true` dan `generation_mode: 'local_simulation_preview'` pada `generation_params` serta membebankan `credit_cost: 0`.
+  - Integrasi generasi gambar cloud riil diarahkan ke endpoint `/api/ai-generate` dengan otentikasi JWT Bearer, sistem reserve–settle–refund dua fase di server, dan pelabelan `is_simulation_mode: false` dengan biaya kredit kanonikal.
+- **Rollback Atomik Gate 1 Script Approval jika Audit Trail Gagal (Temuan 4):**
+  - Meng-update fungsi `approveSceneScript()` di `src/lib/supabase.ts` agar menyertakan snapshot versioning secara atomik.
+  - Jika pembuatan rekam jejak versi di tabel `script_versions` mengalami kegagalan, status `approval_status` pada adegan secara otomatis di-rollback ke `'draft'` dengan melempar error, mencegah kondisi *unrecorded approval state*.
+- **Penyatuan Jalur Persetujuan Gate 1 pada Storyboard Studio (Temuan 5):**
+  - Tombol persetujuan Gate 1 pada `src/components/studio/StoryboardView.tsx` kini memanggil `approveSceneScript()` terpadu dengan opsi snapshot identik seperti di Story Script Studio, menjamin pencatatan snapshot versi yang setara.
+- **Penegakan Prasyarat Gate 2 pada Persetujuan Shot Storyboard (Temuan 6):**
+  - Menambahkan fungsi validasi `validateGatePrerequisites()` pada `src/components/studio/StoryboardView.tsx`.
+  - Persetujuan shot storyboard kini secara ketat memvalidasi dan memblokir aksi jika profil DNA karakter belum dikunci (`!c.dna_locked`) atau lingkungan semesta belum disetujui, bukan lagi sekadar peringatan visual.
+- **Persistensi Shot Storyboard ke Database PostgreSQL (Temuan 7):**
+  - Mengimplementasikan penyimpanan permanen daftar shot storyboard ke dalam kolom database `public.scenes.camera_notes` melalui `persistShotsToDatabase()`.
+  - Saat proyek atau adegan dibuka ulang, sistem secara otomatis mendeserialisasi shot dari database sehingga perubahan tidak hilang saat browser dimuat ulang.
+- **Inisialisasi Shot Bawaan Berstatus Strict Draft (Temuan 8):**
+  - Menyelaraskan inisialisasi default shots agar secara ketat berstatus `status: 'draft'`, menghapus status bawaan `approved` / `render_ready` sebelum adanya tindakan eksplisit dari sutradara.
+- **Fail-Safe Penanganan Dispatch Prompt Storyboard Bridge (Temuan 9):**
+  - Membungkus penyimpanan `localStorage.setItem('amf_pending_shot_prompt', ...)` dalam penanganan try-catch fail-safe.
+  - Jika penyimpanan lokal kuota habis atau diblokir oleh peramban, sistem menampilkan notifikasi kesalahan dan membatalkan pesan sukses palsu.
+- **Transparansi Sumber AI Script Assistant (Temuan 10):**
+  - Antarmuka dan notifikasi Story Script Studio kini secara gamblang membedakan asal skenario antara `✓ AI_GENERATED (Gemini 2.5 Flash)` dan `⚠ LOCAL_FALLBACK (Template Sinematik)` ketika offline atau kuota habis.
+- **Kanonikalisasi Biaya Kredit Model Generasi (Temuan Tambahan):**
+  - Mendefinisikan pemetaan kanonikal `MODEL_CREDIT_COSTS` di `MediaStudioView.tsx` yang selaras 100% dengan endpoint server `/api/ai-generate` dan adapter media: Gemini Nano Banana (30 CR), Gemini 3.8 Flash-Lite TTS (5 CR), ElevenLabs v2 (12 CR), Lyria 3 Music (20 CR).
+- **Rangkaian Uji Terarah Film Production Pipeline (37/37 PASS):**
+  - Memperluas `scripts/test_film_production_pipeline.ts` dengan asersi spesifik untuk menguji kesepuluh temuan audit secara otomatis (100% PASS).
+  - Memperbaiki penanganan `Runtime.evaluate` pada `scripts/test_ott_browser_playback.ts` dengan retry logic terhadap daur hidup konteks peramban (24/24 PASS).
+  - Seluruh rangkaian uji `npm test` (15 suite pengujian) lolos 100% tanpa kegagalan.
+
 ## [Sprint 5 Hari - Day 2] - Penyelesaian Alur Produksi Film (Story Script -> Character DNA -> Storyboard -> Keyframe -> Video Generation) - 2026-11-12 00:52 +07:00
 
 ### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Hari Ke-2: Alur Produksi Film)

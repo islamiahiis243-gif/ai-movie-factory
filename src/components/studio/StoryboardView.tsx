@@ -133,7 +133,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
       if (scenesRes.data.length > 0) {
         const firstScene = scenesRes.data[0];
         setSelectedSceneId(firstScene.id);
-        generateInitialShotsForScene(firstScene, charsRes.data);
+        loadOrGenerateShotsForScene(firstScene, charsRes.data);
       } else {
         setSelectedSceneId('');
         setShots([]);
@@ -152,12 +152,39 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
     setSelectedSceneId(sceneId);
     const targetScene = scenes.find(s => s.id === sceneId);
     if (targetScene) {
-      generateInitialShotsForScene(targetScene, characters);
+      loadOrGenerateShotsForScene(targetScene, characters);
+    }
+  };
+
+  // Helper to persist shots into database (Temuan 7: Persistent Storyboard Artifacts)
+  const persistShotsToDatabase = async (updatedShots: StoryboardShot[]) => {
+    setShots(updatedShots);
+    if (activeScene) {
+      try {
+        await updateSceneRecord(activeScene.id, { camera_notes: JSON.stringify(updatedShots) });
+      } catch (err) {
+        console.warn('Failed saving storyboard shots to database:', err);
+      }
     }
   };
 
   // Shot generator based on scene blocks & characters
-  const generateInitialShotsForScene = (scene: SceneItem, chars: Character[]) => {
+  const loadOrGenerateShotsForScene = (scene: SceneItem, chars: Character[]) => {
+    // 1. Try restoring persisted shots from database (camera_notes JSON)
+    if (scene.camera_notes) {
+      try {
+        const parsed = JSON.parse(scene.camera_notes);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setShots(parsed);
+          setSelectedShot(parsed[0]);
+          return;
+        }
+      } catch (e) {
+        // Fallback to generating defaults
+      }
+    }
+
+    // 2. Otherwise generate clean draft shots (Temuan 8: strictly draft status!)
     const presentChars = chars.filter(c => scene.characters_present?.includes(c.name) || scene.character_ids?.includes(c.id));
     const heroName = presentChars[0]?.name || 'Protagonist';
     const visualSeed = scene.visual_continuity_seed || 'Cinematic master shot, 8k resolution, photorealistic film grain';
@@ -173,7 +200,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
         character_blocking: `${heroName} enters frame left, taking in the panoramic grandeur of the surroundings.`,
         lighting_mood: scene.time_of_day === 'NIGHT' ? 'Cold Moonlight with Deep Blue Shadows' : 'Volumetric Golden Hour Sunbeams',
         visual_prompt: `${visualSeed}, wide establishing camera angle, ultra-wide 24mm anamorphic lens, grand cinematic composition, atmospheric depth haze`,
-        status: 'approved',
+        status: 'draft',
         duration_seconds: 4.5
       },
       {
@@ -186,7 +213,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
         character_blocking: `${heroName} halts firmly at center, spiritual energy beginning to swirl subtly around fingertips.`,
         lighting_mood: 'Mystical Taoist Spiritual Qi Radiance',
         visual_prompt: `${visualSeed}, medium shot waist-up portrait of ${heroName}, 50mm prime lens, shallow depth of field, subtle spiritual aura particles, crisp facial focus`,
-        status: 'approved',
+        status: 'draft',
         duration_seconds: 3.5
       },
       {
@@ -212,13 +239,18 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
         character_blocking: `Micro-expressions of resolve and intense emotional focus. Camera slow push-in.`,
         lighting_mood: 'Volumetric Golden Hour Sunbeams',
         visual_prompt: `${visualSeed}, intense cinematic close-up shot, 105mm macro lens, high-fidelity catchlight in eyes, photorealistic skin texture, dramatic cinematic lighting`,
-        status: 'render_ready',
+        status: 'draft',
         duration_seconds: 3.0
       }
     ];
 
     setShots(defaultShots);
     setSelectedShot(defaultShots[0]);
+
+    // Persist default shots into database (Temuan 7)
+    updateSceneRecord(scene.id, { camera_notes: JSON.stringify(defaultShots) }).catch(err => {
+      console.warn('Failed auto-persisting default shots to database:', err);
+    });
   };
 
   const handleCopyPrompt = (prompt: string, shotId: string) => {
@@ -231,42 +263,67 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
   const activeScene = scenes.find(s => s.id === selectedSceneId);
   const currentProject = projects.find(p => p.id === selectedProjectId);
 
-  const handleApproveShot = (shotId: string) => {
-    if (activeScene && activeScene.approval_status !== 'approved') {
+  const validateGatePrerequisites = (): boolean => {
+    if (!activeScene) return false;
+    // Check Gate 1: Script must be approved
+    if (activeScene.approval_status !== 'approved') {
       onShowToast(
-        `Naskah Adegan #${activeScene.scene_number} belum disetujui (Gate 1 belum lolos). Setujui naskah adegan terlebih dahulu sebelum menyetujui shot storyboard.`,
+        `Prasyarat Gate 1 Belum Lolos: Naskah Adegan #${activeScene.scene_number} belum disetujui sutradara. Kunci naskah terlebih dahulu sebelum menyetujui shot storyboard.`,
         'error'
       );
-      return;
+      return false;
     }
-    setShots(prev => prev.map(s => s.id === shotId ? { ...s, status: 'approved' } : s));
-    onShowToast('Shot storyboard disetujui untuk produksi (Gate 3)!', 'success');
+    // Check Gate 2: Character DNA must be locked
+    const presentChars = characters.filter(
+      (c) =>
+        activeScene.characters_present?.includes(c.name) ||
+        activeScene.character_ids?.includes(c.id)
+    );
+    if (presentChars.length > 0 && presentChars.some((c) => !c.dna_locked)) {
+      const unlocked = presentChars.find((c) => !c.dna_locked);
+      onShowToast(
+        `Prasyarat Gate 2 Belum Lolos: Profil DNA karakter "${unlocked?.name}" belum dikunci di Character Studio. Kunci profil DNA terlebih dahulu untuk menjamin konsistensi visual 8-lapisan.`,
+        'error'
+      );
+      return false;
+    }
+    return true;
   };
 
-  const handleToggleRenderReady = (shotId: string) => {
-    if (activeScene && activeScene.approval_status !== 'approved') {
-      onShowToast(
-        `Naskah Adegan #${activeScene.scene_number} belum disetujui (Gate 1 belum lolos). Setujui naskah adegan terlebih dahulu.`,
-        'error'
-      );
-      return;
+  const handleApproveShot = async (shotId: string) => {
+    if (!validateGatePrerequisites()) return;
+    const updated = shots.map((s) => (s.id === shotId ? { ...s, status: 'approved' as const } : s));
+    await persistShotsToDatabase(updated);
+    if (selectedShot?.id === shotId) {
+      setSelectedShot({ ...selectedShot, status: 'approved' });
     }
-    setShots(prev => prev.map(s => s.id === shotId ? { 
-      ...s, 
-      status: s.status === 'render_ready' ? 'approved' : 'render_ready' 
-    } : s));
+    onShowToast('Shot storyboard disetujui untuk produksi (Gate 3 Lolos)!', 'success');
+  };
+
+  const handleToggleRenderReady = async (shotId: string) => {
+    if (!validateGatePrerequisites()) return;
+    const updated = shots.map((s) => {
+      if (s.id === shotId) {
+        const nextStatus = s.status === 'render_ready' ? ('approved' as const) : ('render_ready' as const);
+        return { ...s, status: nextStatus };
+      }
+      return s;
+    });
+    await persistShotsToDatabase(updated);
+    if (selectedShot?.id === shotId) {
+      const nextStatus = selectedShot.status === 'render_ready' ? 'approved' : 'render_ready';
+      setSelectedShot({ ...selectedShot, status: nextStatus });
+    }
     onShowToast('Status shot diperbarui.', 'info');
   };
 
-  const handleApproveAllShots = () => {
-    if (activeScene && activeScene.approval_status !== 'approved') {
-      onShowToast(
-        `Naskah Adegan #${activeScene.scene_number} belum disetujui (Gate 1). Setujui naskah adegan terlebih dahulu sebelum meloloskan Gate 3 Storyboard.`,
-        'error'
-      );
-      return;
+  const handleApproveAllShots = async () => {
+    if (!validateGatePrerequisites()) return;
+    const updated = shots.map((s) => ({ ...s, status: 'approved' as const }));
+    await persistShotsToDatabase(updated);
+    if (selectedShot) {
+      setSelectedShot({ ...selectedShot, status: 'approved' });
     }
-    setShots((prev) => prev.map((s) => ({ ...s, status: 'approved' })));
     onShowToast('Seluruh shot storyboard adegan ini disetujui (Gate 3 Lulus)!', 'success');
   };
 
@@ -287,8 +344,10 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
     };
     try {
       localStorage.setItem('amf_pending_shot_prompt', JSON.stringify(pendingPayload));
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Failed storing pending shot prompt in localStorage:', e);
+      onShowToast(`Gagal menyimpan prompt shot ke penyimpanan: ${e.message}`, 'error');
+      return;
     }
     onShowToast(`Prompt shot #${shot.shot_number} dikirim ke Media Studio. Membuka generator keyframe...`, 'success');
     if (onNavigateToMediaStudio) {
@@ -422,12 +481,17 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
                 </div>
                 <button
                   onClick={async () => {
-                    const res = await approveSceneScript(activeScene.id, 'Director via Storyboard');
+                    const currentVer = activeScene.versions_count || 1;
+                    const res = await approveSceneScript(activeScene.id, 'Director via Storyboard', {
+                      blocks: activeScene.blocks || [],
+                      versionNumber: currentVer,
+                      changelogNote: `LOCKED_V${currentVer} - Gate 1 Approved via Storyboard`,
+                    });
                     if (res.error) {
                       onShowToast(res.error, 'error');
                     } else {
                       setScenes(prev => prev.map(s => s.id === activeScene.id ? { ...s, approval_status: 'approved' } : s));
-                      onShowToast(`Naskah Adegan #${activeScene.scene_number} telah disetujui (Gate 1 Lolos)!`, 'success');
+                      onShowToast(`Naskah Adegan #${activeScene.scene_number} telah dikunci sebagai LOCKED_V${currentVer} (Gate 1 Lolos & Audit Trail tersimpan)!`, 'success');
                     }
                   }}
                   className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-xs transition-colors cursor-pointer shrink-0 shadow flex items-center gap-1.5"

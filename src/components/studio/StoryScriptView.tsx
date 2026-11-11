@@ -282,6 +282,7 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiGeneratedBlocks, setAiGeneratedBlocks] = useState<ScriptBlock[]>([]);
   const [aiGeneratedSeed, setAiGeneratedSeed] = useState<string>('');
+  const [aiSourceMode, setAiSourceMode] = useState<'ai_cloud' | 'local_fallback' | null>(null);
 
   // Default project selection
   useEffect(() => {
@@ -526,20 +527,18 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
   const handleApproveScene = async (sceneId: string) => {
     const targetScene = scenes.find((s) => s.id === sceneId) || activeScene;
     const currentVer = targetScene?.versions_count || 1;
-    const res = await approveSceneScript(sceneId, 'Master Director AI / Creator');
+    const res = await approveSceneScript(sceneId, 'Master Director AI / Creator', {
+      blocks: targetScene?.blocks || [],
+      versionNumber: currentVer,
+      changelogNote: `LOCKED_V${currentVer} - Gate 1 Director Script Approval Checkpoint`,
+    });
     if (res.error) {
       onShowToast(res.error, 'error');
     } else {
-      // Record immutable audit trail snapshot (LOCKED_V{n}) in script_versions
-      if (targetScene && targetScene.blocks && targetScene.blocks.length > 0) {
-        await createScriptVersionRecord(sceneId, {
-          version_number: currentVer,
-          changelog_note: `LOCKED_V${currentVer} - Gate 1 Director Script Approval Checkpoint`,
-          blocks: targetScene.blocks,
-          created_by: 'Master Director AI / Creator',
-        });
-      }
-      onShowToast(`Naskah adegan telah dikunci sebagai LOCKED_V${currentVer} (Gate 1 Approved & Audit Trail tercatat).`, 'success');
+      onShowToast(
+        `Naskah adegan telah dikunci sebagai LOCKED_V${currentVer} (Gate 1 Approved & Audit Trail tersimpan).`,
+        'success'
+      );
       await reloadScenes();
     }
   };
@@ -712,6 +711,7 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
     setAiGeneratedBlocks([]);
     setAiGeneratedSeed('');
     setAiUserPrompt('');
+    setAiSourceMode(null);
     setAiSelectedCharacter(characters[0]?.name || 'KARAKTER');
     setIsAiAssistantOpen(true);
   };
@@ -723,6 +723,7 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
     try {
       let generatedBlocks: ScriptBlock[] | null = null;
       let generatedSeed: string | null = null;
+      let usedCloudAi = false;
 
       try {
         const { data: sessionData } = await supabase.auth.getSession();
@@ -744,9 +745,10 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
 
           if (resp.ok) {
             const data = await resp.json();
-            const textOutput = data?.text || data?.data?.text || '';
+            const textOutput = data?.text || data?.data?.text || data?.output || '';
             if (textOutput) {
               generatedBlocks = parseScreenplayTextToBlocks(textOutput, aiSelectedCharacter);
+              usedCloudAi = true;
             }
           }
         }
@@ -765,11 +767,18 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
         );
         generatedBlocks = fallback.blocks;
         generatedSeed = fallback.visualSeed;
+        usedCloudAi = false;
       }
 
       setAiGeneratedBlocks(generatedBlocks);
       if (generatedSeed) setAiGeneratedSeed(generatedSeed);
-      onShowToast(`Bantuan AI berhasil menghasilkan ${generatedBlocks.length} blok naskah.`, 'success');
+      setAiSourceMode(usedCloudAi ? 'ai_cloud' : 'local_fallback');
+
+      if (usedCloudAi) {
+        onShowToast(`[Gemini AI] Berhasil menyintesis ${generatedBlocks.length} blok naskah resmi dari Gemini 2.5 Flash.`, 'success');
+      } else {
+        onShowToast(`[Mode Offline/Simulasi] Server AI tidak terjangkau. ${generatedBlocks.length} blok naskah dihasilkan dari template sinematik lokal.`, 'info');
+      }
     } catch (err: any) {
       console.error('AI Script assist error:', err);
       onShowToast(`Gagal menghasilkan naskah AI: ${err.message || 'Error'}`, 'error');
@@ -2170,7 +2179,15 @@ export const StoryScriptView: React.FC<StoryScriptViewProps> = ({
               <div className="space-y-3 pt-3 border-t border-slate-800 overflow-y-auto max-h-[35vh] pr-1">
                 <div className="flex items-center justify-between text-xs text-slate-400">
                   <span className="font-semibold text-white">Hasil Sintesis Skenario ({aiGeneratedBlocks.length} Blok):</span>
-                  <span className="text-[11px] text-emerald-400 font-mono">✓ Siap Ditautkan</span>
+                  {aiSourceMode === 'ai_cloud' ? (
+                    <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded font-mono font-medium">
+                      ✓ AI_GENERATED (Gemini 2.5 Flash)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded font-mono font-medium">
+                      ⚠ LOCAL_FALLBACK (Template Sinematik)
+                    </span>
+                  )}
                 </div>
 
                 <div className="space-y-2 bg-slate-950 p-3 rounded-xl border border-slate-800/80 font-serif text-xs">

@@ -85,16 +85,30 @@ class CdpClient {
     });
   }
 
-  async eval(expression: string): Promise<any> {
-    const res = await this.send('Runtime.evaluate', {
-      expression,
-      returnByValue: true,
-      awaitPromise: true,
-    });
-    if (res?.exceptionDetails) {
-      throw new Error(`Eval error: ${JSON.stringify(res.exceptionDetails)}`);
+  async eval(expression: string, retries = 4): Promise<any> {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const res = await this.send('Runtime.evaluate', {
+          expression,
+          returnByValue: true,
+          awaitPromise: true,
+        });
+        if (res?.exceptionDetails) {
+          throw new Error(`Eval error: ${JSON.stringify(res.exceptionDetails)}`);
+        }
+        return res?.result?.value;
+      } catch (err: any) {
+        if (
+          attempt < retries - 1 &&
+          (err.message?.includes('Execution context was destroyed') ||
+            err.message?.includes('Cannot find context with specified id'))
+        ) {
+          await new Promise((r) => setTimeout(r, 400));
+          continue;
+        }
+        throw err;
+      }
     }
-    return res?.result?.value;
   }
 
   close(): void {

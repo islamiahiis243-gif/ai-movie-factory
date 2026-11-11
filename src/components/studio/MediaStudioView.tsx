@@ -24,6 +24,7 @@ import {
   updatePipelineJob,
   fetchPipelineJobs,
   addJobLog,
+  supabase,
 } from '../../lib/supabase';
 import {
   getMediaAdapter,
@@ -34,6 +35,24 @@ import { AssetDetailModal } from './AssetDetailModal';
 import { CostPreviewModal } from './CostPreviewModal';
 import { useAuth } from '../../context/AuthContext';
 import { translations } from '../../lib/translations';
+
+// Centralized Canonical Model Pricing Map (Temuan 2 & Temuan Tambahan)
+export const MODEL_CREDIT_COSTS: Record<string, number> = {
+  'gemini-3.1-flash-lite-image': 15,
+  'imagen-3.0-generate': 20,
+  'gemini-nano-banana-2.1': 30,
+  'gemini-omni-1.1-flash': 45,
+  'gen3a_turbo': 50,
+  'gemini-3.8-flash-tts': 10,
+  'gemini-3.8-flash-lite-tts': 5,
+  'eleven_multilingual_v2': 12,
+  'lyria-3-clip-preview': 20,
+  'suno_v35_clip': 25,
+};
+
+export function getModelCreditCost(modelId: string, fallback: number = 15): number {
+  return MODEL_CREDIT_COSTS[modelId] || fallback;
+}
 import {
   CheckCircle2,
   Clock,
@@ -301,7 +320,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
   const handleGenerateImage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProject || !imgPrompt || isGenerating) return;
-    const creditCost = imgModel === 'imagen-3.0-generate' ? 20 : 15;
+    const creditCost = getModelCreditCost(imgModel, 15);
 
     setCostPreviewConfig({
       isOpen: true,
@@ -322,7 +341,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
 
   const executeImageGeneration = async (idempotencyKey: string) => {
     setIsGenerating(true);
-    const creditCost = imgModel === 'imagen-3.0-generate' ? 20 : 15;
+    const creditCost = getModelCreditCost(imgModel, 15);
     const now = new Date().toISOString();
 
     // 1. Enqueue job into Pipeline Orchestrator (SSOT TC-WF-09 & TC-WF-10)
@@ -360,8 +379,62 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
         await updatePipelineJob(activeProject.id, pipelineJob.id, { progress: 60 });
       }
 
+      // 2. Dispatch to Serverless AI Proxy (/api/ai-generate) with Two-Phase Credit Engine
+      let serverAssetUrl: string | null = null;
+      let isLiveAiExecuted = false;
+      let finalCreditCost = creditCost;
+
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+
+        if (token) {
+          const aiResp = await fetch('/api/ai-generate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              operation: 'image_keyframe',
+              prompt: imgPrompt,
+              model: imgModel,
+              projectId: activeProject.id,
+              idempotencyKey,
+              params: {
+                aspectRatio: imgAspectRatio,
+                resolution: imgResolution,
+              },
+            }),
+          });
+
+          if (aiResp.status === 402) {
+            const errData = await aiResp.json();
+            throw new Error(`INSUFFICIENT_CREDITS: ${errData.message || 'Saldo kredit tidak mencukupi (HTTP 402).'}`);
+          }
+
+          if (aiResp.ok) {
+            const data = await aiResp.json();
+            finalCreditCost = data.creditsDeducted || creditCost;
+            if (data.remainingBalance !== undefined) {
+              setWalletBalance(data.remainingBalance);
+            }
+            if (data.imageUrl) {
+              serverAssetUrl = data.imageUrl;
+              isLiveAiExecuted = true;
+            }
+          }
+        }
+      } catch (proxyErr: any) {
+        if (proxyErr.message && proxyErr.message.includes('INSUFFICIENT_CREDITS')) {
+          throw proxyErr;
+        }
+        console.warn('AI Serverless proxy unreachable/bypassed, engaging local procedural generator:', proxyErr);
+      }
+
+      // 3. Fallback to local procedural generator if offline or simulation mode
       const adapter = getMediaAdapter('google_gemini');
-      const result = await adapter.generateMedia({
+      const fallbackResult = await adapter.generateMedia({
         projectId: activeProject.id,
         characterId: imgCharacterId || undefined,
         sceneId: imgSceneId || undefined,
@@ -380,6 +453,8 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
         },
       });
 
+      const effectiveUrl = serverAssetUrl || fallbackResult.fileUrl;
+
       const { data: newAsset } = await createMediaAsset(activeProject.id, {
         project_id: activeProject.id,
         character_id: imgCharacterId || undefined,
@@ -393,22 +468,27 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
         generation_params: {
           aspect_ratio: imgAspectRatio,
           resolution: imgResolution,
-          seed: result.metadata.seed,
+          seed: fallbackResult.metadata?.seed,
           negative_prompt: imgNegativePrompt || undefined,
           idempotency_key: idempotencyKey,
+          is_simulation_mode: !isLiveAiExecuted,
+          generation_mode: isLiveAiExecuted ? 'ai_cloud_production' : 'local_simulation_preview',
         },
         status: 'completed',
-        credit_cost: result.creditCost || creditCost,
-        file_url: result.fileUrl,
-        thumbnail_url: result.thumbnailUrl,
+        credit_cost: isLiveAiExecuted ? finalCreditCost : 0,
+        file_url: effectiveUrl,
+        thumbnail_url: effectiveUrl,
         version: 1,
         approval_status: 'draft',
       });
 
       if (newAsset) {
         setAssets((prev) => [newAsset, ...prev]);
-        setWalletBalance((prev) => Math.max(0, prev - (result.creditCost || creditCost)));
-        showNotification(t.mediaStudio.actions.generationSuccess);
+        if (!isLiveAiExecuted) {
+          showNotification(`[Mode Preview Simulasi] Keyframe still berhasil dibuat sebagai preview visual lokal (0 CR terpotong).`);
+        } else {
+          showNotification(`[Gemini AI] Keyframe still berhasil disintesis via server (${finalCreditCost} CR terpotong secara atomik).`);
+        }
         setCostPreviewConfig(null);
         setActiveTab('library');
 
@@ -427,7 +507,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
             project_id: activeProject.id,
             stage: 'image_gen',
             level: 'success',
-            message: `Keyframe gambar berhasil disintesis dan didaftarkan ke Library (#${newAsset.id}).`,
+            message: `Keyframe gambar berhasil disintesis (${isLiveAiExecuted ? 'AI Cloud Production' : 'Simulasi Preview'}) dan didaftarkan ke Library (#${newAsset.id}).`,
           });
           setActivePipelineJobs((prev) => prev.filter((j) => j.id !== pipelineJob.id));
         }
@@ -461,7 +541,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
     if (!activeProject || !vidPrompt || isGenerating) return;
 
     const providerId: MediaProviderId = vidModel === 'gen3a_turbo' ? 'runway_gen3' : 'google_gemini';
-    const creditCost = vidModel === 'gen3a_turbo' ? 50 : 45;
+    const creditCost = getModelCreditCost(vidModel, 45);
     const sourceAsset = assets.find((a) => a.id === vidSourceAssetId) || null;
 
     setCostPreviewConfig({
@@ -488,7 +568,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
     setIsGenerating(true);
     const providerId: MediaProviderId = vidModel === 'gen3a_turbo' ? 'runway_gen3' : 'google_gemini';
     const sourceAsset = assets.find((a) => a.id === vidSourceAssetId);
-    const cost = vidModel === 'gen3a_turbo' ? 50 : 45;
+    const cost = getModelCreditCost(vidModel, 45);
     const now = new Date().toISOString();
 
     // 1. Enqueue job into Pipeline Orchestrator (SSOT TC-WF-09 & TC-WF-10)
@@ -567,9 +647,11 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           motion_intensity: vidMotionIntensity,
           reference_image_url: sourceAsset?.file_url,
           idempotency_key: idempotencyKey,
+          is_simulation_mode: true,
+          generation_mode: 'local_simulation_preview',
         },
         status: 'completed',
-        credit_cost: result.creditCost || cost,
+        credit_cost: 0,
         file_url: result.fileUrl,
         thumbnail_url: result.thumbnailUrl,
         version: 1,
@@ -578,8 +660,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
 
       if (newAsset) {
         setAssets((prev) => [newAsset, ...prev]);
-        setWalletBalance((prev) => Math.max(0, prev - (result.creditCost || cost)));
-        showNotification(`Video berhasil dirender! (${result.creditCost || cost} CR terpotong).`);
+        showNotification(`[Mode Preview Simulasi] Video klip still berhasil disintesis sebagai preview visual lokal.`);
         setCostPreviewConfig(null);
         setActiveTab('library');
 
@@ -630,7 +711,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
   const handleGenerateVoice = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProject || !voiceText || isGenerating) return;
-    const creditCost = voiceModel === 'eleven_multilingual_v2' ? 10 : 8;
+    const creditCost = getModelCreditCost(voiceModel, 10);
 
     setCostPreviewConfig({
       isOpen: true,
@@ -651,7 +732,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
   const executeVoiceGeneration = async (idempotencyKey: string) => {
     setIsGenerating(true);
     const providerId: MediaProviderId = voiceModel === 'eleven_multilingual_v2' ? 'elevenlabs' : 'google_gemini';
-    const creditCost = voiceModel === 'eleven_multilingual_v2' ? 10 : 8;
+    const creditCost = getModelCreditCost(voiceModel, 10);
 
     try {
       const adapter = getMediaAdapter(providerId);
@@ -687,9 +768,11 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           tempo: voiceTempo,
           emotion_tag: voiceEmotion,
           idempotency_key: idempotencyKey,
+          is_simulation_mode: true,
+          generation_mode: 'local_simulation_preview',
         },
         status: 'completed',
-        credit_cost: result.creditCost || creditCost,
+        credit_cost: 0,
         file_url: result.fileUrl,
         version: 1,
         approval_status: 'draft',
@@ -697,8 +780,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
 
       if (newAsset) {
         setAssets((prev) => [newAsset, ...prev]);
-        setWalletBalance((prev) => Math.max(0, prev - (result.creditCost || creditCost)));
-        showNotification(t.mediaStudio.actions.generationSuccess);
+        showNotification(`[Mode Preview Simulasi] Klip vokal berhasil dibuat sebagai audio preview lokal (0 CR terpotong).`);
         setCostPreviewConfig(null);
         setActiveTab('library');
       }
@@ -714,7 +796,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
   const handleGenerateAudio = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProject || !audioPrompt || isGenerating) return;
-    const creditCost = audioModel === 'suno_v3_orchestral' ? 25 : 15;
+    const creditCost = getModelCreditCost(audioModel, 20);
 
     setCostPreviewConfig({
       isOpen: true,
@@ -735,7 +817,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
   const executeAudioGeneration = async (idempotencyKey: string) => {
     setIsGenerating(true);
     const providerId: MediaProviderId = audioModel === 'suno_v3_orchestral' ? 'suno_audio' : 'google_gemini';
-    const creditCost = audioModel === 'suno_v3_orchestral' ? 25 : 15;
+    const creditCost = getModelCreditCost(audioModel, 20);
 
     try {
       const adapter = getMediaAdapter(providerId);
@@ -769,9 +851,11 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
           music_genre: audioGenre,
           instrumentation: audioInstrumentation,
           idempotency_key: idempotencyKey,
+          is_simulation_mode: true,
+          generation_mode: 'local_simulation_preview',
         },
         status: 'completed',
-        credit_cost: result.creditCost || creditCost,
+        credit_cost: 0,
         file_url: result.fileUrl,
         version: 1,
         approval_status: 'draft',
@@ -779,8 +863,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
 
       if (newAsset) {
         setAssets((prev) => [newAsset, ...prev]);
-        setWalletBalance((prev) => Math.max(0, prev - (result.creditCost || creditCost)));
-        showNotification(t.mediaStudio.actions.generationSuccess);
+        showNotification(`[Mode Preview Simulasi] Trek musik latar berhasil dibuat sebagai audio preview lokal (0 CR terpotong).`);
         setCostPreviewConfig(null);
         setActiveTab('library');
       }
