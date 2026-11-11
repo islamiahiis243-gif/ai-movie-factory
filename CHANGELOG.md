@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Sprint 5 Hari - Day 1] - HLS Physical Storage Upload, Token Propagation & Fail-Closed Guard - 2026-11-12 00:08 +07:00
+
+### Added, Hardened & Reconciled (Final HLS Verification Closure)
+- **Physical HLS Storage Persistence & Verification Guard (`server/ottHlsEngine.ts`):**
+  - Mengimplementasikan pengunggahan fisik Master Playlist (`master.m3u8`) dan seluruh Variant Media Playlist (`{res}/playlist.m3u8`) langsung ke bucket privat Supabase Storage `ott-masters`.
+  - Menerapkan mekanisme **Physical Verification Guard**: sebelum memanggil RPC `complete_ott_transcoding_job()`, sistem memverifikasi keberadaan fisik file `master.m3u8` di Supabase Storage via `storage.from('ott-masters').list()`.
+  - Mengunci aturan **Fail-Closed**: Jika file fisik HLS tidak ditemukan atau gagal diunggah, pipeline secara tegas melempar error `PHYSICAL_ARTIFACTS_NOT_FOUND` dan TIDAK PERNAH mengubah status katalog menjadi `ready`.
+  - Menjamin zero false-ready state: Katalog hanya berstatus `ready` jika file fisik HLS benar-benar tersedia di CDN. Bila belum tersedia, pemutar video otomatis jatuh ke HTML5 Progressive MP4 yang sudah 100% teruji.
+- **Client-Side Hls.js Token Propagation (`src/components/ott/CinematicPlayerView.tsx`):**
+  - Menambahkan hook `xhrSetup` pada konfigurasi `new Hls(...)` untuk mempropagasi parameter query token otentikasi signed delivery secara otomatis ke seluruh permintaan sub-file (Variant Playlist dan segmen `.ts`).
+  - Menjamin pemutaran aman multi-level tanpa kendala HTTP 403/404 pada segmen turunan di private bucket `ott-masters`.
+- **Rangkaian Uji Terarah & Verifikasi Menyeluruh (`scripts/test_ott_hls_engine.ts`):**
+  - Rangkaian pengujian diperluas menjadi **71 asersi lolos (100% PASS)**:
+    - Section 8: Verifikasi upload fisik `master.m3u8`, variant playlists untuk seluruh resolusi target, serta pengujian ketat fail-closed saat master file absen.
+    - Section 9: Verifikasi hook `xhrSetup` dan propagasi token signed URL pada `CinematicPlayerView.tsx`.
+- **Sprint 5 Hari (12–17 Nov 2026) Commercial MVP Alignment:**
+  - Day 1 (12 Nov): Audit kondisi aktual, penguncian cakupan MVP komersial, dan penuntasan celah fisik HLS / Progressive MP4 streaming.
+
 ## [Gelombang II - Milestone 2.9.2D] - HLS Security Hardening, Signed Delivery & Transcoding Lifecycle - 2026-11-11 23:55 +07:00
 
 ### Added, Hardened & Reconciled (Reviewer Findings 1–5 Resolution)

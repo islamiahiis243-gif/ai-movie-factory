@@ -346,13 +346,16 @@ async function runTests() {
     Boolean(renewResult.hlsMasterPlaylistUrl?.includes('token=')));
 
   // ---------------------------------------------------------------------------
-  // SECTION 8: TRANSCODING PIPELINE WORKER & VALIDATION GUARDS
+  // SECTION 8: TRANSCODING PIPELINE WORKER & STORAGE UPLOAD VALIDATION
   // ---------------------------------------------------------------------------
-  console.log('\n[SECTION 8] Verifying Transcoding Pipeline Worker & Lifecycle...');
+  console.log('\n[SECTION 8] Verifying Transcoding Pipeline Worker, Storage Upload & Verification...');
 
-  // Mock DB for pipeline unit test
+  // Mock DB with Storage API simulation
   let simulatedJobStatus = 'queued';
   let simulatedProgress = 0;
+  const uploadedFiles: string[] = [];
+  let shouldSimulateMissingMaster = false;
+
   const mockPipelineDb: any = {
     from: (table: string) => ({
       select: () => ({
@@ -376,7 +379,7 @@ async function runTests() {
             }
             if (table === 'ott_films') {
               return {
-                data: { id: contentId, channel_id: channelId, publication_status: 'published' },
+                data: { id: contentId, channel_id: channelId, publication_status: 'published', runtime_seconds: 300 },
                 error: null,
               };
             }
@@ -392,6 +395,23 @@ async function runTests() {
         },
       }),
     }),
+    storage: {
+      from: (bucket: string) => ({
+        upload: async (uploadPath: string, buffer: Buffer, opts: any) => {
+          uploadedFiles.push(uploadPath);
+          return { data: { path: uploadPath }, error: null };
+        },
+        list: async (prefix: string) => {
+          if (shouldSimulateMissingMaster) {
+            return { data: [], error: null };
+          }
+          return {
+            data: [{ name: 'master.m3u8' }, { name: 'playlist.m3u8' }],
+            error: null,
+          };
+        },
+      }),
+    },
     rpc: async (fn: string, params: any) => {
       if (fn === 'complete_ott_transcoding_job') {
         return {
@@ -419,10 +439,28 @@ async function runTests() {
   assert('executeTranscodingPipeline executes successfully', pipelineResult.success === true);
   assert('executeTranscodingPipeline progresses through stages (25%, 50%, 75%)',
     progressUpdates.includes(25) && progressUpdates.includes(50) && progressUpdates.includes(75));
+  assert('executeTranscodingPipeline uploads master.m3u8 physically to storage',
+    uploadedFiles.includes('hls/films/film_test_001/master.m3u8'));
+  assert('executeTranscodingPipeline uploads variant playlists for all target resolutions (1080p, 720p, 480p)',
+    uploadedFiles.includes('hls/films/film_test_001/1080p/playlist.m3u8') &&
+    uploadedFiles.includes('hls/films/film_test_001/720p/playlist.m3u8') &&
+    uploadedFiles.includes('hls/films/film_test_001/480p/playlist.m3u8'));
   assert('executeTranscodingPipeline returns canonical master playlist path terminating in master.m3u8',
     pipelineResult.masterPlaylistUrl === 'hls/films/film_test_001/master.m3u8');
   assert('executeTranscodingPipeline generates correct renditions count',
     pipelineResult.renditionsCount === 3);
+
+  // Failure guard: Fail-closed if master.m3u8 missing in storage
+  simulatedJobStatus = 'queued';
+  shouldSimulateMissingMaster = true;
+  let physicalMissingCaught = false;
+  try {
+    await testEngineWithDb.executeTranscodingPipeline('job_test_001');
+  } catch (err: any) {
+    physicalMissingCaught = err.message.includes('PHYSICAL_ARTIFACTS_NOT_FOUND');
+  }
+  assert('executeTranscodingPipeline strictly fails-closed if physical master.m3u8 verification fails', physicalMissingCaught);
+  shouldSimulateMissingMaster = false;
 
   // Failure guard: Illegal job state
   simulatedJobStatus = 'completed';
@@ -433,6 +471,21 @@ async function runTests() {
     illegalStateCaught = err.message.includes('ILLEGAL_JOB_STATE');
   }
   assert('executeTranscodingPipeline rejects jobs already in completed state', illegalStateCaught);
+
+  // ---------------------------------------------------------------------------
+  // SECTION 9: CLIENT-SIDE SIGNED TOKEN PROPAGATION (XHRSETUP)
+  // ---------------------------------------------------------------------------
+  console.log('\n[SECTION 9] Verifying Client-Side Hls.js Token Propagation (xhrSetup)...');
+
+  const playerSrcPath = path.resolve(process.cwd(), 'src/components/ott/CinematicPlayerView.tsx');
+  const playerSrcCode = fs.readFileSync(playerSrcPath, 'utf8');
+
+  assert('CinematicPlayerView configures xhrSetup hook on Hls instance',
+    playerSrcCode.includes('xhrSetup:'));
+  assert('xhrSetup propagates signed delivery token to variant playlists and segment chunks',
+    playerSrcCode.includes('targetUrl.searchParams.set(\'token\', token)'));
+  assert('CinematicPlayerView has automatic fallback from HLS to Progressive MP4 on error',
+    playerSrcCode.includes('falling back to progressive MP4'));
   const passedCount = results.filter((r) => r.passed).length;
   const totalCount = results.length;
   console.log('\n================================================================');

@@ -201,6 +201,22 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
             enableWorker: true,
             lowLatencyMode: true,
             backBufferLength: 90,
+            xhrSetup: (xhr, url) => {
+              // Propagate ephemeral signed delivery token to variant playlists and segment chunks
+              if (streamUrl && streamUrl.includes('token=') && !url.includes('token=')) {
+                try {
+                  const masterUrlObj = new URL(streamUrl);
+                  const token = masterUrlObj.searchParams.get('token');
+                  if (token) {
+                    const targetUrl = new URL(url);
+                    targetUrl.searchParams.set('token', token);
+                    xhr.open('GET', targetUrl.toString(), true);
+                  }
+                } catch {
+                  // Fallback to default request if URL parsing fails
+                }
+              }
+            },
           });
           hlsRef.current = hls;
 

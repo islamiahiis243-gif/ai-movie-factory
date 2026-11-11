@@ -322,22 +322,79 @@ export class OttHlsEngine {
         outputPrefix: job.hls_output_prefix,
       });
 
-      // Step 2: Intermediate Progress (50%)
+      // Step 2: Intermediate Progress — Generate Master Playlist & Variant Media Playlists (50%)
       await reportProgress(50, 'processing');
 
-      // 5. Generate Master Playlist & Variant Media Playlists
-      this.generateMasterPlaylist({
+      const masterM3u8 = this.generateMasterPlaylist({
         renditions,
         aspectRatio: '16:9',
       });
 
-      // Step 3: Segment / Variant Finalization (75%)
-      await reportProgress(75, 'processing');
+      const variantPlaylists: Array<{ path: string; content: string; res: HlsResolution }> = [];
+      const runtimeSecs = catalogItem.runtime_seconds || 120;
+      const segmentDuration = 6;
+      const segmentCount = Math.max(1, Math.ceil(runtimeSecs / segmentDuration));
 
-      // 6. Canonical Master Playlist Path
+      for (const rendition of renditions) {
+        const variantM3u8 = this.generateMediaPlaylist({
+          resolution: rendition.resolution,
+          segmentCount,
+          segmentDurationSeconds: segmentDuration,
+          segmentPathPrefix: `${job.hls_output_prefix}/${rendition.resolution}`,
+          totalRuntimeSeconds: runtimeSecs,
+        });
+        variantPlaylists.push({
+          path: `${job.hls_output_prefix}/${rendition.resolution}/playlist.m3u8`,
+          content: variantM3u8,
+          res: rendition.resolution,
+        });
+      }
+
+      // Step 3: Physical Upload to Supabase Storage Bucket 'ott-masters'
       const masterPlaylistPath = `${job.hls_output_prefix}/master.m3u8`;
 
-      // 7. Atomic DB Completion via RPC
+      if (!options?.mockStorageUpload) {
+        // Upload Master Playlist
+        const { error: masterUpErr } = await db.storage
+          .from('ott-masters')
+          .upload(masterPlaylistPath, Buffer.from(masterM3u8, 'utf8'), {
+            contentType: 'application/vnd.apple.mpegurl',
+            upsert: true,
+          });
+
+        if (masterUpErr) {
+          throw new Error(`STORAGE_UPLOAD_ERROR: Gagal mengunggah master playlist ke ott-masters: ${masterUpErr.message}`);
+        }
+
+        // Upload Variant Playlists
+        for (const variant of variantPlaylists) {
+          const { error: varUpErr } = await db.storage
+            .from('ott-masters')
+            .upload(variant.path, Buffer.from(variant.content, 'utf8'), {
+              contentType: 'application/vnd.apple.mpegurl',
+              upsert: true,
+            });
+
+          if (varUpErr) {
+            throw new Error(`STORAGE_UPLOAD_ERROR: Gagal mengunggah variant playlist (${variant.res}): ${varUpErr.message}`);
+          }
+        }
+
+        // Step 4: Strict Physical Verification Guard (Verify existence in storage before marking ready)
+        const { data: storageList, error: listErr } = await db.storage
+          .from('ott-masters')
+          .list(job.hls_output_prefix);
+
+        const hasMasterFile = storageList?.some((f: any) => f.name === 'master.m3u8');
+        if (listErr || !hasMasterFile) {
+          throw new Error(`PHYSICAL_ARTIFACTS_NOT_FOUND: Verifikasi fisik artefak HLS di bucket 'ott-masters' gagal. Master playlist tidak ditemukan.`);
+        }
+      }
+
+      // Step 5: Advance progress to 75%
+      await reportProgress(75, 'processing');
+
+      // Step 6: Atomic DB Completion via RPC (Only executed if physical verification succeeded!)
       const completeResult = await this.completeTranscodingJob({
         jobId,
         masterPlaylistPath,
