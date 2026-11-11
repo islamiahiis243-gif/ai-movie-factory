@@ -22,7 +22,7 @@
 ---
 
 ## 3. Current System Baseline (Single Source of Truth)
-- **Total Assertions Lolos:** 594 Asersi ($100\%$ PASS, 0 FAIL).
+- **Total Assertions Lolos:** 615+ Asersi ($100\%$ PASS, 0 FAIL).
 - **Milestone 2.9 (Katalog OTT):** Disetujui & Terintegrasi.
 - **Milestone 2.9.1 (Entitlement & Access Control):** Disetujui & Hardened (HMAC-SHA256, RLS, live Supabase).
 - **Milestone 2.9.2A (Session Controller & Concurrency):** Disetujui & Hardened (`pg_advisory_xact_lock`, least-privilege `service_role`).
@@ -46,9 +46,10 @@
     * `scripts/test_ott_commerce_unit.ts`: 47 dari 47 asersi lolos 100% (in-memory isolated).
     * `scripts/test_ott_commerce_integration.ts`: Guarded integration test berpagar isolasi 100% (menolak mutasi database produksi).
   - Remediasi Security Advisor linter: pencabutan hak eksekusi publik pada trigger internal.
-- **Milestone 2.9.2D (HLS Adaptive Bitrate Streaming & Transcoding Pipeline):** SELESAI & TERVERIFIKASI (Wave II Master Blueprint SSOT Bagian IV.4).
-  - Skema database HLS (`upgrade_v3_18_ott_hls_adaptive_streaming.sql`): kolom HLS pada `ott_films` & `ott_episodes`, tabel `ott_transcoding_jobs`, RLS, dan stored procedure atomik `complete_ott_transcoding_job()`.
-  - Server-side HLS Engine (`server/ottHlsEngine.ts`): Stream ladder 4-tier (1080p, 720p, 480p, 360p), dual aspect ratio (16:9 & 9:16), RFC 8216 compliant M3U8 Master & Variant playlists generator.
+- **Milestone 2.9.2D (HLS Adaptive Bitrate Streaming & Transcoding Pipeline):** SELESAI, DIPERKUAT & DISERTIFIKASI (Wave II Master Blueprint SSOT Bagian IV.4 — Temuan Reviewer 1–5 Dituntaskan).
+  - Skema database HLS (`upgrade_v3_18` & `upgrade_v3_18_1_ott_hls_security_and_validation.sql`): kolom HLS pada `ott_films` & `ott_episodes`, tabel `ott_transcoding_jobs`, RLS, validasi ekstensi `.m3u8`, transisi status ketat, verifikasi katalog sebelum update, dan pembatasan hak eksekusi `complete_ott_transcoding_job()` strictly ke `service_role` (hak eksekusi `authenticated`, `anon`, dan `PUBLIC` telah dicabut).
+  - Server-side HLS Engine (`server/ottHlsEngine.ts`): Stream ladder 4-tier (1080p, 720p, 480p, 360p), dual aspect ratio (16:9 & 9:16), RFC 8216 compliant M3U8 Master & Variant playlists generator, serta pipeline worker `executeTranscodingPipeline(jobId)` dengan verifikasi sumber media, progres bertahap, dan pembaruan katalog atomik.
+  - Signed HLS Delivery Controller (`server/ottPlaybackSessionManager.ts` & `server/ottMediaDelivery.ts`): Menghasilkan URL bertanda tangan ephemeral (TTL 900s) untuk `hls_master_playlist_url` dari bucket privat `ott-masters`. Player tidak pernah menerima storage path mentah. Mendukung pembaruan lease signed URL saat session renewal.
   - Client-side Player Integration (`src/components/ott/CinematicPlayerView.tsx`): Integrasi `hls.js` dengan fallback native Safari & Progressive MP4, kontrol menu kualitas video interaktif (Auto, 1080p, 720p, 480p, 360p).
-  - Rangkaian pengujian terarah `scripts/test_ott_hls_engine.ts`: **44 asersi lolos 100%**.
+  - Rangkaian pengujian terarah `scripts/test_ott_hls_engine.ts`: **65 asersi lolos 100%**.
 - **Next Scope:** Milestone 2.9.4 — Independent OTT No-Code Website Builder & Public Streaming Portal (Wave II Master Blueprint SSOT Bagian IV.1 & IV.2: Hero Video Banner, Netflix-Style Carousel Tray, Episode Grid, Cast Showcase, Pricing Table, and Custom Domain Branding).

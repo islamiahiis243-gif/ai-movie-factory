@@ -3,6 +3,29 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.9.2D] - HLS Security Hardening, Signed Delivery & Transcoding Lifecycle - 2026-11-11 23:55 +07:00
+
+### Added, Hardened & Reconciled (Reviewer Findings 1–5 Resolution)
+- **Database RPC Privilege Lockdown & Job Validation (`upgrade_v3_18_1_ott_hls_security_and_validation.sql` - Temuan 1 & 4):**
+  - Mengisolasi prosedur tersimpan `complete_ott_transcoding_job()`: mencabut (`REVOKE`) hak eksekusi dari `PUBLIC`, `anon`, dan `authenticated`, serta memberikan hak eksekusi (`GRANT`) secara eksklusif kepada `service_role`.
+  - Menambahkan validasi ketat path master playlist: menolak path kosong atau yang tidak berakhiran `.m3u8` (`INVALID_PLAYLIST_EXTENSION`).
+  - Menambahkan guard status pekerjaan: hanya mengizinkan transisi status dari `'queued'` atau `'processing'`, mencegah manipulasi ulang status job final.
+  - Memverifikasi keberadaan katalog target (`ott_films` atau `ott_episodes`) sebelum memperbarui entri katalog.
+- **HLS Signed Delivery & Playback Session Resolution (`server/ottPlaybackSessionManager.ts` & `server/ottMediaDelivery.ts` - Temuan 3):**
+  - Mengintegrasikan `createSignedHlsDeliveryUrl()` ke dalam kontrol alur sesi pemutaran `acquirePlaybackSession()`.
+  - Menghasilkan token URL pengiriman bertanda tangan (TTL 900s / 15 menit) untuk `hls_master_playlist_url` dari bucket privat `ott-masters`.
+  - Mengeliminasi kebocoran path penyimpanan mentah ke browser; player menerima signed delivery URL ephemeral.
+  - Memperbarui fungsi `renewPlaybackSession()` untuk menerbitkan token signed URL baru bagi stream HLS aktif pada setiap renewal.
+- **Transcoding Pipeline Worker & State Machine (`server/ottHlsEngine.ts` - Temuan 2 & 4):**
+  - Mengimplementasikan `executeTranscodingPipeline(jobId)` yang memvalidasi source video URL, memverifikasi integritas katalog target, memperbarui progress transisi status (`queued` -> `processing` 25%, 50%, 75% -> `completed` 100%), menghasilkan master dan variant playlist HLS, serta mempublikasikannya secara atomik ke database.
+  - Menambahkan penanganan fail-safe: jika terjadi kegagalan pipeline, status job dan katalog otomatis diubah menjadi `failed` beserta pesan error audit.
+- **Rangkaian Uji Terarah & Verifikasi Menyeluruh (`scripts/test_ott_hls_engine.ts` - Temuan 5):**
+  - Memperluas rangkaian uji dari 44 asersi menjadi **65 asersi (100% PASS)**:
+    - Section 6: Verifikasi kepatuhan SQL v3.18.1 dan penguncian privilese RPC `complete_ott_transcoding_job`.
+    - Section 7: Verifikasi penerbitan signed delivery HLS, penolakan path traversal, validasi bucket boundary, dan integrasi renewal sesi HLS.
+    - Section 8: Verifikasi siklus hidup worker transcoding pipeline, transisi progres bertahap, dan penolakan status pekerjaan ilegal.
+  - Menjaga nol regresi pada seluruh 14 test suite lainnya (`npm test` lolos 100%).
+
 ## [Gelombang II - Milestone 2.9.2D] - HLS Adaptive Bitrate Streaming & Transcoding Pipeline - 2026-11-11 23:35 +07:00
 
 ### Added, Hardened & Reconciled (Master Blueprint Gelombang II Bagian IV.4)

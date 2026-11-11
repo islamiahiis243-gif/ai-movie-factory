@@ -76,7 +76,8 @@ async function runTestSuite() {
   const allDeps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
 
   assert(!allDeps['video.js'], 'No video.js in dependencies', 'Found video.js');
-  assert(!allDeps['hls.js'], 'No hls.js in dependencies (progressive MP4 enforced)', 'Found hls.js');
+  // Milestone 2.9.2D permits hls.js for MSE adaptive streaming while banning bloated wrapper frameworks
+  assert(Boolean(allDeps['hls.js']), 'hls.js enabled for Milestone 2.9.2D adaptive streaming', 'Missing hls.js');
   assert(!allDeps['plyr'], 'No plyr in dependencies', 'Found plyr');
   assert(!allDeps['dashjs'], 'No dashjs in dependencies', 'Found dashjs');
   assert(!allDeps['shaka-player'], 'No shaka-player in dependencies', 'Found shaka-player');

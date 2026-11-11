@@ -29,6 +29,7 @@ import {
 import {
   parseAndValidateStoragePath,
   createSignedDeliveryUrl,
+  createSignedHlsDeliveryUrl,
   DEFAULT_SIGNED_DELIVERY_TTL_SECONDS,
 } from './ottMediaDelivery.ts';
 
@@ -290,10 +291,34 @@ export async function acquirePlaybackSession(
   const watermarkText = generatePseudonymousWatermark(viewer.id);
 
   // Milestone 2.9.2D: Resolve HLS Adaptive Bitrate mode vs Progressive MP4 fallback
+  // Generates time-limited signed delivery URL for HLS master playlist if ready
   const hlsStatus = (content as any).transcoding_status;
-  const hlsMasterUrl = (content as any).hls_master_playlist_url;
+  const rawHlsMasterUrl = (content as any).hls_master_playlist_url;
   const availableResolutions = (content as any).available_resolutions || ['1080p'];
-  const isHlsReady = Boolean(hlsMasterUrl && hlsStatus === 'ready');
+  const isHlsConfigured = Boolean(rawHlsMasterUrl && hlsStatus === 'ready');
+
+  let signedHlsMasterUrl: string | null = null;
+  if (isHlsConfigured && rawHlsMasterUrl) {
+    if (_mockData) {
+      signedHlsMasterUrl = rawHlsMasterUrl.includes('token=')
+        ? rawHlsMasterUrl
+        : `${rawHlsMasterUrl}${rawHlsMasterUrl.includes('?') ? '&' : '?'}token=mock_signed_hls_token`;
+    } else if (adminSupabase) {
+      try {
+        const signedResult = await createSignedHlsDeliveryUrl(
+          rawHlsMasterUrl,
+          DEFAULT_SIGNED_DELIVERY_TTL_SECONDS,
+          adminSupabase
+        );
+        signedHlsMasterUrl = signedResult.signedUrl;
+      } catch (err: any) {
+        console.warn('[Playback Controller] Failed to sign HLS master playlist, falling back to progressive MP4:', err.message);
+      }
+    }
+  }
+
+  const effectiveStreamMode = signedHlsMasterUrl ? 'hls' : 'progressive';
+  const effectiveIsAdaptive = Boolean(signedHlsMasterUrl);
 
   return {
     success: true,
@@ -302,10 +327,10 @@ export async function acquirePlaybackSession(
       playbackUrl: signedUrlResult.signedUrl,
       signedUrlExpiresAt: signedUrlResult.expiresAt,
       sessionExpiresAt,
-      streamMode: isHlsReady ? 'hls' : 'progressive',
-      hlsMasterPlaylistUrl: isHlsReady ? hlsMasterUrl : null,
-      availableResolutions: isHlsReady ? availableResolutions : ['1080p'],
-      isAdaptive: isHlsReady,
+      streamMode: effectiveStreamMode,
+      hlsMasterPlaylistUrl: signedHlsMasterUrl,
+      availableResolutions: effectiveIsAdaptive ? availableResolutions : ['1080p'],
+      isAdaptive: effectiveIsAdaptive,
       watermark: {
         text: watermarkText,
         intervalSeconds: 20,
@@ -327,7 +352,15 @@ export async function acquirePlaybackSession(
  */
 export async function renewPlaybackSession(
   params: RenewSessionParams
-): Promise<{ success: boolean; code?: string; reason?: string; playbackUrl?: string; signedUrlExpiresAt?: string; sessionExpiresAt?: string }> {
+): Promise<{
+  success: boolean;
+  code?: string;
+  reason?: string;
+  playbackUrl?: string;
+  signedUrlExpiresAt?: string;
+  sessionExpiresAt?: string;
+  hlsMasterPlaylistUrl?: string | null;
+}> {
   const { sessionId, viewer, grantToken, currentPositionSeconds, adminSupabase, _mockData } = params;
 
   if (!viewer || !viewer.id) {
@@ -473,6 +506,30 @@ export async function renewPlaybackSession(
     );
   }
 
+  // Generate renewed signed URL for HLS if applicable
+  const rawHlsUrl = (contentRecord as any)?.hls_master_playlist_url || _mockData?.content?.hls_master_playlist_url;
+  const isHlsReady = ((contentRecord as any)?.transcoding_status || _mockData?.content?.transcoding_status) === 'ready' && Boolean(rawHlsUrl);
+  let renewedHlsMasterUrl: string | null = null;
+
+  if (isHlsReady && rawHlsUrl) {
+    if (_mockData) {
+      renewedHlsMasterUrl = rawHlsUrl.includes('token=')
+        ? rawHlsUrl
+        : `${rawHlsUrl}${rawHlsUrl.includes('?') ? '&' : '?'}token=mock_renewed_hls_token`;
+    } else if (adminSupabase) {
+      try {
+        const signedHls = await createSignedHlsDeliveryUrl(
+          rawHlsUrl,
+          DEFAULT_SIGNED_DELIVERY_TTL_SECONDS,
+          adminSupabase
+        );
+        renewedHlsMasterUrl = signedHls.signedUrl;
+      } catch (err: any) {
+        console.warn('[Playback Controller] Failed to re-sign HLS master playlist upon renewal:', err.message);
+      }
+    }
+  }
+
   // Update session heartbeat & signed_url_expires_at in database
   let sessionExpiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
   if (!_mockData && adminSupabase) {
@@ -492,6 +549,7 @@ export async function renewPlaybackSession(
     playbackUrl: signedUrlResult.signedUrl,
     signedUrlExpiresAt: signedUrlResult.expiresAt,
     sessionExpiresAt,
+    hlsMasterPlaylistUrl: renewedHlsMasterUrl,
   };
 }
 

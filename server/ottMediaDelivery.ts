@@ -135,3 +135,16 @@ export async function createSignedDeliveryUrl(
     ttlSeconds,
   };
 }
+
+/**
+ * Milestone 2.9.2D: Issues a time-limited signed delivery URL for HLS master playlist.
+ * Validates bucket boundary and returns secure CDN URL with ephemeral access token.
+ */
+export async function createSignedHlsDeliveryUrl(
+  rawPath: string,
+  ttlSeconds: number = DEFAULT_SIGNED_DELIVERY_TTL_SECONDS,
+  adminClient?: any
+): Promise<SignedDeliveryUrlResult> {
+  const parsed = parseAndValidateStoragePath(rawPath);
+  return createSignedDeliveryUrl(parsed.bucket, parsed.objectPath, ttlSeconds, adminClient);
+}

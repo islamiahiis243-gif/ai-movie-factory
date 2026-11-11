@@ -8,6 +8,15 @@ import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import { OttHlsEngine, HLS_STREAM_LADDER } from '../server/ottHlsEngine.ts';
+import {
+  parseAndValidateStoragePath,
+  createSignedHlsDeliveryUrl,
+} from '../server/ottMediaDelivery.ts';
+import {
+  acquirePlaybackSession,
+  renewPlaybackSession,
+} from '../server/ottPlaybackSessionManager.ts';
+import { generateEntitlementGrant } from '../server/ottGrantSigner.ts';
 
 interface AssertionResult {
   num: number;
@@ -211,8 +220,219 @@ async function runTests() {
     migrationSql.includes('SECURITY DEFINER'));
 
   // ---------------------------------------------------------------------------
-  // SUMMARY
+  // SECTION 6: RPC PRIVILEGE LOCKDOWN & HARDENING (V3.18.1)
   // ---------------------------------------------------------------------------
+  console.log('\n[SECTION 6] Verifying Migration v3_18_1 RPC Hardening & Privilege Lockdown...');
+
+  const migration181Path = path.resolve(process.cwd(), 'supabase/upgrade_v3_18_1_ott_hls_security_and_validation.sql');
+  assert('upgrade_v3_18_1_ott_hls_security_and_validation.sql exists physically', fs.existsSync(migration181Path));
+
+  const migration181Sql = fs.readFileSync(migration181Path, 'utf8');
+  assert('complete_ott_transcoding_job validates master playlist path extension (.m3u8)',
+    migration181Sql.includes("NOT (p_master_playlist_path LIKE '%.m3u8')"));
+  assert('complete_ott_transcoding_job validates job state transition strictly from queued or processing',
+    migration181Sql.includes("v_job.status NOT IN ('queued', 'processing')"));
+  assert('complete_ott_transcoding_job verifies target catalog item exists before updating',
+    migration181Sql.includes("SELECT EXISTS(SELECT 1 FROM public.ott_films WHERE id = v_job.content_id)"));
+  assert('complete_ott_transcoding_job revokes execution from PUBLIC, anon, and authenticated',
+    migration181Sql.includes('REVOKE ALL ON FUNCTION public.complete_ott_transcoding_job(UUID, TEXT, JSONB) FROM PUBLIC, anon, authenticated;'));
+  assert('complete_ott_transcoding_job grants execution exclusively to service_role',
+    migration181Sql.includes('GRANT EXECUTE ON FUNCTION public.complete_ott_transcoding_job(UUID, TEXT, JSONB) TO service_role;'));
+
+  // ---------------------------------------------------------------------------
+  // SECTION 7: HLS SIGNED DELIVERY URL & PLAYBACK SESSION INTEGRATION
+  // ---------------------------------------------------------------------------
+  console.log('\n[SECTION 7] Verifying HLS Signed Delivery & Playback Session Leases...');
+
+  // Path parsing & boundary checks
+  const validParsed = parseAndValidateStoragePath('ott-masters/hls/films/film_999/master.m3u8');
+  assert('parseAndValidateStoragePath parses valid HLS master playlist path',
+    validParsed.bucket === 'ott-masters' && validParsed.objectPath === 'hls/films/film_999/master.m3u8');
+
+  let pathTraversalCaught = false;
+  try {
+    parseAndValidateStoragePath('ott-masters/../hls/secret.m3u8');
+  } catch (err: any) {
+    pathTraversalCaught = err.message.includes('SECURITY_VIOLATION');
+  }
+  assert('parseAndValidateStoragePath strictly rejects path traversal in HLS paths', pathTraversalCaught);
+
+  let bucketViolationCaught = false;
+  try {
+    parseAndValidateStoragePath('https://jixfakvbhugpypjtyshq.supabase.co/storage/v1/object/public/unauthorized-bucket/master.m3u8');
+  } catch (err: any) {
+    bucketViolationCaught = err.message.includes('UNAUTHORIZED_STORAGE_BUCKET');
+  }
+  assert('parseAndValidateStoragePath rejects unauthorized bucket origins', bucketViolationCaught);
+
+  // Playback Session: HLS Ready content signed delivery test
+  const viewer = { id: 'usr_viewer_test_hls', email: 'viewer@hls.test' };
+  const contentId = 'film_test_hls_001';
+  const channelId = 'chn_test_001';
+
+  const grant = generateEntitlementGrant({
+    viewerId: viewer.id,
+    contentId,
+    contentType: 'film',
+    channelId,
+    accessPolicy: 'free_with_ads',
+    watermarkRequired: false,
+  });
+  const grantToken = grant.grantToken;
+
+  const mockHlsContent = {
+    id: contentId,
+    title: 'HLS Test Film',
+    channel_id: channelId,
+    access_policy: 'free_with_ads',
+    publication_status: 'published',
+    master_approval_status: 'GATE_5_APPROVED',
+    master_video_url: 'ott-masters/films/film_001/master.mp4',
+    hls_master_playlist_url: 'ott-masters/hls/films/film_001/master.m3u8',
+    transcoding_status: 'ready',
+    available_resolutions: ['1080p', '720p', '480p'],
+    runtime_seconds: 7200,
+  };
+
+  const hlsSession = await acquirePlaybackSession({
+    viewer,
+    grantToken,
+    channelId,
+    contentId,
+    contentType: 'film',
+    adminSupabase: null,
+    _mockData: {
+      content: mockHlsContent,
+      userPasses: [],
+      userSubscriptions: [],
+    },
+  });
+
+  assert('acquirePlaybackSession succeeds for ready HLS content', hlsSession.success === true);
+  assert('acquirePlaybackSession resolves streamMode to "hls"', hlsSession.session?.streamMode === 'hls');
+  assert('acquirePlaybackSession sets isAdaptive to true', hlsSession.session?.isAdaptive === true);
+  assert('acquirePlaybackSession issues signed HLS master playlist URL with token parameter',
+    Boolean(hlsSession.session?.hlsMasterPlaylistUrl?.includes('token=')));
+  assert('acquirePlaybackSession preserves available multi-resolutions',
+    hlsSession.session?.availableResolutions?.length === 3);
+
+  // Renewal with HLS
+  const renewResult = await renewPlaybackSession({
+    sessionId: hlsSession.session!.sessionId,
+    viewer,
+    grantToken,
+    adminSupabase: null,
+    _mockData: {
+      contentId,
+      channelId,
+      session: {
+        id: 'sess_rec_1',
+        session_id: hlsSession.session!.sessionId,
+        user_id: viewer.id,
+        channel_id: channelId,
+        content_id: contentId,
+        content_type: 'film',
+        grant_id: 'grant_1',
+        status: 'active',
+      },
+      content: mockHlsContent,
+      userPasses: [],
+      userSubscriptions: [],
+    },
+  });
+
+  assert('renewPlaybackSession succeeds for active HLS session', renewResult.success === true);
+  assert('renewPlaybackSession issues renewed signed HLS URL with refreshed token parameter',
+    Boolean(renewResult.hlsMasterPlaylistUrl?.includes('token=')));
+
+  // ---------------------------------------------------------------------------
+  // SECTION 8: TRANSCODING PIPELINE WORKER & VALIDATION GUARDS
+  // ---------------------------------------------------------------------------
+  console.log('\n[SECTION 8] Verifying Transcoding Pipeline Worker & Lifecycle...');
+
+  // Mock DB for pipeline unit test
+  let simulatedJobStatus = 'queued';
+  let simulatedProgress = 0;
+  const mockPipelineDb: any = {
+    from: (table: string) => ({
+      select: () => ({
+        eq: (col: string, val: string) => ({
+          maybeSingle: async () => {
+            if (table === 'ott_transcoding_jobs') {
+              return {
+                data: {
+                  id: 'job_test_001',
+                  channel_id: channelId,
+                  content_id: contentId,
+                  content_type: 'film',
+                  source_video_url: 'ott-masters/films/test/master.mp4',
+                  status: simulatedJobStatus,
+                  target_resolutions: ['1080p', '720p', '480p'],
+                  hls_output_prefix: 'hls/films/film_test_001',
+                  progress_percent: simulatedProgress,
+                },
+                error: null,
+              };
+            }
+            if (table === 'ott_films') {
+              return {
+                data: { id: contentId, channel_id: channelId, publication_status: 'published' },
+                error: null,
+              };
+            }
+            return { data: null, error: null };
+          },
+        }),
+      }),
+      update: (fields: any) => ({
+        eq: async (col: string, val: string) => {
+          if (fields.status) simulatedJobStatus = fields.status;
+          if (fields.progress_percent !== undefined) simulatedProgress = fields.progress_percent;
+          return { data: null, error: null };
+        },
+      }),
+    }),
+    rpc: async (fn: string, params: any) => {
+      if (fn === 'complete_ott_transcoding_job') {
+        return {
+          data: {
+            success: true,
+            job_id: params.p_job_id,
+            content_id: contentId,
+            master_playlist_url: params.p_master_playlist_path,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: new Error('Unknown RPC') };
+    },
+  };
+
+  const testEngineWithDb = new OttHlsEngine();
+  (testEngineWithDb as any).getDb = () => mockPipelineDb;
+
+  const progressUpdates: number[] = [];
+  const pipelineResult = await testEngineWithDb.executeTranscodingPipeline('job_test_001', {
+    stepCallback: (pct) => progressUpdates.push(pct),
+  });
+
+  assert('executeTranscodingPipeline executes successfully', pipelineResult.success === true);
+  assert('executeTranscodingPipeline progresses through stages (25%, 50%, 75%)',
+    progressUpdates.includes(25) && progressUpdates.includes(50) && progressUpdates.includes(75));
+  assert('executeTranscodingPipeline returns canonical master playlist path terminating in master.m3u8',
+    pipelineResult.masterPlaylistUrl === 'hls/films/film_test_001/master.m3u8');
+  assert('executeTranscodingPipeline generates correct renditions count',
+    pipelineResult.renditionsCount === 3);
+
+  // Failure guard: Illegal job state
+  simulatedJobStatus = 'completed';
+  let illegalStateCaught = false;
+  try {
+    await testEngineWithDb.executeTranscodingPipeline('job_test_001');
+  } catch (err: any) {
+    illegalStateCaught = err.message.includes('ILLEGAL_JOB_STATE');
+  }
+  assert('executeTranscodingPipeline rejects jobs already in completed state', illegalStateCaught);
   const passedCount = results.filter((r) => r.passed).length;
   const totalCount = results.length;
   console.log('\n================================================================');

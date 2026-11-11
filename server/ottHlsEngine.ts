@@ -11,6 +11,7 @@
  */
 
 import { getSupabaseAdmin } from './supabaseAdmin.ts';
+import { parseAndValidateStoragePath } from './ottMediaDelivery.ts';
 import type {
   HlsResolution,
   HlsStreamRendition,
@@ -237,6 +238,131 @@ export class OttHlsEngine {
       contentId: data.content_id,
       masterPlaylistUrl: data.master_playlist_url,
     };
+  }
+
+  /**
+   * Executes full end-to-end transcoding pipeline lifecycle for a queued job.
+   * Includes source video validation, progress updates, rendition generation,
+   * catalog item verification, and atomic database state completion.
+   */
+  public async executeTranscodingPipeline(
+    jobId: string,
+    options?: {
+      stepCallback?: (progressPercent: number, statusMessage: string) => void;
+    }
+  ): Promise<{
+    success: boolean;
+    jobId: string;
+    contentId: string;
+    contentType: 'film' | 'episode';
+    masterPlaylistUrl: string;
+    renditionsCount: number;
+  }> {
+    const db = this.getDb();
+
+    // 1. Fetch job record
+    const { data: job, error: jobErr } = await db
+      .from('ott_transcoding_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (jobErr || !job) {
+      throw new Error(`TRANSCODING_JOB_NOT_FOUND: Job dengan ID '${jobId}' tidak ditemukan.`);
+    }
+
+    if (job.status !== 'queued' && job.status !== 'processing') {
+      throw new Error(`ILLEGAL_JOB_STATE: Job berada dalam status '${job.status}', tidak dapat diproses.`);
+    }
+
+    const reportProgress = async (pct: number, status: 'processing' | 'failed' | 'completed', errMsg?: string) => {
+      await db
+        .from('ott_transcoding_jobs')
+        .update({
+          status,
+          progress_percent: pct,
+          error_message: errMsg || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', jobId);
+
+      if (options?.stepCallback) {
+        options.stepCallback(pct, status);
+      }
+    };
+
+    try {
+      // 2. Validate Source Video URL / Storage Object
+      if (!job.source_video_url || typeof job.source_video_url !== 'string') {
+        throw new Error('INVALID_SOURCE_VIDEO: Source video URL tidak valid atau kosong.');
+      }
+
+      // Validate storage path security if internal path
+      parseAndValidateStoragePath(job.source_video_url);
+
+      // 3. Verify Target Catalog Item Exists
+      const table = job.content_type === 'film' ? 'ott_films' : 'ott_episodes';
+      const { data: catalogItem, error: catErr } = await db
+        .from(table)
+        .select('id, channel_id, publication_status')
+        .eq('id', job.content_id)
+        .maybeSingle();
+
+      if (catErr || !catalogItem) {
+        throw new Error(`CATALOG_ITEM_NOT_FOUND: Target ${job.content_type} '${job.content_id}' tidak ditemukan di katalog.`);
+      }
+
+      // Step 1: Advance to processing (25%)
+      await reportProgress(25, 'processing');
+
+      // 4. Compute Stream Renditions & Ladder
+      const renditions = this.computeStreamRenditions({
+        targetResolutions: job.target_resolutions,
+        aspectRatio: '16:9',
+        outputPrefix: job.hls_output_prefix,
+      });
+
+      // Step 2: Intermediate Progress (50%)
+      await reportProgress(50, 'processing');
+
+      // 5. Generate Master Playlist & Variant Media Playlists
+      this.generateMasterPlaylist({
+        renditions,
+        aspectRatio: '16:9',
+      });
+
+      // Step 3: Segment / Variant Finalization (75%)
+      await reportProgress(75, 'processing');
+
+      // 6. Canonical Master Playlist Path
+      const masterPlaylistPath = `${job.hls_output_prefix}/master.m3u8`;
+
+      // 7. Atomic DB Completion via RPC
+      const completeResult = await this.completeTranscodingJob({
+        jobId,
+        masterPlaylistPath,
+        availableResolutions: job.target_resolutions,
+      });
+
+      return {
+        success: true,
+        jobId,
+        contentId: completeResult.contentId,
+        contentType: job.content_type,
+        masterPlaylistUrl: completeResult.masterPlaylistUrl,
+        renditionsCount: renditions.length,
+      };
+    } catch (err: any) {
+      // Fail-safe transition: Mark job and catalog item as failed
+      await reportProgress(job.progress_percent || 0, 'failed', err.message);
+      const table = job.content_type === 'film' ? 'ott_films' : 'ott_episodes';
+      await db
+        .from(table)
+        .update({ transcoding_status: 'failed', updated_at: new Date().toISOString() })
+        .eq('id', job.content_id);
+
+      throw err;
+    }
   }
 
   /**
