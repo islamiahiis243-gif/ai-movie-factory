@@ -31,6 +31,7 @@ import {
   ChevronRight,
   Settings,
 } from 'lucide-react';
+import { OttDynamicWatermark } from './OttDynamicWatermark.tsx';
 
 export interface ChapterMarker {
   time: number;
@@ -97,6 +98,7 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
 
   // Sesi & Security State
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [watermarkText, setWatermarkText] = useState<string | null>(null);
   const [currentDeliveryUrl, setCurrentDeliveryUrl] = useState<string | null>(null);
   const [urlExpiresAt, setUrlExpiresAt] = useState<string | null>(null);
   const [errorState, setErrorState] = useState<{
@@ -161,6 +163,9 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
       }
 
       setSessionId(data.session.sessionId);
+      if (data.session.watermark?.text) {
+        setWatermarkText(data.session.watermark.text);
+      }
       setCurrentDeliveryUrl(data.session.playbackUrl);
       setUrlExpiresAt(data.session.signedUrlExpiresAt);
 
@@ -555,6 +560,17 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
             />
           )}
         </video>
+
+        {/* Dynamic Visible Watermark Canvas Overlay (Milestone 2.9.2C) */}
+        {sessionId && (
+          <OttDynamicWatermark
+            viewerPseudonym={watermarkText || `WM-${(sessionId || '').slice(-8)}`}
+            sessionShortId={sessionId.length > 16 ? `${sessionId.slice(0, 8)}...${sessionId.slice(-6)}` : sessionId}
+            aspectRatio={aspectRatio}
+            intervalSeconds={12}
+            isActive={!errorState}
+          />
+        )}
 
         {/* Buffering Spinner */}
         {isBuffering && !errorState && (
