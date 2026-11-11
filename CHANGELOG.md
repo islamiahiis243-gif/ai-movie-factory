@@ -3,23 +3,21 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Sprint 5 Hari - Day 1] - HLS Physical Storage Upload, Token Propagation & Fail-Closed Guard - 2026-11-12 00:08 +07:00
+## [Sprint 5 Hari - Day 1] - HLS Physical Storage Upload, Segment Fail-Closed & Canonical Progressive MP4 - 2026-11-12 00:12 +07:00
 
-### Added, Hardened & Reconciled (Final HLS Verification Closure)
-- **Physical HLS Storage Persistence & Verification Guard (`server/ottHlsEngine.ts`):**
-  - Mengimplementasikan pengunggahan fisik Master Playlist (`master.m3u8`) dan seluruh Variant Media Playlist (`{res}/playlist.m3u8`) langsung ke bucket privat Supabase Storage `ott-masters`.
-  - Menerapkan mekanisme **Physical Verification Guard**: sebelum memanggil RPC `complete_ott_transcoding_job()`, sistem memverifikasi keberadaan fisik file `master.m3u8` di Supabase Storage via `storage.from('ott-masters').list()`.
-  - Mengunci aturan **Fail-Closed**: Jika file fisik HLS tidak ditemukan atau gagal diunggah, pipeline secara tegas melempar error `PHYSICAL_ARTIFACTS_NOT_FOUND` dan TIDAK PERNAH mengubah status katalog menjadi `ready`.
-  - Menjamin zero false-ready state: Katalog hanya berstatus `ready` jika file fisik HLS benar-benar tersedia di CDN. Bila belum tersedia, pemutar video otomatis jatuh ke HTML5 Progressive MP4 yang sudah 100% teruji.
-- **Client-Side Hls.js Token Propagation (`src/components/ott/CinematicPlayerView.tsx`):**
-  - Menambahkan hook `xhrSetup` pada konfigurasi `new Hls(...)` untuk mempropagasi parameter query token otentikasi signed delivery secara otomatis ke seluruh permintaan sub-file (Variant Playlist dan segmen `.ts`).
-  - Menjamin pemutaran aman multi-level tanpa kendala HTTP 403/404 pada segmen turunan di private bucket `ott-masters`.
+### Added, Hardened & Reconciled (Final HLS Verification Closure & MVP Lock)
+- **Runtime Seconds Catalog Query Fix (`server/ottHlsEngine.ts`):**
+  - Memperbaiki kueri katalog pada `executeTranscodingPipeline()`: menambahkan `runtime_seconds` secara eksplisit pada `.select('id, channel_id, publication_status, runtime_seconds')` sehingga durasi video riil katalog selalu digunakan (mengeliminasi risiko fallback spekulatif 120 detik).
+- **Physical Segment Verification & Anti-False-Ready Guard (`server/ottHlsEngine.ts`):**
+  - Memperluas verifikasi fisik storage: selain `master.m3u8` dan `playlist.m3u8`, sistem kini memeriksa ketersediaan fisik segmen video nyata (`.ts` / `.m4s`) di subfolder setiap resolusi varian.
+  - Jika segmen video fisik belum dihasilkan oleh transcoding worker (misal karena ketiadaan FFmpeg cluster di serverless host), pipeline secara tegas melempar error `HLS_SEGMENTS_NOT_READY` dan **TIDAK PERNAH** memanggil RPC untuk mengubah status katalog ke `ready`.
+- **Progressive MP4 Ditetapkan Sebagai Jalur Streaming Komersial MVP (Target 17 Nov):**
+  - Mengunci keputusan arsitektur Project Owner & Reviewer: Progressive MP4 (HTTP 206 Partial Content, Range Requests, Ephemeral Signed URL Leases, Dynamic Watermarking, Gate 5 Approval) berstatus **100% PRODUCTION READY** dan menjadi jalur streaming operasional utama untuk peluncuran MVP komersial 17 November 2026.
+  - HLS Adaptive Bitrate secara resmi berstatus **P1 Enhancement** (fondasi skema M3U8, token propagation `xhrSetup`, dan security gates sudah selesai, siap dihubungkan ke worker FFmpeg eksternal pasca-MVP).
 - **Rangkaian Uji Terarah & Verifikasi Menyeluruh (`scripts/test_ott_hls_engine.ts`):**
-  - Rangkaian pengujian diperluas menjadi **71 asersi lolos (100% PASS)**:
-    - Section 8: Verifikasi upload fisik `master.m3u8`, variant playlists untuk seluruh resolusi target, serta pengujian ketat fail-closed saat master file absen.
-    - Section 9: Verifikasi hook `xhrSetup` dan propagasi token signed URL pada `CinematicPlayerView.tsx`.
-- **Sprint 5 Hari (12–17 Nov 2026) Commercial MVP Alignment:**
-  - Day 1 (12 Nov): Audit kondisi aktual, penguncian cakupan MVP komersial, dan penuntasan celah fisik HLS / Progressive MP4 streaming.
+  - Rangkaian pengujian diperluas menjadi **72 asersi lolos (100% PASS)**:
+    - Section 8: Verifikasi upload fisik `master.m3u8`, variant playlists, pengujian fail-closed saat master absen, dan pengujian fail-closed saat segmen `.ts` absen.
+    - Section 9: Verifikasi hook `xhrSetup` dan propagasi token signed URL di klien.
 
 ## [Gelombang II - Milestone 2.9.2D] - HLS Security Hardening, Signed Delivery & Transcoding Lifecycle - 2026-11-11 23:55 +07:00
 

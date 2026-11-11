@@ -22,9 +22,10 @@
 ---
 
 ## 3. Current System Baseline (Single Source of Truth)
-- **Total Assertions Lolos:** 621+ Asersi ($100\%$ PASS, 0 FAIL).
+- **Total Assertions Lolos:** 622+ Asersi ($100\%$ PASS, 0 FAIL).
 - **Sprint 5 Hari Target (12–17 Nov 2026):** AMF Commercial MVP Go-Live.
-  - Day 1 (12 Nov): Audit aktual, penguncian cakupan MVP, penguatan upload fisik HLS, fail-closed guard, token propagation.
+  - Day 1 (12 Nov): Audit aktual, penguncian cakupan MVP, query runtime fix, segment fail-closed guard, token propagation.
+  - Streaming Baseline: Progressive MP4 (HTTP 206, Signed URLs, Dynamic Watermark) dinyatakan 100% PRODUCTION READY untuk peluncuran MVP. HLS dikunci sebagai P1 Enhancement dengan proteksi anti-false-ready.
 - **Milestone 2.9 (Katalog OTT):** Disetujui & Terintegrasi.
 - **Milestone 2.9.1 (Entitlement & Access Control):** Disetujui & Hardened (HMAC-SHA256, RLS, live Supabase).
 - **Milestone 2.9.2A (Session Controller & Concurrency):** Disetujui & Hardened (`pg_advisory_xact_lock`, least-privilege `service_role`).

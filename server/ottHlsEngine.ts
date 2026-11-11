@@ -304,7 +304,7 @@ export class OttHlsEngine {
       const table = job.content_type === 'film' ? 'ott_films' : 'ott_episodes';
       const { data: catalogItem, error: catErr } = await db
         .from(table)
-        .select('id, channel_id, publication_status')
+        .select('id, channel_id, publication_status, runtime_seconds')
         .eq('id', job.content_id)
         .maybeSingle();
 
@@ -380,7 +380,7 @@ export class OttHlsEngine {
           }
         }
 
-        // Step 4: Strict Physical Verification Guard (Verify existence in storage before marking ready)
+        // Step 4: Strict Physical Verification Guard (Verify existence of master, variants & segments in storage)
         const { data: storageList, error: listErr } = await db.storage
           .from('ott-masters')
           .list(job.hls_output_prefix);
@@ -388,6 +388,26 @@ export class OttHlsEngine {
         const hasMasterFile = storageList?.some((f: any) => f.name === 'master.m3u8');
         if (listErr || !hasMasterFile) {
           throw new Error(`PHYSICAL_ARTIFACTS_NOT_FOUND: Verifikasi fisik artefak HLS di bucket 'ott-masters' gagal. Master playlist tidak ditemukan.`);
+        }
+
+        // Verify variant playlists and segment availability before marking ready
+        for (const variant of variantPlaylists) {
+          const variantFolder = `${job.hls_output_prefix}/${variant.res}`;
+          const { data: variantList, error: varListErr } = await db.storage
+            .from('ott-masters')
+            .list(variantFolder);
+
+          const hasVariantPlaylist = variantList?.some((f: any) => f.name === 'playlist.m3u8');
+          const hasVideoSegments = variantList?.some((f: any) => f.name.endsWith('.ts') || f.name.endsWith('.m4s'));
+
+          if (varListErr || !hasVariantPlaylist) {
+            throw new Error(`PHYSICAL_ARTIFACTS_NOT_FOUND: Variant playlist untuk resolusi ${variant.res} tidak ditemukan di storage.`);
+          }
+
+          if (!hasVideoSegments) {
+            // Strict Commercial MVP Policy: Fail-closed if media segments are not yet generated
+            throw new Error(`HLS_SEGMENTS_NOT_READY: Segmen media video (.ts) untuk resolusi ${variant.res} belum selesai diproses. Status 'ready' ditolak untuk melindungi penonton dari stream 404.`);
+          }
         }
       }
 

@@ -355,6 +355,7 @@ async function runTests() {
   let simulatedProgress = 0;
   const uploadedFiles: string[] = [];
   let shouldSimulateMissingMaster = false;
+  let shouldSimulateMissingSegments = false;
 
   const mockPipelineDb: any = {
     from: (table: string) => ({
@@ -405,8 +406,17 @@ async function runTests() {
           if (shouldSimulateMissingMaster) {
             return { data: [], error: null };
           }
+          if (prefix.includes('1080p') || prefix.includes('720p') || prefix.includes('480p')) {
+            if (shouldSimulateMissingSegments) {
+              return { data: [{ name: 'playlist.m3u8' }], error: null };
+            }
+            return {
+              data: [{ name: 'playlist.m3u8' }, { name: 'segment_0000.ts' }, { name: 'segment_0001.ts' }],
+              error: null,
+            };
+          }
           return {
-            data: [{ name: 'master.m3u8' }, { name: 'playlist.m3u8' }],
+            data: [{ name: 'master.m3u8' }, { name: '1080p' }, { name: '720p' }, { name: '480p' }],
             error: null,
           };
         },
@@ -461,6 +471,18 @@ async function runTests() {
   }
   assert('executeTranscodingPipeline strictly fails-closed if physical master.m3u8 verification fails', physicalMissingCaught);
   shouldSimulateMissingMaster = false;
+
+  // Failure guard: Fail-closed if video segments (.ts) are missing in storage
+  simulatedJobStatus = 'queued';
+  shouldSimulateMissingSegments = true;
+  let missingSegmentsCaught = false;
+  try {
+    await testEngineWithDb.executeTranscodingPipeline('job_test_001');
+  } catch (err: any) {
+    missingSegmentsCaught = err.message.includes('HLS_SEGMENTS_NOT_READY');
+  }
+  assert('executeTranscodingPipeline strictly fails-closed if video segments (.ts) are missing in storage', missingSegmentsCaught);
+  shouldSimulateMissingSegments = false;
 
   // Failure guard: Illegal job state
   simulatedJobStatus = 'completed';
