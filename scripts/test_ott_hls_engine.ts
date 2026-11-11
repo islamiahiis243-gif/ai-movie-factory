@@ -447,18 +447,18 @@ async function runTests() {
     stepCallback: (pct) => progressUpdates.push(pct),
   });
 
-  assert('executeTranscodingPipeline executes successfully', pipelineResult.success === true);
-  assert('executeTranscodingPipeline progresses through stages (25%, 50%, 75%)',
+  assert('[MOCK STORAGE CONTRACT] executeTranscodingPipeline passes contract when segments are pre-staged in simulated storage', pipelineResult.success === true);
+  assert('[MOCK STORAGE CONTRACT] executeTranscodingPipeline progresses through stages (25%, 50%, 75%)',
     progressUpdates.includes(25) && progressUpdates.includes(50) && progressUpdates.includes(75));
-  assert('executeTranscodingPipeline uploads master.m3u8 physically to storage',
+  assert('[MOCK STORAGE CONTRACT] executeTranscodingPipeline uploads master.m3u8 to simulated storage',
     uploadedFiles.includes('hls/films/film_test_001/master.m3u8'));
-  assert('executeTranscodingPipeline uploads variant playlists for all target resolutions (1080p, 720p, 480p)',
+  assert('[MOCK STORAGE CONTRACT] executeTranscodingPipeline uploads variant playlists to simulated storage for all target resolutions (1080p, 720p, 480p)',
     uploadedFiles.includes('hls/films/film_test_001/1080p/playlist.m3u8') &&
     uploadedFiles.includes('hls/films/film_test_001/720p/playlist.m3u8') &&
     uploadedFiles.includes('hls/films/film_test_001/480p/playlist.m3u8'));
-  assert('executeTranscodingPipeline returns canonical master playlist path terminating in master.m3u8',
+  assert('[MOCK STORAGE CONTRACT] executeTranscodingPipeline returns canonical master playlist path terminating in master.m3u8',
     pipelineResult.masterPlaylistUrl === 'hls/films/film_test_001/master.m3u8');
-  assert('executeTranscodingPipeline generates correct renditions count',
+  assert('[MOCK STORAGE CONTRACT] executeTranscodingPipeline generates correct renditions count',
     pipelineResult.renditionsCount === 3);
 
   // Failure guard: Fail-closed if master.m3u8 missing in storage
@@ -470,7 +470,7 @@ async function runTests() {
   } catch (err: any) {
     physicalMissingCaught = err.message.includes('PHYSICAL_ARTIFACTS_NOT_FOUND');
   }
-  assert('executeTranscodingPipeline strictly fails-closed if physical master.m3u8 verification fails', physicalMissingCaught);
+  assert('[MOCK STORAGE GUARD] executeTranscodingPipeline strictly fails-closed if physical master.m3u8 verification fails', physicalMissingCaught);
   shouldSimulateMissingMaster = false;
 
   // Failure guard: Fail-closed if video segments (.ts) are missing in storage
@@ -482,7 +482,7 @@ async function runTests() {
   } catch (err: any) {
     missingSegmentsCaught = err.message.includes('HLS_SEGMENTS_NOT_READY');
   }
-  assert('executeTranscodingPipeline strictly fails-closed if video segments (.ts) are missing in storage', missingSegmentsCaught);
+  assert('[MOCK STORAGE GUARD] executeTranscodingPipeline strictly fails-closed if video segments (.ts) are missing in storage', missingSegmentsCaught);
   shouldSimulateMissingSegments = false;
 
   // Failure guard: Illegal job state
@@ -493,7 +493,7 @@ async function runTests() {
   } catch (err: any) {
     illegalStateCaught = err.message.includes('ILLEGAL_JOB_STATE');
   }
-  assert('executeTranscodingPipeline rejects jobs already in completed state', illegalStateCaught);
+  assert('[MOCK STORAGE GUARD] executeTranscodingPipeline rejects jobs already in completed state', illegalStateCaught);
 
   // ---------------------------------------------------------------------------
   // SECTION 9: CLIENT-SIDE SIGNED TOKEN PROPAGATION (XHRSETUP)
