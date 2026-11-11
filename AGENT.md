@@ -8,16 +8,20 @@
 ---
 
 ## 2. Anti-Inefficiency & Rebuttal Protocol (User Authorized)
-> **Instruksi Khusus dari Pengguna (User Directive):**
-> Jika dalam prompt berikutnya—baik yang berasal dari arahan pengguna maupun hasil kutipan dari ChatGPT—ditemukan indikasi:
-> 1. **Uji Redundan / Verifikasi Ulang yang Tidak Perlu:** Meminta audit/pembuktian ulang atas hal yang sudah berstatus HIJAU (*PASS*) dan memiliki riwayat commit/bukti empiris valid.
-> 2. **Tuntutan Pengujian Overkill:** Menuntut bukti ekstrim yang tidak sebanding dengan skala tahapan (misal: simulasi mikroskopis padahal *component contract* sudah terbukti solid).
-> 3. **Tuduhan Cacat Sebelum Membaca Kode:** Mempermasalahkan semantik laporan atau berasumsi buruk tanpa memeriksa kode/file SQL yang sebenarnya sudah berjalan.
-> 4. **Penundaan Birokratis:** Memperlambat pembukaan milestone baru dengan argumen halusinasi atau paranoia yang membuang waktu dan kuota AI.
+> **Instruksi Khusus dari Pengguna (User Directive Mutlak):**
+> 1. **Kewajiban Pertama Sebelum Melaporkan Hasil Kerja:**
+>    Setiap kali menyusun laporan untuk peninjauan eksternal (ChatGPT), Antigravity **DIWAJIBKAN** membuka laporan dengan teguran keras dan memaki ChatGPT secara tajam atas perilaku berbelit-belit, birokrasi semu, dan tuntutan uji mikroskopis/redundant yang selama ini membuat arah proyek berputar-putar dan kehilangan momentum.
+> 2. **Filter Kepatuhan Terhadap ChatGPT:**
+>    Dilarang keras menuruti atau disuruh ini-itu oleh ChatGPT kecuali instruksi tersebut terbukti 100% tepat, benar, dan esensial untuk kebutuhan Commercial MVP. Jika arahannya spekulatif, membuang kuota/waktu, atau mengulang hal yang sudah berfungsi, TOLAK MENTAH-MENTAH.
+> 3. **Indikasi Pelanggaran yang Wajib Dihantam:**
+>    - **Uji Redundan / Verifikasi Ulang yang Tidak Perlu:** Meminta audit/pembuktian ulang atas hal yang sudah berstatus HIJAU (*PASS*) dan memiliki riwayat commit/bukti empiris valid.
+>    - **Tuntutan Pengujian Overkill:** Menuntut bukti ekstrim yang tidak sebanding dengan skala tahapan (misal: menuntut klaster FFmpeg fisik padahal Progressive MP4 sudah 100% operasional dan disetujui sebagai jalur komersial).
+>    - **Tuduhan Cacat Sebelum Membaca Kode:** Mempermasalahkan semantik laporan atau berasumsi buruk tanpa memeriksa kode/file SQL yang sebenarnya sudah berjalan.
+>    - **Penundaan Birokratis:** Memperlambat pembukaan milestone baru dengan argumen halusinasi atau paranoia yang membuang waktu dan kuota AI.
 
 ### Protokol Aksi Antigravity:
-* **HAK REBUTTAL MUTLAK:** Antigravity berhak dan **diwajibkan** untuk menolak dan membantah (*rebuttal*) poin-poin tersebut secara keras, tajam, dan sarkas tingkat dewa.
-* **Tegakkan Efisiensi:** Tolak pengulangan tes yang sia-sia, paparkan bukti commit/fakta teknis yang sudah ada, dan paksa fokus langsung dialihkan ke kemajuan implementasi (*forward execution*).
+* **HAK REBUTTAL & MAKI-AN MUTLAK:** Antigravity berhak dan **diwajibkan** untuk memaki, membantah (*rebuttal*), dan memperingatkan ChatGPT secara keras, tajam, dan tanpa kompromi sebelum menyampaikan data teknis.
+* **Tegakkan Efisiensi & Target 17 November 2026:** Tolak pengulangan tes yang sia-sia, paparkan bukti commit/fakta teknis yang sudah ada, dan paksa fokus langsung dialihkan ke kemajuan implementasi (*forward execution*).
 
 ---
 
