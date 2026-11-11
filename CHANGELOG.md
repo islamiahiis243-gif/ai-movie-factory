@@ -3,29 +3,30 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization - 2026-11-11 21:00 +07:00
+## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization (Security Hardened) - 2026-11-11 21:30 +07:00
 
 ### Added, Hardened & Reconciled
 - **Pemisahan Mutlak Ledger Keuangan (SaaS Billing vs OTT B2C Commerce):**
   - Mengimplementasikan tabel dedicated `public.ott_payment_orders` (`supabase/upgrade_v3_17_ott_commerce_and_b2c_billing.sql`) untuk seluruh transaksi penonton B2C (tiket PPV/TVOD dan langganan channel SVOD).
   - Menjamin isolasi 100%: Saldo kredit produksi kreator (`profiles.credits`, `credit_transactions`, `payment_orders`) tidak pernah bercampur atau terdampak oleh transaksi tontonan OTT.
-- **Validasi Harga Sisi Server & Anti-Tampering (`server/ottCommerceEngine.ts`):**
-  - Memverifikasi nominal transaksi langsung dari tabel katalog database (`ott_films.ppv_price_idr`, `ott_episodes.ppv_price_idr`, `ott_channels.subscription_price_idr`).
-  - Menolak seketika upaya manipulasi harga dari sisi klien (*client price tampering*) dengan pesan kesalahan eksplisit.
-- **Keamanan Webhook Gateway Pembayaran (Midtrans SHA-512):**
-  - Memverifikasi keabsahan tanda tangan kriptografis SHA-512 (`sha512(order_id + status_code + gross_amount + server_key)`).
-  - Menolak panggilan webhook palsu (*forged signatures*) dengan status HTTP 403 Forbidden.
-- **Fulfillment Akses Atomik & Idempoten (`fulfill_ott_payment_order`):**
-  - Menerapkan *transactional advisory lock* PostgreSQL (`pg_advisory_xact_lock(hashtext(order_number))`) untuk mencegah *race condition* atau duplikasi penerbitan hak tonton saat webhook diterima berulang kali.
-  - Tiket PPV single otomatis menerbitkan `ott_access_passes` aktif dengan masa tonton persis 48 jam.
-  - Langganan bulanan channel otomatis menerbitkan/memperpanjang `ott_viewer_subscriptions` selama 30 hari.
-  - Penanganan refund seketika mencabut status tiket (`status = 'revoked'`) dan membatalkan langganan (`status = 'canceled'`).
-- **Transparansi Finansial & Analitik Pendapatan Kreator:**
-  - Fungsi database `get_ott_creator_revenue_summary` menyajikan metrik nyata bertanda `[VERIFIED ACTUAL]`: Gross Revenue, Gateway Fees (Midtrans/QRIS ~0.7%), AMF Platform Fee (10%), dan Net Creator Earnings.
-  - Menambahkan tab "Monetisasi & Transaksi OTT" pada `OttCatalogManagerView.tsx` dan antarmuka checkout `OttCheckoutModal.tsx` dengan QRIS dinamis, Virtual Account, dan simulasi instan sandbox.
-- **Rangkaian Uji Komprehensif (44 Assertions PASS):**
-  - Rangkaian pengujian otomatis Milestone 2.9.3 (`scripts/test_ott_commerce_engine.ts`): **44 assertions (100% PASS)**.
-  - Total assertions sistem AMF: **579 assertions (100% PASS)**.
+- **Penguatan Hak Akses Database & Pembatasan Privilege (`upgrade_v3_17_1_ott_commerce_security_hardening.sql`):**
+  - Mencabut (`REVOKE ALL`) hak eksekusi `fulfill_ott_payment_order` dari `PUBLIC`, `anon`, dan `authenticated`, membatasi eksekusinya secara eksklusif hanya untuk `service_role`.
+  - Mengamankan fungsi `get_ott_creator_revenue_summary` dengan *Ownership Authorization Guard*: penonton atau kreator lain dilarang membaca data omzet channel yang bukan miliknya.
+  - Memperbaiki masa langganan SVOD menjadi 30 hari *fixed-term* dengan `auto_renew = false` (menghapus janji recurring yang belum terhubung).
+- **Validasi Kelayakan Konten Sisi Server & Anti-Tampering (`server/ottCommerceEngine.ts`):**
+  - Memvalidasi kepemilikan channel (menolak *cross-channel mismatch*).
+  - Memvalidasi status publikasi (`published`) dan persetujuan final Gate 5 (`GATE_5_APPROVED`). Konten draft atau unapproved ditolak seketika.
+  - Menolak upaya manipulasi harga dari sisi klien (*client price tampering*).
+- **Keamanan Webhook Timing-Safe & Integrasi Midtrans Snap:**
+  - Menggunakan `crypto.timingSafeEqual` untuk memvalidasi tanda tangan webhook Midtrans SHA-512, memitigasi risiko serangan timing (*side-channel attacks*).
+  - Mengintegrasikan Midtrans Snap REST API untuk menerbitkan Snap token dan redirect URL resmi.
+  - Membedakan penanganan refund penuh (`refund` -> pencabutan akses tiket/langganan) dan refund sebagian (`partial_refund`).
+- **Pembersihan Jalur Frontend & Resolusi Routing Vercel:**
+  - Menghapus seluruh jalur direct RPC dari frontend (`OttCheckoutModal.tsx`), mewajibkan pemrosesan checkout dan fulfillment melalui backend serverless controller.
+  - Menghapus berkas rute konflik `api/ott/[action].ts` untuk mengembalikan status deployment Vercel menjadi hijau (`READY 200 OK`).
+- **Rangkaian Uji Komprehensif (50 Assertions PASS):**
+  - Rangkaian pengujian otomatis Milestone 2.9.3 (`scripts/test_ott_commerce_engine.ts`): **50 assertions (100% PASS)** dengan fixture terisolasi dan *safe teardown* yang tidak menyentuh data pengguna produksi.
+  - Total assertions sistem AMF: **585 assertions (100% PASS)**.
 
 ## [Gelombang II - Milestone 2.9.2C] - Dynamic Visible Watermark & UTC Clock Decoupling - 2026-11-11 12:45 +07:00
 
