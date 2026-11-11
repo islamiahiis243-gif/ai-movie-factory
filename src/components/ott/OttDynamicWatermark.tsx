@@ -53,7 +53,10 @@ export const OttDynamicWatermark: React.FC<DynamicWatermarkProps> = ({
   // Current and target position for smooth transition
   const currentPosRef = useRef<WatermarkPosition>({ x: 0.08, y: 0.15, opacity: 0.32 });
   const targetPosRef = useRef<WatermarkPosition>({ x: 0.08, y: 0.15, opacity: 0.32 });
-  const [currentUtcClock, setCurrentUtcClock] = useState<string>(() =>
+
+  // Dedicated Clock Ref: allows render loop to read live UTC timestamp
+  // every frame WITHOUT triggering React re-renders or restarting the animation loop
+  const clockRef = useRef<string>(
     new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
   );
 
@@ -79,13 +82,13 @@ export const OttDynamicWatermark: React.FC<DynamicWatermarkProps> = ({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // 2. Clock Interval (updates timestamp string every second)
+  // 2. Clock Interval (updates timestamp ref every second without restarting rAF loop)
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!isActive) return;
 
     clockTimerRef.current = setInterval(() => {
-      setCurrentUtcClock(new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC');
+      clockRef.current = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
     }, 1000);
 
     return () => {
@@ -183,7 +186,7 @@ export const OttDynamicWatermark: React.FC<DynamicWatermarkProps> = ({
 
       // Dual-line watermark format
       const line1 = `[AMF-SEC] ID: ${viewerPseudonym}`;
-      const line2 = `SES: ${sessionShortId} • ${currentUtcClock}`;
+      const line2 = `SES: ${sessionShortId} • ${clockRef.current}`;
 
       // Watermark semi-transparent fill
       ctx.fillStyle = `rgba(255, 255, 255, ${cur.opacity.toFixed(3)})`;
@@ -204,7 +207,7 @@ export const OttDynamicWatermark: React.FC<DynamicWatermarkProps> = ({
       // Clear canvas on teardown
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [isActive, isVertical, viewerPseudonym, sessionShortId, currentUtcClock]);
+  }, [isActive, isVertical, viewerPseudonym, sessionShortId]);
 
   return (
     <canvas

@@ -115,11 +115,12 @@ async function runWatermarkTestSuite() {
   // TEST GROUP 6: LIFECYCLE, TEARDOWN & ZERO MEMORY LEAKS
   // --------------------------------------------------------------------------
   console.log('\n[TEST GROUP 6] Lifecycle, Teardown & Zero Memory Leaks');
-  assert(watermarkSrc.includes('cancelAnimationFrame'), '6a. Animation frame cancelled on component unmount');
-  assert(watermarkSrc.includes('clearInterval(positionTimerRef.current)'), '6b. Position shift interval cleared on unmount');
-  assert(watermarkSrc.includes('clearInterval(clockTimerRef.current)'), '6c. Clock timer interval cleared on unmount');
-  assert(watermarkSrc.includes('resizeObserver.disconnect()'), '6d. ResizeObserver disconnected on unmount');
-  assert(watermarkSrc.includes('ctx.clearRect'), '6e. Canvas wiped cleanly on unmount / teardown');
+  assert(watermarkSrc.includes('clockRef'), '6a. Clock uses ref to decouple 1-second timestamp updates from render loop');
+  assert(watermarkSrc.includes('cancelAnimationFrame'), '6b. Animation frame cancelled on component unmount');
+  assert(watermarkSrc.includes('clearInterval(positionTimerRef.current)'), '6c. Position shift interval cleared on unmount');
+  assert(watermarkSrc.includes('clearInterval(clockTimerRef.current)'), '6d. Clock timer interval cleared on unmount');
+  assert(watermarkSrc.includes('resizeObserver.disconnect()'), '6e. ResizeObserver disconnected on unmount');
+  assert(watermarkSrc.includes('ctx.clearRect'), '6f. Canvas wiped cleanly on unmount / teardown');
 
   // --------------------------------------------------------------------------
   // TEST GROUP 7: CONTINUITY ACROSS SIGNED URL RENEWALS & STATE CHANGES
