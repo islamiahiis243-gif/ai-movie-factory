@@ -346,9 +346,10 @@ async function runTests() {
     Boolean(renewResult.hlsMasterPlaylistUrl?.includes('token=')));
 
   // ---------------------------------------------------------------------------
-  // SECTION 8: TRANSCODING PIPELINE WORKER & STORAGE UPLOAD VALIDATION
+  // SECTION 8: TRANSCODING PIPELINE WORKER & STORAGE GUARD UNIT CONTRACT
   // ---------------------------------------------------------------------------
-  console.log('\n[SECTION 8] Verifying Transcoding Pipeline Worker, Storage Upload & Verification...');
+  console.log('\n[SECTION 8] Unit Contract: Pipeline Guard Logic (Simulated Storage Environment)...');
+  console.log('  ℹ [GUARD_AUDIT]: Memvalidasi logika fail-closed anti-false-ready saat segmen video fisik (.ts) absen.');
 
   // Mock DB with Storage API simulation
   let simulatedJobStatus = 'queued';
