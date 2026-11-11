@@ -1,17 +1,12 @@
 /**
- * Vercel Serverless Function: /api/ott/webhook
+ * Handler: webhookHandler.ts (server/ott/webhookHandler.ts)
  * AI Movie Factory — Phase 6: Web & Independent OTT Publishing Studio
  * Milestone 2.9.3: B2C OTT Payment Gateway Webhook Handler
- * 
- * Strict Invariants:
- * 1. Midtrans SHA-512 signature validation prevents forged payment webhooks.
- * 2. Idempotent fulfillment via Postgres advisory locks prevents duplicate ticket issuance.
- * 3. Refunds automatically revoke access passes or subscriptions.
  */
 
-import { ottCommerceEngine } from '../../server/ottCommerceEngine.ts';
+import { ottCommerceEngine } from '../ottCommerceEngine.ts';
 
-export default async function handler(req: any, res: any) {
+export default async function webhookHandler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({
@@ -44,6 +39,30 @@ export default async function handler(req: any, res: any) {
         success: false,
         error: 'FORBIDDEN_SIGNATURE',
         message: 'Invalid or forged webhook signature key.',
+      });
+    }
+
+    if (err.message?.includes('ORDER_NOT_FOUND')) {
+      return res.status(404).json({
+        success: false,
+        error: 'ORDER_NOT_FOUND',
+        message: err.message,
+      });
+    }
+
+    if (err.message?.includes('GROSS_AMOUNT_MISMATCH')) {
+      return res.status(400).json({
+        success: false,
+        error: 'GROSS_AMOUNT_MISMATCH',
+        message: err.message,
+      });
+    }
+
+    if (err.message?.includes('ILLEGAL_STATE_TRANSITION')) {
+      return res.status(409).json({
+        success: false,
+        error: 'ILLEGAL_STATE_TRANSITION',
+        message: err.message,
       });
     }
 
