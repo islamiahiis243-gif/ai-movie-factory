@@ -14,7 +14,7 @@
 
 import crypto from 'crypto';
 import { getSupabaseAdmin } from './supabaseAdmin.ts';
-import {
+import type {
   OttPaymentOrder,
   OttPaymentOrderType,
   OttPaymentOrderStatus,

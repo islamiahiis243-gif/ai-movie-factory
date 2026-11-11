@@ -17,7 +17,7 @@
  */
 
 import crypto from 'crypto';
-import {
+import type {
   OttAccessPolicy,
   OttContentType,
   OttEntitlementGrant,

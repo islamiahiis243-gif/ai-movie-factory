@@ -14,7 +14,7 @@
  */
 
 import crypto from 'crypto';
-import {
+import type {
   OttAccessPass,
   OttViewerSubscription,
   OttFilm,

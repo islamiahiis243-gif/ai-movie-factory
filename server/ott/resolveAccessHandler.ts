@@ -6,7 +6,7 @@
 
 import { authenticateServerlessRequest, getSupabaseAdmin } from '../supabaseAdmin.ts';
 import { resolveOttContentAccess } from '../../src/lib/ottEntitlementEngine.ts';
-import {
+import type {
   OttChannel,
   OttEpisode,
   OttFilm,

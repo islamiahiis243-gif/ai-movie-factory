@@ -13,7 +13,7 @@
  */
 
 import crypto from 'crypto';
-import {
+import type {
   OttChannel,
   OttSeries,
   OttEpisode,
@@ -28,7 +28,7 @@ import {
   OttPlaybackSession,
   OttMonetizationPrompt,
   OttAccessPolicy,
-} from '../types/database';
+} from '../types/database.ts';
 
 export {
   DEFAULT_GRANT_TTL_MS,
