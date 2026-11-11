@@ -82,9 +82,16 @@ export function normalizeSupabaseUrl(rawUrl: string): string {
   return url.replace(/\/+$/, '');
 }
 
-export const rawSupabaseUrl: string = import.meta.env?.VITE_SUPABASE_URL || '';
+export const rawSupabaseUrl: string =
+  (typeof process !== 'undefined' && (process.env?.VITE_SUPABASE_URL || process.env?.SUPABASE_URL)) ||
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
+  '';
 export const supabaseUrl: string = normalizeSupabaseUrl(rawSupabaseUrl);
-export const supabaseAnonKey: string = (import.meta.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+export const supabaseAnonKey: string = (
+  (typeof process !== 'undefined' && (process.env?.VITE_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY)) ||
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
+  ''
+).trim();
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl && 

@@ -1191,6 +1191,8 @@ export interface OttChannel {
   social_links?: Record<string, string>;
   is_verified: boolean;
   status: 'active' | 'suspended' | 'archived';
+  subscription_price_idr?: number;
+  is_subscription_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1445,4 +1447,52 @@ export interface ResolveOttAccessParams {
   isPreviewRequest?: boolean;
   currentTime?: Date;
 }
+
+// ============================================================================
+// OTT B2C COMMERCE & PAYMENT ORDER TYPES (Milestone 2.9.3)
+// ============================================================================
+
+export type OttPaymentOrderType = 'ppv_single' | 'season_pass' | 'svod_channel';
+export type OttPaymentOrderStatus = 'pending' | 'settlement' | 'capture' | 'deny' | 'cancel' | 'expire' | 'refund';
+
+export interface OttPaymentOrder {
+  id: string;
+  order_number: string;
+  user_id: string;
+  channel_id: string;
+  order_type: OttPaymentOrderType;
+  content_id?: string | null;
+  content_type?: 'film' | 'episode' | 'series' | 'season' | 'channel' | null;
+  title: string;
+  gross_amount: number;
+  gateway_fee: number;
+  platform_fee: number;
+  net_creator_amount: number;
+  currency: string;
+  status: OttPaymentOrderStatus;
+  payment_gateway: string;
+  payment_method: string;
+  gateway_transaction_id?: string | null;
+  gateway_payload?: Record<string, any>;
+  entitlement_fulfilled: boolean;
+  pass_id?: string | null;
+  subscription_id?: string | null;
+  settled_at?: string | null;
+  refunded_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OttCreatorRevenueSummary {
+  channel_id: string;
+  gross_revenue_idr: number;
+  gateway_fees_idr: number;
+  platform_fees_idr: number;
+  net_creator_earnings_idr: number;
+  settled_orders_count: number;
+  active_subscribers_count: number;
+  ppv_tickets_sold_count: number;
+  data_mode: 'VERIFIED_ACTUAL';
+}
+
 

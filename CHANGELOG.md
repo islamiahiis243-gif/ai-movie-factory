@@ -3,6 +3,41 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization - 2026-11-11 21:00 +07:00
+
+### Added, Hardened & Reconciled
+- **Pemisahan Mutlak Ledger Keuangan (SaaS Billing vs OTT B2C Commerce):**
+  - Mengimplementasikan tabel dedicated `public.ott_payment_orders` (`supabase/upgrade_v3_17_ott_commerce_and_b2c_billing.sql`) untuk seluruh transaksi penonton B2C (tiket PPV/TVOD dan langganan channel SVOD).
+  - Menjamin isolasi 100%: Saldo kredit produksi kreator (`profiles.credits`, `credit_transactions`, `payment_orders`) tidak pernah bercampur atau terdampak oleh transaksi tontonan OTT.
+- **Validasi Harga Sisi Server & Anti-Tampering (`server/ottCommerceEngine.ts`):**
+  - Memverifikasi nominal transaksi langsung dari tabel katalog database (`ott_films.ppv_price_idr`, `ott_episodes.ppv_price_idr`, `ott_channels.subscription_price_idr`).
+  - Menolak seketika upaya manipulasi harga dari sisi klien (*client price tampering*) dengan pesan kesalahan eksplisit.
+- **Keamanan Webhook Gateway Pembayaran (Midtrans SHA-512):**
+  - Memverifikasi keabsahan tanda tangan kriptografis SHA-512 (`sha512(order_id + status_code + gross_amount + server_key)`).
+  - Menolak panggilan webhook palsu (*forged signatures*) dengan status HTTP 403 Forbidden.
+- **Fulfillment Akses Atomik & Idempoten (`fulfill_ott_payment_order`):**
+  - Menerapkan *transactional advisory lock* PostgreSQL (`pg_advisory_xact_lock(hashtext(order_number))`) untuk mencegah *race condition* atau duplikasi penerbitan hak tonton saat webhook diterima berulang kali.
+  - Tiket PPV single otomatis menerbitkan `ott_access_passes` aktif dengan masa tonton persis 48 jam.
+  - Langganan bulanan channel otomatis menerbitkan/memperpanjang `ott_viewer_subscriptions` selama 30 hari.
+  - Penanganan refund seketika mencabut status tiket (`status = 'revoked'`) dan membatalkan langganan (`status = 'canceled'`).
+- **Transparansi Finansial & Analitik Pendapatan Kreator:**
+  - Fungsi database `get_ott_creator_revenue_summary` menyajikan metrik nyata bertanda `[VERIFIED ACTUAL]`: Gross Revenue, Gateway Fees (Midtrans/QRIS ~0.7%), AMF Platform Fee (10%), dan Net Creator Earnings.
+  - Menambahkan tab "Monetisasi & Transaksi OTT" pada `OttCatalogManagerView.tsx` dan antarmuka checkout `OttCheckoutModal.tsx` dengan QRIS dinamis, Virtual Account, dan simulasi instan sandbox.
+- **Rangkaian Uji Komprehensif (44 Assertions PASS):**
+  - Rangkaian pengujian otomatis Milestone 2.9.3 (`scripts/test_ott_commerce_engine.ts`): **44 assertions (100% PASS)**.
+  - Total assertions sistem AMF: **579 assertions (100% PASS)**.
+
+## [Gelombang II - Milestone 2.9.2C] - Dynamic Visible Watermark & UTC Clock Decoupling - 2026-11-11 12:45 +07:00
+
+### Added, Hardened & Reconciled
+- **Dynamic Visible Watermark Engine (`src/components/ott/OttDynamicWatermark.tsx`):**
+  - Kanvas overlay dinamis sadar DPR (Device Pixel Ratio 1.0 - 3.0) dengan safe-zones perlindungan teks subtitle dan kontrol player (menghindari 25% area bawah).
+  - Gerakan pseudo-random lerp halus pada interval 12 detik dengan identitas pseudonim penonton dan short session id.
+- **Pemisahan Siklus Hidup Jam UTC (`clockRef`):**
+  - Memisahkan pembaruan jam live UTC (`clockRef`) dari render loop `requestAnimationFrame` dan `ResizeObserver`, menjaga performa 60 FPS tanpa re-inisialisasi canvas tiap detik.
+- **Rangkaian Uji Komprehensif:**
+  - Pengujian otomatis `scripts/test_ott_watermark_engine.ts`: **37 assertions (100% PASS)**.
+
 ## [Gelombang II - Milestone 2.9.2A] - OTT Playback Session & Delivery Controller - 2026-11-11 10:25 +07:00
 
 ### Added, Hardened & Reconciled

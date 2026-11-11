@@ -32,6 +32,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { OttDynamicWatermark } from './OttDynamicWatermark.tsx';
+import { OttCheckoutModal } from './OttCheckoutModal.tsx';
 
 export interface ChapterMarker {
   time: number;
@@ -49,6 +50,7 @@ export interface CinematicPlayerProps {
   initialPositionSeconds?: number;
   chapters?: ChapterMarker[];
   subtitleVttUrl?: string;
+  priceIdr?: number;
   onClose?: () => void;
   onNextEpisode?: () => void;
   onPrevEpisode?: () => void;
@@ -68,6 +70,7 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
   initialPositionSeconds = 0,
   chapters = [],
   subtitleVttUrl,
+  priceIdr = 25000,
   onClose,
   onNextEpisode,
   onPrevEpisode,
@@ -98,6 +101,7 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
 
   // Sesi & Security State
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [showCheckoutModal, setShowCheckoutModal] = useState<boolean>(false);
   const [watermarkText, setWatermarkText] = useState<string | null>(null);
   const [currentDeliveryUrl, setCurrentDeliveryUrl] = useState<string | null>(null);
   const [urlExpiresAt, setUrlExpiresAt] = useState<string | null>(null);
@@ -597,7 +601,14 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">{errorState.message}</p>
               </div>
-              <div className="pt-2 flex items-center justify-center gap-3">
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCheckoutModal(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs rounded-xl transition-all cursor-pointer shadow-lg shadow-amber-500/20"
+                >
+                  Beli Tiket Nonton (PPV)
+                </button>
                 {!errorState.isFatal ? (
                   <button
                     onClick={acquireSession}
@@ -851,6 +862,23 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* B2C OTT Checkout Modal */}
+      <OttCheckoutModal
+        isOpen={showCheckoutModal}
+        onClose={() => setShowCheckoutModal(false)}
+        channelId={channelId}
+        orderType="ppv_single"
+        contentId={contentId}
+        contentType={contentType}
+        title={title}
+        priceIdr={priceIdr}
+        onPaymentSuccess={() => {
+          setShowCheckoutModal(false);
+          setErrorState(null);
+          acquireSession();
+        }}
+      />
     </div>
   );
 };

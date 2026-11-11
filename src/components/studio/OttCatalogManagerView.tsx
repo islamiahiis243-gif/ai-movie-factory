@@ -51,6 +51,9 @@ import {
   projectPublicCatalogItems,
 } from '../../lib/ottCatalogEngine';
 import { OttPlayerModal } from '../ott/OttPlayerModal.tsx';
+import { OttCheckoutModal } from '../ott/OttCheckoutModal.tsx';
+import { OttPaymentOrder, OttCreatorRevenueSummary } from '../../types/database.ts';
+import { supabase } from '../../lib/supabase.ts';
 
 interface OttCatalogManagerViewProps {
   projects: Project[];
@@ -70,7 +73,35 @@ export const OttCatalogManagerView: React.FC<OttCatalogManagerViewProps> = ({
   const currentUserId = user?.id || 'demo_creator_user';
 
   // Sub-navigation tab
-  const [activeCatalogTab, setActiveCatalogTab] = useState<'series' | 'films' | 'link_master' | 'preview_portal'>('series');
+  const [activeCatalogTab, setActiveCatalogTab] = useState<'series' | 'films' | 'link_master' | 'preview_portal' | 'commerce'>('series');
+
+  // OTT B2C Commerce State
+  const [commerceSummary, setCommerceSummary] = useState<OttCreatorRevenueSummary>({
+    channel_id: '',
+    gross_revenue_idr: 0,
+    gateway_fees_idr: 0,
+    platform_fees_idr: 0,
+    net_creator_earnings_idr: 0,
+    settled_orders_count: 0,
+    active_subscribers_count: 0,
+    ppv_tickets_sold_count: 0,
+    data_mode: 'VERIFIED_ACTUAL',
+  });
+  const [recentOrders, setRecentOrders] = useState<OttPaymentOrder[]>([]);
+  const [isLoadingCommerce, setIsLoadingCommerce] = useState(false);
+  const [testCheckout, setTestCheckout] = useState<{
+    isOpen: boolean;
+    title: string;
+    priceIdr: number;
+    contentId?: string;
+    contentType?: 'film' | 'episode' | 'season' | 'channel';
+    orderType: 'ppv_single' | 'season_pass' | 'svod_channel';
+  }>({
+    isOpen: false,
+    title: '',
+    priceIdr: 0,
+    orderType: 'ppv_single',
+  });
 
   // OTT Channel state
   const [channel, setChannel] = useState<OttChannel>(() => {
@@ -307,6 +338,44 @@ export const OttCatalogManagerView: React.FC<OttCatalogManagerViewProps> = ({
       ppvEpisodes,
     };
   }, [seriesList, filmsList, episodesList]);
+
+  // Fetch Commerce Data from Supabase
+  const loadCommerceData = async () => {
+    if (!channel?.id || !supabase) return;
+    setIsLoadingCommerce(true);
+    try {
+      // 1. Fetch summary from RPC
+      const { data: summaryData, error: summaryErr } = await supabase.rpc('get_ott_creator_revenue_summary', {
+        p_channel_id: channel.id,
+      });
+
+      if (!summaryErr && summaryData) {
+        setCommerceSummary(summaryData as OttCreatorRevenueSummary);
+      }
+
+      // 2. Fetch recent orders
+      const { data: ordersData, error: ordersErr } = await supabase
+        .from('ott_payment_orders')
+        .select('*')
+        .eq('channel_id', channel.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!ordersErr && ordersData) {
+        setRecentOrders(ordersData as OttPaymentOrder[]);
+      }
+    } catch (err) {
+      console.error('Failed to load commerce data:', err);
+    } finally {
+      setIsLoadingCommerce(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeCatalogTab === 'commerce') {
+      loadCommerceData();
+    }
+  }, [activeCatalogTab, channel?.id]);
 
   // Player modal state
   const [playerModal, setPlayerModal] = useState<{
@@ -587,6 +656,18 @@ export const OttCatalogManagerView: React.FC<OttCatalogManagerViewProps> = ({
           >
             <Eye className="w-4 h-4 text-indigo-400" />
             <span>Preview Etalase Publik</span>
+          </button>
+
+          <button
+            onClick={() => setActiveCatalogTab('commerce')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeCatalogTab === 'commerce'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+            }`}
+          >
+            <DollarSign className="w-4 h-4 text-amber-400" />
+            <span>Monetisasi & Transaksi OTT</span>
           </button>
         </div>
 
@@ -1110,6 +1191,239 @@ export const OttCatalogManagerView: React.FC<OttCatalogManagerViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* 7. TAB 5: MONETISASI & TRANSAKSI OTT (Milestone 2.9.3) */}
+      {activeCatalogTab === 'commerce' && (
+        <div className="space-y-6">
+          {/* Header & Verification Indicator */}
+          <div className="p-4 bg-gradient-to-r from-amber-500/10 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  {commerceSummary.data_mode}
+                </span>
+                <span className="text-xs text-slate-400">Pemisahan Mutlak dari Saldo SaaS Kreator</span>
+              </div>
+              <h3 className="text-base font-bold text-white">Laporan Keuangan & Penjualan Tiket OTT</h3>
+              <p className="text-xs text-slate-400">
+                Pencatatan real-time penjualan tiket pay-per-view (TVOD) dan langganan bulanan channel (SVOD).
+              </p>
+            </div>
+            <button
+              onClick={loadCommerceData}
+              disabled={isLoadingCommerce}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition disabled:opacity-50"
+            >
+              <span>{isLoadingCommerce ? 'Memperbarui...' : 'Segarkan Data'}</span>
+            </button>
+          </div>
+
+          {/* Revenue Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1">
+              <span className="text-[11px] font-medium text-slate-400 block">Total Gross Penjualan</span>
+              <span className="text-xl font-bold font-mono text-white">
+                Rp {commerceSummary.gross_revenue_idr.toLocaleString('id-ID')}
+              </span>
+              <span className="text-[10px] text-slate-500 block">Seluruh order terbayar</span>
+            </div>
+
+            <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1">
+              <span className="text-[11px] font-medium text-slate-400 block">Biaya Gateway (Midtrans/QRIS)</span>
+              <span className="text-xl font-bold font-mono text-slate-300">
+                Rp {commerceSummary.gateway_fees_idr.toLocaleString('id-ID')}
+              </span>
+              <span className="text-[10px] text-slate-500 block">~0.7% MDR standar transaksi</span>
+            </div>
+
+            <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1">
+              <span className="text-[11px] font-medium text-slate-400 block">Biaya Platform AMF (10%)</span>
+              <span className="text-xl font-bold font-mono text-slate-300">
+                Rp {commerceSummary.platform_fees_idr.toLocaleString('id-ID')}
+              </span>
+              <span className="text-[10px] text-slate-500 block">Infrastruktur & Delivery CDN</span>
+            </div>
+
+            <div className="p-4 bg-slate-900/90 border border-emerald-500/30 rounded-xl space-y-1 bg-emerald-500/5">
+              <span className="text-[11px] font-medium text-emerald-400 block">Pendapatan Bersih Kreator</span>
+              <span className="text-xl font-bold font-mono text-emerald-400">
+                Rp {commerceSummary.net_creator_earnings_idr.toLocaleString('id-ID')}
+              </span>
+              <span className="text-[10px] text-emerald-500/70 block">100% Hak pencairan kreator</span>
+            </div>
+          </div>
+
+          {/* Operational Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400">Pesanan Berhasil</p>
+                <p className="text-lg font-bold font-mono text-white">{commerceSummary.settled_orders_count}</p>
+              </div>
+              <DollarSign className="w-6 h-6 text-indigo-400 opacity-60" />
+            </div>
+
+            <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400">Tiket PPV Terjual</p>
+                <p className="text-lg font-bold font-mono text-white">{commerceSummary.ppv_tickets_sold_count}</p>
+              </div>
+              <Film className="w-6 h-6 text-amber-400 opacity-60" />
+            </div>
+
+            <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400">Pelanggan Aktif (SVOD)</p>
+                <p className="text-lg font-bold font-mono text-white">{commerceSummary.active_subscribers_count}</p>
+              </div>
+              <Users className="w-6 h-6 text-emerald-400 opacity-60" />
+            </div>
+          </div>
+
+          {/* Pricing Policy & Test Sandbox Checkout */}
+          <div className="p-5 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-white">Konfigurasi Tarif & Sandbox Checkout Tester</h4>
+                <p className="text-xs text-slate-400">
+                  Uji langsung pengalaman checkout penonton menggunakan QRIS / Sandbox simulator.
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstFilm = filmsList[0];
+                    setTestCheckout({
+                      isOpen: true,
+                      title: firstFilm?.title || 'Film Standalone',
+                      priceIdr: firstFilm?.ppv_price_idr || 15000,
+                      contentId: firstFilm?.id,
+                      contentType: 'film',
+                      orderType: 'ppv_single',
+                    });
+                  }}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition flex items-center space-x-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Uji Checkout Tiket Film (PPV)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTestCheckout({
+                      isOpen: true,
+                      title: `Langganan Channel: ${channel.name}`,
+                      priceIdr: channel.subscription_price_idr || 39000,
+                      channelId: channel.id,
+                      orderType: 'svod_channel',
+                    } as any);
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold transition flex items-center space-x-1.5"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Uji Checkout Langganan (SVOD)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Transactions Table */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                Riwayat Transaksi Penonton ({recentOrders.length})
+              </h4>
+              <span className="text-[11px] text-slate-500">Live Supabase ott_payment_orders</span>
+            </div>
+
+            {recentOrders.length === 0 ? (
+              <div className="p-8 text-center space-y-2">
+                <DollarSign className="w-8 h-8 text-slate-600 mx-auto" />
+                <p className="text-xs text-slate-400">Belum ada transaksi di channel ini.</p>
+                <p className="text-[11px] text-slate-500">
+                  Gunakan tombol uji checkout di atas untuk melakukan simulasi transaksi pertama.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950 text-slate-400 font-mono text-[11px] border-b border-slate-800">
+                    <tr>
+                      <th className="py-2.5 px-4">No. Pesanan</th>
+                      <th className="py-2.5 px-4">Item / Tayangan</th>
+                      <th className="py-2.5 px-4">Tipe</th>
+                      <th className="py-2.5 px-4">Nominal</th>
+                      <th className="py-2.5 px-4">Net Kreator</th>
+                      <th className="py-2.5 px-4">Status</th>
+                      <th className="py-2.5 px-4">Waktu</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-sans">
+                    {recentOrders.map((ord) => (
+                      <tr key={ord.id} className="hover:bg-slate-800/40 transition">
+                        <td className="py-2.5 px-4 font-mono font-medium text-white">{ord.order_number}</td>
+                        <td className="py-2.5 px-4 text-slate-300 font-semibold">{ord.title}</td>
+                        <td className="py-2.5 px-4">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">
+                            {ord.order_type}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 font-mono font-bold text-white">
+                          Rp {Number(ord.gross_amount).toLocaleString('id-ID')}
+                        </td>
+                        <td className="py-2.5 px-4 font-mono font-bold text-emerald-400">
+                          Rp {Number(ord.net_creator_amount).toLocaleString('id-ID')}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                              ord.status === 'settlement' || ord.status === 'capture'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : ord.status === 'pending'
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                            }`}
+                          >
+                            {ord.status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 text-slate-500 text-[11px] font-mono">
+                          {new Date(ord.created_at).toLocaleDateString('id-ID', {
+                            day: 'numeric',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Standalone Test Checkout Modal */}
+      <OttCheckoutModal
+        isOpen={testCheckout.isOpen}
+        onClose={() => setTestCheckout((prev) => ({ ...prev, isOpen: false }))}
+        channelId={channel.id}
+        orderType={testCheckout.orderType}
+        contentId={testCheckout.contentId}
+        contentType={testCheckout.contentType}
+        title={testCheckout.title}
+        priceIdr={testCheckout.priceIdr}
+        onPaymentSuccess={() => {
+          loadCommerceData();
+          if (onShowToast) {
+            onShowToast('Transaksi berhasil dan hak akses aktif secara instan!', 'success');
+          }
+        }}
+      />
 
       {/* Player Modal */}
       <OttPlayerModal
