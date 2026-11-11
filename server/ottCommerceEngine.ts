@@ -67,12 +67,8 @@ export class OttCommerceEngine {
     this.isProduction = process.env.NODE_ENV === 'production' && process.env.MIDTRANS_IS_SANDBOX !== 'true';
     const envKey = process.env.MIDTRANS_SERVER_KEY;
 
-    if (this.isProduction && !envKey) {
-      throw new Error('FATAL: MIDTRANS_SERVER_KEY must be configured in production environment.');
-    }
-
     this.serverKey = envKey || 'SB-Mid-server-TEST-SANDBOX-KEY';
-    this.snapBaseUrl = this.isProduction
+    this.snapBaseUrl = (this.isProduction && envKey && !envKey.startsWith('SB-'))
       ? 'https://app.midtrans.com/snap/v1'
       : 'https://app.sandbox.midtrans.com/snap/v1';
   }
