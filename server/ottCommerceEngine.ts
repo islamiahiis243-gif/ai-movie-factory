@@ -62,15 +62,31 @@ export class OttCommerceEngine {
   private serverKey: string;
   private isProduction: boolean;
   private snapBaseUrl: string;
+  private isConfiguredForLiveProduction: boolean;
 
   constructor() {
-    this.isProduction = process.env.NODE_ENV === 'production' && process.env.MIDTRANS_IS_SANDBOX !== 'true';
-    const envKey = process.env.MIDTRANS_SERVER_KEY;
+    this.isProduction =
+      process.env.VERCEL_ENV === 'production' ||
+      (process.env.NODE_ENV === 'production' && process.env.ENVIRONMENT === 'production');
 
-    this.serverKey = envKey || 'SB-Mid-server-TEST-SANDBOX-KEY';
-    this.snapBaseUrl = (this.isProduction && envKey && !envKey.startsWith('SB-'))
-      ? 'https://app.midtrans.com/snap/v1'
-      : 'https://app.sandbox.midtrans.com/snap/v1';
+    const envKey = process.env.MIDTRANS_SERVER_KEY?.trim() || '';
+
+    // Production mode strictness: Sandbox mode can NEVER be enabled in production
+    if (this.isProduction && process.env.MIDTRANS_IS_SANDBOX === 'true') {
+      throw new Error('MIDTRANS_CONFIG_ERROR: Sandbox mode (MIDTRANS_IS_SANDBOX=true) is strictly prohibited in production environment.');
+    }
+
+    if (this.isProduction) {
+      // In production, serverKey must exist and must not be a sandbox dummy key (starting with SB-)
+      this.isConfiguredForLiveProduction = Boolean(envKey && !envKey.startsWith('SB-'));
+      this.serverKey = envKey;
+      this.snapBaseUrl = 'https://app.midtrans.com/snap/v1';
+    } else {
+      // Non-production (local dev, automated preview, sandbox QA)
+      this.isConfiguredForLiveProduction = false;
+      this.serverKey = envKey || 'SB-Mid-server-TEST-SANDBOX-KEY';
+      this.snapBaseUrl = 'https://app.sandbox.midtrans.com/snap/v1';
+    }
   }
 
   private getDb() {
@@ -140,7 +156,13 @@ export class OttCommerceEngine {
     customerEmail?: string;
     customerName?: string;
   }): Promise<{ snapToken?: string; redirectUrl?: string; isGatewayMock?: boolean }> {
-    // If running in sandbox without actual internet/live key or testing offline, provide graceful fallback
+    // Fail-closed check: In production, live gateway credentials are mandatory
+    if (this.isProduction && !this.isConfiguredForLiveProduction) {
+      throw new Error(
+        'MIDTRANS_CONFIG_ERROR: Authentic production MIDTRANS_SERVER_KEY is not configured. Checkout cannot proceed.'
+      );
+    }
+
     const authHeader = 'Basic ' + Buffer.from(this.serverKey + ':').toString('base64');
 
     try {
@@ -423,9 +445,9 @@ export class OttCommerceEngine {
       );
     }
 
-    // 4. Currency Check if present
-    if (payload.currency && payload.currency !== 'IDR' && dbOrder.currency === 'IDR') {
-      throw new Error(`CURRENCY_MISMATCH: Webhook currency ${payload.currency} does not match order currency ${dbOrder.currency}`);
+    // 4. Currency Check if present (strictly IDR for AMF OTT Storefront)
+    if (payload.currency && payload.currency.toUpperCase() !== 'IDR') {
+      throw new Error(`UNSUPPORTED_CURRENCY: Webhook currency "${payload.currency}" is not supported (expected IDR)`);
     }
 
     // 5. State Transition Guard: Do not allow finalized non-settleable orders to be transitioned to settlement/capture
@@ -452,8 +474,23 @@ export class OttCommerceEngine {
       throw new Error(`ILLEGAL_STATE_TRANSITION: Order ${orderNumber} is already finalized as "${dbOrder.status}"`);
     }
 
+    // Refund State Guard: Order must be settled/capture before it can be refunded
+    if (targetStatus === 'refund' || targetStatus === 'partial_refund') {
+      if (!['settlement', 'capture', 'partial_refund'].includes(dbOrder.status)) {
+        throw new Error(
+          `ILLEGAL_STATE_TRANSITION: Cannot process refund on order "${orderNumber}" with status "${dbOrder.status}" (must be settled or partial_refund)`
+        );
+      }
+      if (dbOrder.status === 'refund' && targetStatus === 'partial_refund') {
+        throw new Error(
+          `ILLEGAL_STATE_TRANSITION: Cannot process partial refund on order "${orderNumber}" that is already fully refunded`
+        );
+      }
+    }
+
     const gatewayFee = Math.round(webhookGross * 0.007);
     const refundAmount = Number(payload.refund_amount) || 0;
+    const refundKey = payload.refund_key || payload.refund_id || payload.transaction_id || null;
 
     // Call PostgreSQL atomic RPC fulfill_ott_payment_order (service_role only)
     const { data: rpcResult, error: rpcErr } = await db.rpc('fulfill_ott_payment_order', {
@@ -463,6 +500,7 @@ export class OttCommerceEngine {
       p_gateway_payload: payload,
       p_gateway_fee: gatewayFee,
       p_refund_amount: refundAmount,
+      p_refund_key: refundKey,
     });
 
     if (rpcErr) {

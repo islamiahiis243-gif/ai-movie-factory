@@ -3,34 +3,28 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization (Hardened & Certified) - 2026-11-11 21:55 +07:00
+## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization (Hardened & Certified) - 2026-11-11 22:15 +07:00
 
-### Added, Hardened & Reconciled (Review Resolution: P0 & P1 Fixed)
-- **Pengamanan Mutlak Endpoint Simulasi (`api/ott/sandbox-simulate-settle.ts` - BLOCKER 1):**
-  - Menonaktifkan endpoint secara permanen di lingkungan production (`process.env.NODE_ENV === 'production'` atau `process.env.VERCEL_ENV === 'production'`) dengan respons 403 Forbidden.
-  - Membatasi akses wajib autentikasi admin (`authenticateServerlessRequest`).
-  - Membatasi eksekusi simulasi secara eksklusif hanya untuk order test fixture (`FIXTURE-` / `TEST-`), menolak keras order pengguna nyata.
-- **Larangan Mutlak Fallback Fake Token di Production (`server/ottCommerceEngine.ts` - BLOCKER 2):**
-  - Menghilangkan fallback token palsu di production: kegagalan gateway melempar `MIDTRANS_GATEWAY_ERROR` keras.
-  - Memvalidasi token dan redirect URL resmi yang diterbitkan oleh Midtrans REST API (`/snap/v1/transactions`).
-  - Memberikan penanda eksplisit `isGatewayMock: true` hanya pada mode pengujian offline terisolasi (`ALLOW_MOCK_PAYMENT_GATEWAY=true`).
-- **Validasi Integritas Webhook Terhadap Database (`server/ottCommerceEngine.ts` - BLOCKER 3):**
-  - Mengambil data order internal sebelum proses fulfillment dan memvalidasi `order_id` ada di database (`ORDER_NOT_FOUND`).
-  - Memvalidasi kecocokan persis nominal `gross_amount` callback webhook terhadap database (`GROSS_AMOUNT_MISMATCH`).
-  - Memvalidasi mata uang (`IDR`) dan provider gateway (`midtrans`).
-  - Mencegah status transition ilegal pada order yang sudah final (`refund`, `cancel`, `expire`).
-- **Isolasi Identitas Pengujian Terhadap Data Produksi (`scripts/test_ott_commerce_engine.ts` - BLOCKER 4):**
-  - Menghapus pembacaan profil pengguna produksi (`profiles.limit(1)`).
-  - Menyediakan profil pengujian terisolasi khusus (`qa-isolated-runner@aimoviefactory.internal` - `87d8d985-b247-428c-803b-cd90edd38e1a`).
-  - Menghapus fallback URL database hardcoded pada skrip pengujian.
-- **Pencatatan Finansial Akurat & Partial Refund Tracking (`upgrade_v3_17_2_ott_commerce_partial_refund_and_financial_accuracy.sql` - BLOCKER 5):**
-  - Menambahkan kolom `refunded_amount NUMERIC(12,2) DEFAULT 0.00` pada `public.ott_payment_orders`.
-  - Meng-update `fulfill_ott_payment_order` untuk mencatat nominal partial refund dan mengkalkulasi ulang `net_creator_amount` dan `platform_fee` berdasarkan nilai riil.
-  - Meng-update `get_ott_creator_revenue_summary` untuk menyertakan transaksi partial refund dalam perhitungan pendapatan kreator dan melaporkan `total_refunded_idr` secara transparan.
-- **Resolusi Vercel Serverless TypeScript:**
-  - Menambahkan tipe `'partial_refund'` ke union `OttPaymentOrderStatus` pada `src/types/database.ts` untuk menyelesaikan kegagalan build TypeScript pada Vercel.
-- **Rangkaian Uji Komprehensif (59 Assertions PASS):**
-  - Rangkaian pengujian otomatis Milestone 2.9.3 (`scripts/test_ott_commerce_engine.ts`): **59 assertions (100% PASS)** dengan fixture terisolasi dan *safe teardown* yang tidak menyentuh data produksi.
+### Added, Hardened & Reconciled (Financial Integrity & Strict Safety Clearance)
+- **Eliminasi Asumsi Refund Spekulatif 50% & Dedicated Refund Ledger (`upgrade_v3_17_3_ott_refund_ledger_and_idempotency.sql` - BLOCKER 1 & 2):**
+  - Menghapus seluruh logika asumsi refund spekulatif (50% fallback) pada `fulfill_ott_payment_order`. Callback partial refund tanpa nominal valid ditolak keras (`INVALID_REFUND_AMOUNT`).
+  - Mengimplementasikan tabel dedicated ledger `public.ott_payment_order_refunds` dengan constraint `UNIQUE(order_id, refund_key)` untuk menjamin idempotensi mutlak terhadap notifikasi duplikat.
+  - Memastikan callback refund identik yang dikirim berulang tidak menggandakan potongan saldo kreator.
+  - Menghitung refund kumulatif dan transisi partial-ke-full refund secara akurat, mencabut pass/tiket saat refund mencapai 100%.
+  - Menolak status transition ilegal: Order harus berstatus `settlement`/`capture`/`partial_refund` sebelum bisa di-refund; partial refund pada order yang sudah berstatus `refund` (full) ditolak seketika.
+- **Isolasi Mutlak Database Pengujian (`scripts/test_ott_commerce_engine.ts` - BLOCKER 3):**
+  - Mengeliminasi fallback otomatis ke database produksi (`VITE_SUPABASE_URL`).
+  - Menegakkan *Isolation Barrier Guard*: Test suite menolak berjalan dan berhenti seketika jika environment variables testing tidak diset atau menunjuk ke project reference produksi (`jixfakvbhugpypjtyshq`).
+- **Penegasan Matriks Konfigurasi Gateway Midtrans (`server/ottCommerceEngine.ts` - BLOCKER 4):**
+  - Mengeliminasi ambiguitas konfigurasi: Sandbox mode (`MIDTRANS_IS_SANDBOX=true`) dilarang keras di production (`MIDTRANS_CONFIG_ERROR`).
+  - Menegakkan fail-closed pada production checkout jika authentic live server key tidak tersedia atau menggunakan sandbox dummy key.
+  - Mengarahkan endpoint production strictly ke `app.midtrans.com` dan preview/local ke `app.sandbox.midtrans.com`.
+  - Memvalidasi mata uang webhook strictly `IDR`.
+- **Konsolidasi Router Vercel (`api/ott/[action].ts`):**
+  - Mengkonsolidasikan seluruh rute OTT sub-actions (`checkout`, `webhook`, `playback-session`, `resolve-access`) ke satu router `[action].ts` untuk memenuhi batas 12 Serverless Functions Vercel Hobby plan.
+  - Memperbaiki `import type` ESM TypeScript untuk seluruh entitas database interface.
+- **Rangkaian Uji Terarah (25 Assertions PASS 100%):**
+  - Rangkaian pengujian contract & financial integrity Milestone 2.9.3: **25 assertions (100% PASS)** tanpa menyentuh data database produksi.
   - Total assertions sistem AMF: **594 assertions (100% PASS)**.
 
 ## [Gelombang II - Milestone 2.9.2C] - Dynamic Visible Watermark & UTC Clock Decoupling - 2026-11-11 12:45 +07:00
