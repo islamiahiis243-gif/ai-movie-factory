@@ -50,6 +50,7 @@ import {
   calculateSeriesAggregation,
   projectPublicCatalogItems,
 } from '../../lib/ottCatalogEngine';
+import { OttPlayerModal } from '../ott/OttPlayerModal.tsx';
 
 interface OttCatalogManagerViewProps {
   projects: Project[];
@@ -306,6 +307,44 @@ export const OttCatalogManagerView: React.FC<OttCatalogManagerViewProps> = ({
       ppvEpisodes,
     };
   }, [seriesList, filmsList, episodesList]);
+
+  // Player modal state
+  const [playerModal, setPlayerModal] = useState<{
+    isOpen: boolean;
+    contentId: string;
+    contentType: 'film' | 'episode';
+    channelId: string;
+    grantToken: string;
+    title: string;
+    posterUrl?: string;
+    aspectRatio?: '16:9' | '9:16';
+  }>({
+    isOpen: false,
+    contentId: '',
+    contentType: 'film',
+    channelId: '',
+    grantToken: '',
+    title: '',
+  });
+
+  const handleLaunchPlayback = (
+    contentId: string,
+    contentType: 'film' | 'episode',
+    title: string,
+    posterUrl?: string,
+    aspectRatio: '16:9' | '9:16' = '16:9'
+  ) => {
+    setPlayerModal({
+      isOpen: true,
+      contentId,
+      contentType,
+      channelId: channel.id,
+      grantToken: 'preview_sample_grant_token',
+      title,
+      posterUrl,
+      aspectRatio,
+    });
+  };
 
   // Toggle Publication status for an Episode
   const handleToggleEpisodePublication = (episodeId: string) => {
@@ -978,7 +1017,19 @@ export const OttCatalogManagerView: React.FC<OttCatalogManagerViewProps> = ({
                 Penyelidikan detektif sibernetik memburu hacker AI di Jakarta tahun 2088. Tonton episode pertama gratis!
               </p>
               <div className="flex items-center gap-3 pt-1">
-                <button className="px-4 py-2 bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 hover:bg-emerald-400 cursor-pointer">
+                <button
+                  onClick={() => {
+                    const ep1 = episodesList.find((e) => e.series_id === 'ser-cyber-01' && e.episode_number === 1);
+                    handleLaunchPlayback(
+                      ep1?.id || 'ep-cyber-01-s1e1',
+                      'episode',
+                      ep1?.title || 'Chronicles of Neo-Jakarta: Episode 1',
+                      ep1?.thumbnail_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&h=450&fit=crop',
+                      '16:9'
+                    );
+                  }}
+                  className="px-4 py-2 bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 hover:bg-emerald-400 cursor-pointer"
+                >
                   <Play className="w-3.5 h-3.5 fill-current" />
                   <span>Tonton Ep 1 (Gratis)</span>
                 </button>
@@ -998,7 +1049,20 @@ export const OttCatalogManagerView: React.FC<OttCatalogManagerViewProps> = ({
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
               {projectPublicCatalogItems(seriesList).map((s) => (
-                <div key={s.id} className="group relative rounded-xl overflow-hidden border border-slate-800 bg-[#101726]">
+                <div
+                  key={s.id}
+                  onClick={() => {
+                    const firstEp = episodesList.find((e) => e.series_id === s.id);
+                    handleLaunchPlayback(
+                      firstEp?.id || s.id,
+                      'episode',
+                      s.title,
+                      s.poster_url,
+                      s.content_format === 'short_form_vertical_9_16' ? '9:16' : '16:9'
+                    );
+                  }}
+                  className="group relative rounded-xl overflow-hidden border border-slate-800 bg-[#101726] cursor-pointer hover:border-emerald-500/50 transition-colors"
+                >
                   <img
                     src={s.poster_url}
                     alt={s.title}
@@ -1015,7 +1079,19 @@ export const OttCatalogManagerView: React.FC<OttCatalogManagerViewProps> = ({
               ))}
 
               {projectPublicCatalogItems(filmsList).map((f) => (
-                <div key={f.id} className="group relative rounded-xl overflow-hidden border border-slate-800 bg-[#101726]">
+                <div
+                  key={f.id}
+                  onClick={() => {
+                    handleLaunchPlayback(
+                      f.id,
+                      'film',
+                      f.title,
+                      f.poster_url,
+                      '16:9'
+                    );
+                  }}
+                  className="group relative rounded-xl overflow-hidden border border-slate-800 bg-[#101726] cursor-pointer hover:border-amber-500/50 transition-colors"
+                >
                   <img
                     src={f.poster_url}
                     alt={f.title}
@@ -1034,6 +1110,19 @@ export const OttCatalogManagerView: React.FC<OttCatalogManagerViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Player Modal */}
+      <OttPlayerModal
+        isOpen={playerModal.isOpen}
+        onClose={() => setPlayerModal((prev) => ({ ...prev, isOpen: false }))}
+        contentId={playerModal.contentId}
+        contentType={playerModal.contentType}
+        channelId={playerModal.channelId}
+        grantToken={playerModal.grantToken}
+        title={playerModal.title}
+        posterUrl={playerModal.posterUrl}
+        aspectRatio={playerModal.aspectRatio}
+      />
     </div>
   );
 };

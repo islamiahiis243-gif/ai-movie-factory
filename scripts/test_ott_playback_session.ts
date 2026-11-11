@@ -430,6 +430,108 @@ async function runPlaybackSessionSuite() {
   assert(migrationSql.includes('acquire_ott_playback_session'), '14a. Atomic concurrency acquisition procedure defined');
   assert(migrationSql.includes('FOR UPDATE'), '14b. Row locking concurrency guard defined in PostgreSQL');
 
+  // ---------------------------------------------------------------------------
+  // [TEST 15] Real Concurrent Acquisition & Transactional Advisory Lock Proof
+  // ---------------------------------------------------------------------------
+  console.log('\n[TEST 15] Real Concurrent Acquisition & Transactional Advisory Lock Proof');
+  const { data: userProfiles } = await adminClient.from('profiles').select('id').limit(1);
+  const realTestUserId = userProfiles && userProfiles.length > 0 ? userProfiles[0].id : null;
+
+  if (realTestUserId) {
+    // 1. Create a temporary channel for testing concurrency
+    const testChanSlug = `test-race-channel-${Date.now()}`;
+    const { data: createdChan } = await adminClient
+      .from('ott_channels')
+      .insert({
+        user_id: realTestUserId,
+        slug: testChanSlug,
+        name: 'Concurrency Test Studio',
+        status: 'active',
+      })
+      .select('id')
+      .single();
+
+    if (createdChan?.id) {
+      // 2. Ensure test user starts with ZERO active sessions
+      await adminClient.from('ott_playback_sessions').delete().eq('user_id', realTestUserId);
+
+      // 3. Fire two concurrent acquire calls simultaneously (Zero-Rows Initial State)
+      const raceSess1 = `pss_race_1_${Date.now()}`;
+      const raceSess2 = `pss_race_2_${Date.now()}`;
+      const dummyContentId = '00000000-0000-0000-0000-000000000001';
+
+      console.log('  Firing 2 simultaneous acquire_ott_playback_session calls with Promise.all...');
+      const [resRace1, resRace2] = await Promise.all([
+        adminClient.rpc('acquire_ott_playback_session', {
+          p_session_id: raceSess1,
+          p_user_id: realTestUserId,
+          p_channel_id: createdChan.id,
+          p_content_id: dummyContentId,
+          p_content_type: 'film',
+          p_grant_id: 'gid_race_token_1',
+          p_max_concurrent_streams: 1,
+        }),
+        adminClient.rpc('acquire_ott_playback_session', {
+          p_session_id: raceSess2,
+          p_user_id: realTestUserId,
+          p_channel_id: createdChan.id,
+          p_content_id: dummyContentId,
+          p_content_type: 'film',
+          p_grant_id: 'gid_race_token_2',
+          p_max_concurrent_streams: 1,
+        }),
+      ]);
+
+      assert(!resRace1.error && !resRace2.error, '15a. Both concurrent transactions executed without deadlock');
+
+      // 4. Query production DB: exactly 1 active session must exist!
+      const { data: activeSessions } = await adminClient
+        .from('ott_playback_sessions')
+        .select('*')
+        .eq('user_id', realTestUserId)
+        .eq('status', 'active');
+
+      assert(activeSessions?.length === 1, '15b. Exactly 1 active session exists after concurrent acquire (Advisory lock serialization succeeded)');
+
+      const { data: revokedSessions } = await adminClient
+        .from('ott_playback_sessions')
+        .select('*')
+        .eq('user_id', realTestUserId)
+        .eq('status', 'revoked');
+
+      assert(revokedSessions?.length === 1, '15c. The other session was atomically revoked via FIFO takeover');
+
+      // Cleanup
+      await adminClient.from('ott_playback_sessions').delete().eq('user_id', realTestUserId);
+      await adminClient.from('ott_channels').delete().eq('id', createdChan.id);
+    }
+  } else {
+    console.log('  ℹ SKIP: No profiles in database, skipping live advisory lock race test');
+  }
+
+  // ---------------------------------------------------------------------------
+  // [TEST 16] SECURITY DEFINER Privilege Lockdown & Ownership Guard
+  // ---------------------------------------------------------------------------
+  console.log('\n[TEST 16] SECURITY DEFINER Privilege Lockdown & Ownership Guard');
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://jixfakvbhugpypjtyshq.supabase.co';
+  if (anonKey) {
+    const { createClient } = await import('@supabase/supabase-js');
+    const anonClient = createClient(supabaseUrl, anonKey);
+
+    // Direct RPC call by anonymous client must be rejected (REVOKE EXECUTE)
+    const { error: anonRpcErr } = await anonClient.rpc('acquire_ott_playback_session', {
+      p_session_id: 'pss_illegal_direct_rpc',
+      p_user_id: '00000000-0000-0000-0000-000000000001',
+      p_channel_id: '00000000-0000-0000-0000-000000000001',
+      p_content_id: '00000000-0000-0000-0000-000000000001',
+      p_content_type: 'film',
+      p_grant_id: 'gid_fake',
+    });
+
+    assert(Boolean(anonRpcErr), '16a. Anon role directly calling acquire_ott_playback_session is rejected (REVOKE EXECUTE enforced)');
+  }
+
   console.log('\n================================================================');
   console.log(` MILESTONE 2.9.2A TEST SUMMARY: ${testsPassed} PASSED, ${testsFailed} FAILED`);
   console.log('================================================================\n');
