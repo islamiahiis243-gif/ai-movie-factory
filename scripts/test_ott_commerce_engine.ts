@@ -1,19 +1,7 @@
 /**
  * AI Movie Factory — Phase 6: Independent OTT & Streaming Platform
  * Automated Acceptance Test Suite: Milestone 2.9.3 (B2C Payment / OTT Commerce & Access Fulfillment)
- * 
- * Rigorous Safety & Verification Contracts:
- * 1. Isolated Sandbox Fixtures: Creates dedicated test fixtures; zero modification or deletion of real user data.
- * 2. Strict Privilege Hardening: Verifies fulfill_ott_payment_order is executable ONLY by service_role.
- * 3. Revenue Ownership Guard: Verifies get_ott_creator_revenue_summary rejects unauthorized channel access.
- * 4. Content Eligibility Guard: Rejects cross-channel purchase, unapproved Gate 5 masters, and draft items.
- * 5. Server-Side Catalog Price Anti-Tampering: Rejects client price overrides.
- * 6. Cryptographic Timing-Safe Signature: Rejects forged signatures and timing attacks.
- * 7. Real Snap Token & Gateway URL generation.
- * 8. Atomic Idempotent Pass & Subscription Issuance (48h PPV, 30d non-auto-renew SVOD).
- * 9. Differentiated Full Refund vs Partial Refund handling.
- * 10. Strict Isolation: AMF SaaS billing tables (payment_orders, credit_transactions) remain 100% untouched.
- * 11. Safe Teardown: Cleans up only the test fixtures created during the suite execution.
+ * Hardened Edition: Dedicated Test Profile, Full Financial Precision & Strict Gateway Controls
  */
 
 import 'dotenv/config';
@@ -55,16 +43,27 @@ async function runTests() {
   console.log('================================================================\n');
 
   const supabase = getSupabaseAdmin();
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://jixfakvbhugpypjtyshq.supabase.co';
+  const supabaseUrl = process.env.TEST_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) {
+    throw new Error('TEST_ENV_ERROR: Required Supabase URL environment variable is missing.');
+  }
+
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
   const anonClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
 
-  // Resolve an existing user ID for test fixture ownership
-  const { data: profiles } = await supabase.from('profiles').select('id').limit(1);
-  if (!profiles || profiles.length === 0) {
-    throw new Error('No user profile found in database.');
+  // 1. ISOLATED TEST IDENTITY RESOLUTION (Zero touch on real user accounts)
+  // Look up dedicated test user profile; if not present, use environment TEST_USER_ID
+  const DEDICATED_TEST_EMAIL = 'qa-isolated-runner@aimoviefactory.internal';
+  const { data: testProfiles } = await supabase
+    .from('profiles')
+    .select('id, email')
+    .eq('email', DEDICATED_TEST_EMAIL)
+    .limit(1);
+
+  let testOwnerId = testProfiles && testProfiles.length > 0 ? testProfiles[0].id : process.env.TEST_USER_ID;
+  if (!testOwnerId) {
+    throw new Error('TEST_ENV_ERROR: Dedicated QA test profile not found. Please provision qa-isolated-runner.');
   }
-  const testOwnerId = profiles[0].id;
 
   let testChannelId: string = '';
   let otherChannelId: string = '';
@@ -74,7 +73,7 @@ async function runTests() {
 
   try {
     // -------------------------------------------------------------------------
-    // SECTION 1: ISOLATED FIXTURE PROVISIONING (Zero touch on real user data)
+    // SECTION 1: ISOLATED FIXTURE PROVISIONING (Dedicated QA fixtures only)
     // -------------------------------------------------------------------------
     console.log('[SECTION 1] Provisioning Isolated Test Fixtures...');
     const fixtureSuffix = Date.now().toString();
@@ -95,7 +94,7 @@ async function runTests() {
 
     if (chanErr || !chanData) throw new Error(`Failed to create test channel: ${chanErr?.message}`);
     testChannelId = chanData.id;
-    assert('Isolated test channel created with active status', Boolean(testChannelId));
+    assert('Isolated test channel created with dedicated test identity', Boolean(testChannelId));
 
     // 2. Create Second Channel for cross-channel mismatch testing
     const { data: otherChanData } = await supabase
@@ -249,9 +248,9 @@ async function runTests() {
     try {
       await ottCommerceEngine.createOrder({
         userId: testOwnerId,
-        channelId: otherChannelId, // Mismatched channel
+        channelId: otherChannelId,
         orderType: 'ppv_single',
-        contentId: testFilmId, // Belongs to testChannelId
+        contentId: testFilmId,
         contentType: 'film',
       });
     } catch (err: any) {
@@ -270,7 +269,7 @@ async function runTests() {
         orderType: 'ppv_single',
         contentId: testFilmId,
         contentType: 'film',
-        clientProvidedPrice: 100, // True price is 25000
+        clientProvidedPrice: 100,
       });
     } catch (err: any) {
       if (err.message?.includes('Price tampering detected')) {
@@ -279,7 +278,26 @@ async function runTests() {
     }
     assert('Engine blocks client-submitted price tampering (Rp 100 vs Rp 25,000)', priceTamperRejected);
 
-    // E. Legitimate Order Creation with Snap Token
+    // E. Production Security Verification: Gateway Failure rejects creation and PROHIBITS fake fallback tokens
+    delete process.env.ALLOW_MOCK_PAYMENT_GATEWAY;
+    let gatewayFailureRejected = false;
+    try {
+      await ottCommerceEngine.createOrder({
+        userId: testOwnerId,
+        channelId: testChannelId,
+        orderType: 'ppv_single',
+        contentId: testFilmId,
+        contentType: 'film',
+      });
+    } catch (err: any) {
+      if (err.message?.includes('MIDTRANS_GATEWAY_ERROR')) {
+        gatewayFailureRejected = true;
+      }
+    }
+    assert('Engine strictly throws MIDTRANS_GATEWAY_ERROR and forbids fake token fallback when gateway is unauthenticated or in production', gatewayFailureRejected);
+
+    // F. Isolated Test Mode with Explicit Mock Flag
+    process.env.ALLOW_MOCK_PAYMENT_GATEWAY = 'true';
     const orderRes = await ottCommerceEngine.createOrder({
       userId: testOwnerId,
       channelId: testChannelId,
@@ -289,17 +307,18 @@ async function runTests() {
       customerEmail: 'test-viewer@aimoviefactory.local',
     });
 
-    assert('Legitimate PPV order created successfully', Boolean(orderRes.order && orderRes.order.order_number));
+    assert('Legitimate PPV order created successfully in explicit test mode', Boolean(orderRes.order && orderRes.order.order_number));
     assert('Order gross amount verified from database catalog (Rp 25,000)', orderRes.order.gross_amount === 25000);
     assert('Order initial status is pending', orderRes.order.status === 'pending');
     assert('Order entitlement_fulfilled is false on creation', orderRes.order.entitlement_fulfilled === false);
-    assert('Midtrans Snap payment token issued', Boolean(orderRes.paymentDetails.token));
-    assert('Midtrans Snap redirectUrl provided', Boolean(orderRes.paymentDetails.redirectUrl));
+    assert('Payment token issued', Boolean(orderRes.paymentDetails.token));
+    assert('Payment redirectUrl provided', Boolean(orderRes.paymentDetails.redirectUrl));
+    assert('Explicitly distinguishes mock vs real gateway response (isGatewayMock flagged)', typeof orderRes.paymentDetails.isGatewayMock === 'boolean');
 
     // -------------------------------------------------------------------------
-    // SECTION 5: TIMING-SAFE SIGNATURE VERIFICATION
+    // SECTION 5: TIMING-SAFE SIGNATURE & WEBHOOK PRE-VALIDATION GUARDS
     // -------------------------------------------------------------------------
-    console.log('\n[SECTION 5] Testing Timing-Safe Webhook Signature Verification...');
+    console.log('\n[SECTION 5] Testing Timing-Safe Signature & Webhook Database Integrity...');
     const legitSignature = ottCommerceEngine.generateSignature(
       orderRes.order.order_number,
       '200',
@@ -323,6 +342,34 @@ async function runTests() {
       signature_key: 'forged_fake_signature_hash_000000000000000000000000000000000',
     };
     assert('Forged signature rejected by timingSafeEqual', !ottCommerceEngine.verifyWebhookSignature(forgedWebhook));
+
+    // GUARD 1: Rejection of non-existent order
+    let nonExistentRejected = false;
+    try {
+      const nonExistentSig = ottCommerceEngine.generateSignature('NON-EXISTENT-ORDER', '200', 25000);
+      await ottCommerceEngine.handleWebhook({
+        ...validWebhook,
+        order_id: 'NON-EXISTENT-ORDER',
+        signature_key: nonExistentSig,
+      });
+    } catch (err: any) {
+      if (err.message?.includes('ORDER_NOT_FOUND')) nonExistentRejected = true;
+    }
+    assert('Webhook rejects non-existent order (ORDER_NOT_FOUND)', nonExistentRejected);
+
+    // GUARD 2: Rejection of gross_amount mismatch against database record
+    let amountMismatchRejected = false;
+    try {
+      const tamperedSig = ottCommerceEngine.generateSignature(orderRes.order.order_number, '200', 99999);
+      await ottCommerceEngine.handleWebhook({
+        ...validWebhook,
+        gross_amount: '99999.00',
+        signature_key: tamperedSig,
+      });
+    } catch (err: any) {
+      if (err.message?.includes('GROSS_AMOUNT_MISMATCH')) amountMismatchRejected = true;
+    }
+    assert('Webhook rejects gross_amount tampering against database record', amountMismatchRejected);
 
     // -------------------------------------------------------------------------
     // SECTION 6: ATOMIC FULFILLMENT & ENTITLEMENT ISSUANCE (48H PPV PASS)
@@ -415,34 +462,45 @@ async function runTests() {
     assert('Subscription validity period is exactly 30 days', subDays === 30, `Period: ${subDays} days`);
 
     // -------------------------------------------------------------------------
-    // SECTION 9: CREATOR REVENUE SUMMARY (VERIFIED_ACTUAL)
+    // SECTION 9: CREATOR REVENUE SUMMARY (VERIFIED_ACTUAL & FINANCIAL ACCURACY)
     // -------------------------------------------------------------------------
     console.log('\n[SECTION 9] Testing Creator Revenue Reporting...');
-    const report = await ottCommerceEngine.getCreatorRevenueReport(testChannelId);
+    const reportBeforeRefund = await ottCommerceEngine.getCreatorRevenueReport(testChannelId);
 
-    assert('Creator revenue report successfully returned', Boolean(report));
-    assert('Report channel ID matches test channel', report.channel_id === testChannelId);
-    assert('Gross revenue accurately reflects settled orders (>= Rp 25,000)', report.gross_revenue_idr >= 25000);
-    assert('Platform fee calculated at 10%', report.platform_fees_idr > 0);
+    assert('Creator revenue report successfully returned', Boolean(reportBeforeRefund));
+    assert('Report channel ID matches test channel', reportBeforeRefund.channel_id === testChannelId);
+    assert('Gross revenue accurately reflects settled orders (Rp 70,000 = 25k + 45k)', reportBeforeRefund.gross_revenue_idr === 70000);
+    assert('Platform fee calculated at 10%', reportBeforeRefund.platform_fees_idr > 0);
     assert('Net creator earnings strictly equals Gross - (Gateway Fees + Platform Fee)',
-      Math.abs(report.net_creator_earnings_idr - (report.gross_revenue_idr - report.gateway_fees_idr - report.platform_fees_idr)) < 0.01);
-    assert('Report marked strictly with data_mode: VERIFIED_ACTUAL', report.data_mode === 'VERIFIED_ACTUAL');
+      Math.abs(reportBeforeRefund.net_creator_earnings_idr - (reportBeforeRefund.gross_revenue_idr - reportBeforeRefund.gateway_fees_idr - reportBeforeRefund.platform_fees_idr)) < 0.01);
+    assert('Report marked strictly with data_mode: VERIFIED_ACTUAL', reportBeforeRefund.data_mode === 'VERIFIED_ACTUAL');
 
     // -------------------------------------------------------------------------
-    // SECTION 10: DIFFERENTIATED REFUND LOGIC (Full vs Partial)
+    // SECTION 10: DIFFERENTIATED REFUND LOGIC & FINANCIAL INTEGRITY
     // -------------------------------------------------------------------------
-    console.log('\n[SECTION 10] Testing Full vs Partial Refund Semantics...');
+    console.log('\n[SECTION 10] Testing Partial vs Full Refund Accounting...');
 
-    // Partial refund on SVOD order
+    // A. Partial Refund on SVOD order (refund Rp 15,000 of Rp 45,000)
     const partialRefundWebhook = {
       order_id: svodOrder.order.order_number,
       status_code: '200',
       gross_amount: '45000.00',
+      refund_amount: 15000,
       signature_key: svodSig,
       transaction_status: 'partial_refund',
     };
     const partialRefundResult = await ottCommerceEngine.handleWebhook(partialRefundWebhook);
     assert('Partial refund status processed', partialRefundResult.status === 'partial_refund');
+
+    // Check DB row for partial refund
+    const { data: svodOrderAfterPartial } = await supabase
+      .from('ott_payment_orders')
+      .select('status, refunded_amount, net_creator_amount')
+      .eq('order_number', svodOrder.order.order_number)
+      .single();
+
+    assert('Partial refund explicitly recorded in refunded_amount column (Rp 15,000)', Number(svodOrderAfterPartial?.refunded_amount) === 15000);
+    assert('Partial refund adjusted net_creator_amount appropriately', Number(svodOrderAfterPartial?.net_creator_amount) > 0);
 
     // Partial refund does NOT revoke active subscription
     const { data: subAfterPartial } = await supabase
@@ -450,9 +508,14 @@ async function runTests() {
       .select('status')
       .eq('id', svodFulfill.subscriptionId)
       .single();
-    assert('Partial refund does NOT revoke subscription', subAfterPartial?.status === 'active');
+    assert('Partial refund does NOT revoke active subscription', subAfterPartial?.status === 'active');
 
-    // Full refund on PPV ticket order
+    // Revenue report still includes partial refund order, accounting for total_refunded_idr
+    const reportAfterPartial = await ottCommerceEngine.getCreatorRevenueReport(testChannelId);
+    assert('Revenue report records total_refunded_idr accurately (Rp 15,000)', Number(reportAfterPartial.total_refunded_idr) === 15000);
+    assert('Revenue report retains order in settled_orders_count even after partial refund', reportAfterPartial.settled_orders_count === 2);
+
+    // B. Full Refund on PPV ticket order
     const fullRefundWebhook = {
       order_id: orderRes.order.order_number,
       status_code: '200',
@@ -469,6 +532,15 @@ async function runTests() {
       .eq('id', fulfillResult.passId)
       .single();
     assert('Full refund instantly revokes access pass (status = revoked)', passAfterRefund?.status === 'revoked');
+
+    // State transition guard: Attempting settlement callback on finalized refund order MUST fail
+    let lateSettleRejected = false;
+    try {
+      await ottCommerceEngine.handleWebhook(validWebhook);
+    } catch (err: any) {
+      if (err.message?.includes('ILLEGAL_STATE_TRANSITION')) lateSettleRejected = true;
+    }
+    assert('Engine rejects illegal transition attempting to settle a refunded order', lateSettleRejected);
 
     // -------------------------------------------------------------------------
     // SECTION 11: FINAL SAAS ISOLATION CHECK

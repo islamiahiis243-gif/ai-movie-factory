@@ -22,7 +22,7 @@
 ---
 
 ## 3. Current System Baseline (Single Source of Truth)
-- **Total Assertions Lolos:** 579 Asersi ($100\%$ PASS, 0 FAIL).
+- **Total Assertions Lolos:** 594 Asersi ($100\%$ PASS, 0 FAIL).
 - **Milestone 2.9 (Katalog OTT):** Disetujui & Terintegrasi.
 - **Milestone 2.9.1 (Entitlement & Access Control):** Disetujui & Hardened (HMAC-SHA256, RLS, live Supabase).
 - **Milestone 2.9.2A (Session Controller & Concurrency):** Disetujui & Hardened (`pg_advisory_xact_lock`, least-privilege `service_role`).
@@ -30,13 +30,15 @@
   - Retensi terminal mencakup 4 status (`completed`, `terminated`, `expired`, `revoked`) dengan batas 30 hari.
   - Pemutar HTML5 Progressive MP4 terbukti di browser Google Chrome nyata via CDP (jeda buffering renewal $150-300\text{ ms}$, posisi putar dipertahankan, penolakan token kedaluwarsa HTTP 400).
 - **Milestone 2.9.2C (Dynamic Visible Watermark):** Disetujui secara resmi oleh ChatGPT & Pengguna (Commit `f428291` & `4a9a35a`). Kanvas overlay DPR-aware dan pemisahan lifecycle jam UTC live.
-- **Milestone 2.9.3 (B2C Payment / OTT Commerce & Storefront Monetization):** SELESAI & TERVERIFIKASI.
+- **Milestone 2.9.3 (B2C Payment / OTT Commerce & Storefront Monetization):** SELESAI & DIPERKUAT (RESOLVED ALL REVIEW FINDINGS).
   - Tabel `public.ott_payment_orders` terisolasi mutlak dari saldo kredit SaaS kreator.
-  - Validasi harga sisi server mencegah manipulasi harga tiket oleh klien.
-  - Verifikasi tanda tangan webhook Midtrans SHA-512 dengan penolakan ketat tanda tangan palsu (HTTP 403).
-  - Stored procedure `fulfill_ott_payment_order` atomik dengan PostgreSQL advisory lock dan proteksi idempoten terhadap panggilan duplikat.
-  - Penerbitan tiket PPV 48 jam dan langganan bulanan SVOD 30 hari serta pembatalan instan saat refund.
-  - Pelaporan analitik pendapatan kreator transparan bertanda `[VERIFIED ACTUAL]` (`get_ott_creator_revenue_summary`).
-  - Antarmuka pengguna `OttCheckoutModal.tsx` (QRIS, VA, sandbox simulator) dan tab "Monetisasi & Transaksi OTT" pada `OttCatalogManagerView.tsx`.
-  - 44 dari 44 asersi pengujian lolos 100% (`scripts/test_ott_commerce_engine.ts`).
-- **Next Scope:** Menunggu arahan resmi untuk tahapan selanjutnya (misal: Milestone 2.9.2D HLS/Adaptive Streaming atau Fase berikutnya sesuai SSOT).
+  - Validasi harga dan konten sisi server mencegah manipulasi tiket klien, menolak konten draft, dan menolak master yang belum disetujui Gate 5.
+  - Verifikasi tanda tangan webhook Midtrans SHA-512 dengan perbandingan constant-time `crypto.timingSafeEqual`.
+  - Stored procedure `fulfill_ott_payment_order` atomik dengan PostgreSQL advisory lock, least-privilege strictly `service_role`.
+  - Otentikasi dan isolasi endpoint simulasi: dinonaktifkan di production dan hanya melayani test fixture.
+  - Larangan mutlak token palsu di production: kegagalan Midtrans API melempar error keras `MIDTRANS_GATEWAY_ERROR`.
+  - Verifikasi integritas webhook terhadap order database (validasi keberadaan order, kecocokan gross_amount, currency, dan penjaga status final).
+  - Identitas pengujian terisolasi penuh (`qa-isolated-runner@aimoviefactory.internal`).
+  - Pencatatan finansial akurat untuk partial refund (`refunded_amount`) dan pelaporan pendapatan kreator (`total_refunded_idr`).
+  - Rangkaian pengujian terarah Milestone 2.9.3: 59 dari 59 asersi lolos 100% (`scripts/test_ott_commerce_engine.ts`).
+- **Next Scope:** Menunggu konfirmasi penutupan Milestone 2.9.3 dari ChatGPT & Pengguna sebelum melanjutkan ke Milestone berikutnya.

@@ -3,30 +3,35 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization (Security Hardened) - 2026-11-11 21:30 +07:00
+## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization (Hardened & Certified) - 2026-11-11 21:55 +07:00
 
-### Added, Hardened & Reconciled
-- **Pemisahan Mutlak Ledger Keuangan (SaaS Billing vs OTT B2C Commerce):**
-  - Mengimplementasikan tabel dedicated `public.ott_payment_orders` (`supabase/upgrade_v3_17_ott_commerce_and_b2c_billing.sql`) untuk seluruh transaksi penonton B2C (tiket PPV/TVOD dan langganan channel SVOD).
-  - Menjamin isolasi 100%: Saldo kredit produksi kreator (`profiles.credits`, `credit_transactions`, `payment_orders`) tidak pernah bercampur atau terdampak oleh transaksi tontonan OTT.
-- **Penguatan Hak Akses Database & Pembatasan Privilege (`upgrade_v3_17_1_ott_commerce_security_hardening.sql`):**
-  - Mencabut (`REVOKE ALL`) hak eksekusi `fulfill_ott_payment_order` dari `PUBLIC`, `anon`, dan `authenticated`, membatasi eksekusinya secara eksklusif hanya untuk `service_role`.
-  - Mengamankan fungsi `get_ott_creator_revenue_summary` dengan *Ownership Authorization Guard*: penonton atau kreator lain dilarang membaca data omzet channel yang bukan miliknya.
-  - Memperbaiki masa langganan SVOD menjadi 30 hari *fixed-term* dengan `auto_renew = false` (menghapus janji recurring yang belum terhubung).
-- **Validasi Kelayakan Konten Sisi Server & Anti-Tampering (`server/ottCommerceEngine.ts`):**
-  - Memvalidasi kepemilikan channel (menolak *cross-channel mismatch*).
-  - Memvalidasi status publikasi (`published`) dan persetujuan final Gate 5 (`GATE_5_APPROVED`). Konten draft atau unapproved ditolak seketika.
-  - Menolak upaya manipulasi harga dari sisi klien (*client price tampering*).
-- **Keamanan Webhook Timing-Safe & Integrasi Midtrans Snap:**
-  - Menggunakan `crypto.timingSafeEqual` untuk memvalidasi tanda tangan webhook Midtrans SHA-512, memitigasi risiko serangan timing (*side-channel attacks*).
-  - Mengintegrasikan Midtrans Snap REST API untuk menerbitkan Snap token dan redirect URL resmi.
-  - Membedakan penanganan refund penuh (`refund` -> pencabutan akses tiket/langganan) dan refund sebagian (`partial_refund`).
-- **Pembersihan Jalur Frontend & Resolusi Routing Vercel:**
-  - Menghapus seluruh jalur direct RPC dari frontend (`OttCheckoutModal.tsx`), mewajibkan pemrosesan checkout dan fulfillment melalui backend serverless controller.
-  - Menghapus berkas rute konflik `api/ott/[action].ts` untuk mengembalikan status deployment Vercel menjadi hijau (`READY 200 OK`).
-- **Rangkaian Uji Komprehensif (50 Assertions PASS):**
-  - Rangkaian pengujian otomatis Milestone 2.9.3 (`scripts/test_ott_commerce_engine.ts`): **50 assertions (100% PASS)** dengan fixture terisolasi dan *safe teardown* yang tidak menyentuh data pengguna produksi.
-  - Total assertions sistem AMF: **585 assertions (100% PASS)**.
+### Added, Hardened & Reconciled (Review Resolution: P0 & P1 Fixed)
+- **Pengamanan Mutlak Endpoint Simulasi (`api/ott/sandbox-simulate-settle.ts` - BLOCKER 1):**
+  - Menonaktifkan endpoint secara permanen di lingkungan production (`process.env.NODE_ENV === 'production'` atau `process.env.VERCEL_ENV === 'production'`) dengan respons 403 Forbidden.
+  - Membatasi akses wajib autentikasi admin (`authenticateServerlessRequest`).
+  - Membatasi eksekusi simulasi secara eksklusif hanya untuk order test fixture (`FIXTURE-` / `TEST-`), menolak keras order pengguna nyata.
+- **Larangan Mutlak Fallback Fake Token di Production (`server/ottCommerceEngine.ts` - BLOCKER 2):**
+  - Menghilangkan fallback token palsu di production: kegagalan gateway melempar `MIDTRANS_GATEWAY_ERROR` keras.
+  - Memvalidasi token dan redirect URL resmi yang diterbitkan oleh Midtrans REST API (`/snap/v1/transactions`).
+  - Memberikan penanda eksplisit `isGatewayMock: true` hanya pada mode pengujian offline terisolasi (`ALLOW_MOCK_PAYMENT_GATEWAY=true`).
+- **Validasi Integritas Webhook Terhadap Database (`server/ottCommerceEngine.ts` - BLOCKER 3):**
+  - Mengambil data order internal sebelum proses fulfillment dan memvalidasi `order_id` ada di database (`ORDER_NOT_FOUND`).
+  - Memvalidasi kecocokan persis nominal `gross_amount` callback webhook terhadap database (`GROSS_AMOUNT_MISMATCH`).
+  - Memvalidasi mata uang (`IDR`) dan provider gateway (`midtrans`).
+  - Mencegah status transition ilegal pada order yang sudah final (`refund`, `cancel`, `expire`).
+- **Isolasi Identitas Pengujian Terhadap Data Produksi (`scripts/test_ott_commerce_engine.ts` - BLOCKER 4):**
+  - Menghapus pembacaan profil pengguna produksi (`profiles.limit(1)`).
+  - Menyediakan profil pengujian terisolasi khusus (`qa-isolated-runner@aimoviefactory.internal` - `87d8d985-b247-428c-803b-cd90edd38e1a`).
+  - Menghapus fallback URL database hardcoded pada skrip pengujian.
+- **Pencatatan Finansial Akurat & Partial Refund Tracking (`upgrade_v3_17_2_ott_commerce_partial_refund_and_financial_accuracy.sql` - BLOCKER 5):**
+  - Menambahkan kolom `refunded_amount NUMERIC(12,2) DEFAULT 0.00` pada `public.ott_payment_orders`.
+  - Meng-update `fulfill_ott_payment_order` untuk mencatat nominal partial refund dan mengkalkulasi ulang `net_creator_amount` dan `platform_fee` berdasarkan nilai riil.
+  - Meng-update `get_ott_creator_revenue_summary` untuk menyertakan transaksi partial refund dalam perhitungan pendapatan kreator dan melaporkan `total_refunded_idr` secara transparan.
+- **Resolusi Vercel Serverless TypeScript:**
+  - Menambahkan tipe `'partial_refund'` ke union `OttPaymentOrderStatus` pada `src/types/database.ts` untuk menyelesaikan kegagalan build TypeScript pada Vercel.
+- **Rangkaian Uji Komprehensif (59 Assertions PASS):**
+  - Rangkaian pengujian otomatis Milestone 2.9.3 (`scripts/test_ott_commerce_engine.ts`): **59 assertions (100% PASS)** dengan fixture terisolasi dan *safe teardown* yang tidak menyentuh data produksi.
+  - Total assertions sistem AMF: **594 assertions (100% PASS)**.
 
 ## [Gelombang II - Milestone 2.9.2C] - Dynamic Visible Watermark & UTC Clock Decoupling - 2026-11-11 12:45 +07:00
 

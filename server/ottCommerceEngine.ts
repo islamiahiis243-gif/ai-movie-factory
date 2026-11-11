@@ -177,22 +177,37 @@ export class OttCommerceEngine {
 
       if (res.ok) {
         const snapData = await res.json();
+        if (!snapData || !snapData.token || !snapData.redirect_url) {
+          throw new Error('Midtrans API returned an invalid response structure: missing token or redirect_url');
+        }
         return {
           snapToken: snapData.token,
           redirectUrl: snapData.redirect_url,
           isGatewayMock: false,
         };
+      } else {
+        const errText = await res.text();
+        throw new Error(`Midtrans API rejected transaction with status ${res.status}: ${errText}`);
       }
-    } catch {
-      // Handled below
-    }
+    } catch (err: any) {
+      const isProduction =
+        process.env.NODE_ENV === 'production' ||
+        process.env.VERCEL_ENV === 'production' ||
+        process.env.ENVIRONMENT === 'production';
+      const allowMock = process.env.ALLOW_MOCK_PAYMENT_GATEWAY === 'true';
 
-    // Fallback sandbox development gateway response
-    return {
-      snapToken: `sandbox-snap-${params.orderNumber}`,
-      redirectUrl: `https://app.sandbox.midtrans.com/snap/v2/vtweb/${params.orderNumber}`,
-      isGatewayMock: true,
-    };
+      // In production or unless explicitly configured for offline tests, fail hard:
+      if (isProduction || !allowMock) {
+        throw new Error(`MIDTRANS_GATEWAY_ERROR: Failed to establish secure transaction with payment gateway: ${err.message}`);
+      }
+
+      // ONLY for offline local mock testing when explicitly enabled
+      return {
+        snapToken: `sandbox-snap-${params.orderNumber}`,
+        redirectUrl: `https://app.sandbox.midtrans.com/snap/v2/vtweb/${params.orderNumber}`,
+        isGatewayMock: true,
+      };
+    }
   }
 
   /**
@@ -374,7 +389,7 @@ export class OttCommerceEngine {
   }
 
   /**
-   * Process Gateway Webhook Callback atomically
+   * Process Gateway Webhook Callback atomically with strict database order validation
    */
   public async handleWebhook(payload: WebhookNotificationPayload): Promise<FulfillOrderResult> {
     const isValid = this.verifyWebhookSignature(payload);
@@ -385,7 +400,39 @@ export class OttCommerceEngine {
     const orderNumber = payload.order_id;
     const transactionStatus = payload.transaction_status;
     const fraudStatus = payload.fraud_status;
+    const db = this.getDb();
 
+    // 1. Mandatory Pre-Fulfillment Verification: Fetch and validate internal order record
+    const { data: dbOrder, error: orderFetchErr } = await db
+      .from('ott_payment_orders')
+      .select('*')
+      .eq('order_number', orderNumber)
+      .single();
+
+    if (orderFetchErr || !dbOrder) {
+      throw new Error(`ORDER_NOT_FOUND: Webhook rejected for non-existent order "${orderNumber}"`);
+    }
+
+    // 2. Gateway Identity Check
+    if (dbOrder.payment_gateway !== 'midtrans') {
+      throw new Error(`GATEWAY_MISMATCH: Order ${orderNumber} is registered under "${dbOrder.payment_gateway}", not midtrans`);
+    }
+
+    // 3. Gross Amount Integrity Check against internal catalog order record
+    const webhookGross = Math.round(Number(payload.gross_amount) || 0);
+    const dbGross = Math.round(Number(dbOrder.gross_amount) || 0);
+    if (webhookGross !== dbGross) {
+      throw new Error(
+        `GROSS_AMOUNT_MISMATCH: Webhook gross_amount (${webhookGross}) does not match order record gross_amount (${dbGross})`
+      );
+    }
+
+    // 4. Currency Check if present
+    if (payload.currency && payload.currency !== 'IDR' && dbOrder.currency === 'IDR') {
+      throw new Error(`CURRENCY_MISMATCH: Webhook currency ${payload.currency} does not match order currency ${dbOrder.currency}`);
+    }
+
+    // 5. State Transition Guard: Do not allow finalized non-settleable orders to be transitioned to settlement/capture
     let targetStatus: OttPaymentOrderStatus = 'pending';
     if (transactionStatus === 'capture') {
       if (fraudStatus === 'challenge') {
@@ -405,9 +452,12 @@ export class OttCommerceEngine {
       targetStatus = 'pending';
     }
 
-    const grossNum = Number(payload.gross_amount) || 0;
-    const gatewayFee = Math.round(grossNum * 0.007);
-    const db = this.getDb();
+    if (['refund', 'cancel', 'expire'].includes(dbOrder.status) && ['settlement', 'capture'].includes(targetStatus)) {
+      throw new Error(`ILLEGAL_STATE_TRANSITION: Order ${orderNumber} is already finalized as "${dbOrder.status}"`);
+    }
+
+    const gatewayFee = Math.round(webhookGross * 0.007);
+    const refundAmount = Number(payload.refund_amount) || 0;
 
     // Call PostgreSQL atomic RPC fulfill_ott_payment_order (service_role only)
     const { data: rpcResult, error: rpcErr } = await db.rpc('fulfill_ott_payment_order', {
@@ -416,6 +466,7 @@ export class OttCommerceEngine {
       p_status: targetStatus,
       p_gateway_payload: payload,
       p_gateway_fee: gatewayFee,
+      p_refund_amount: refundAmount,
     });
 
     if (rpcErr) {

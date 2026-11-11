@@ -1453,7 +1453,15 @@ export interface ResolveOttAccessParams {
 // ============================================================================
 
 export type OttPaymentOrderType = 'ppv_single' | 'season_pass' | 'svod_channel';
-export type OttPaymentOrderStatus = 'pending' | 'settlement' | 'capture' | 'deny' | 'cancel' | 'expire' | 'refund';
+export type OttPaymentOrderStatus = 
+  | 'pending' 
+  | 'settlement' 
+  | 'capture' 
+  | 'deny' 
+  | 'cancel' 
+  | 'expire' 
+  | 'refund' 
+  | 'partial_refund';
 
 export interface OttPaymentOrder {
   id: string;
@@ -1465,6 +1473,7 @@ export interface OttPaymentOrder {
   content_type?: 'film' | 'episode' | 'series' | 'season' | 'channel' | null;
   title: string;
   gross_amount: number;
+  refunded_amount?: number;
   gateway_fee: number;
   platform_fee: number;
   net_creator_amount: number;
@@ -1486,6 +1495,7 @@ export interface OttPaymentOrder {
 export interface OttCreatorRevenueSummary {
   channel_id: string;
   gross_revenue_idr: number;
+  total_refunded_idr: number;
   gateway_fees_idr: number;
   platform_fees_idr: number;
   net_creator_earnings_idr: number;
