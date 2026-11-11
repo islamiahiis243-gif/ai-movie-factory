@@ -389,7 +389,7 @@ export async function renewPlaybackSession(
     return { success: false, code: 'SESSION_REVOKED', reason: 'Sesi telah dicabut karena perangkat lain aktif atau dihentikan admin.' };
   }
 
-  if (sessionRecord.status === 'expired' || sessionRecord.status === 'completed') {
+  if (sessionRecord.status === 'expired' || sessionRecord.status === 'completed' || sessionRecord.status === 'terminated') {
     return { success: false, code: 'SESSION_EXPIRED', reason: 'Sesi pemutaran telah berakhir.' };
   }
 

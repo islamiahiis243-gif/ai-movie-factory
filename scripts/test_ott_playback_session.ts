@@ -532,6 +532,83 @@ async function runPlaybackSessionSuite() {
     assert(Boolean(anonRpcErr), '16a. Anon role directly calling acquire_ott_playback_session is rejected (REVOKE EXECUTE enforced)');
   }
 
+  // ---------------------------------------------------------------------------
+  // [TEST 17] Terminal Status Alignment & Stale Retention Purge Verification
+  // ---------------------------------------------------------------------------
+  console.log('\n[TEST 17] Terminal Status Alignment & Stale Retention Purge (30-Day Retention Policy)');
+  if (adminClient) {
+    const { data: testProfiles } = await adminClient.from('profiles').select('id').limit(1);
+    if (testProfiles && testProfiles.length > 0) {
+      const retentionUserId = testProfiles[0].id;
+      const { data: testChannel, error: chanErr } = await adminClient
+        .from('ott_channels')
+        .insert({
+          user_id: retentionUserId,
+          name: 'Retention Test Channel',
+          slug: `retention-test-${Date.now()}`,
+          status: 'active',
+        })
+        .select()
+        .single();
+
+      if (testChannel) {
+        const dummyContentId = '00000000-0000-0000-0000-000000000001';
+        const pastDate35Days = new Date(Date.now() - 35 * 86400000).toISOString();
+        const recentDate5Days = new Date(Date.now() - 5 * 86400000).toISOString();
+
+        // 17a. Verify all statuses can be inserted / exist under updated check constraint
+        const sessionsToInsert = [
+          // 4 stale terminal sessions (>30 days old) -> MUST be purged
+          { session_id: `ret_completed_${Date.now()}`, user_id: retentionUserId, channel_id: testChannel.id, content_id: dummyContentId, content_type: 'film', grant_id: 'g_1', status: 'completed', updated_at: pastDate35Days, expires_at: pastDate35Days },
+          { session_id: `ret_terminated_${Date.now()}`, user_id: retentionUserId, channel_id: testChannel.id, content_id: dummyContentId, content_type: 'film', grant_id: 'g_2', status: 'terminated', updated_at: pastDate35Days, expires_at: pastDate35Days },
+          { session_id: `ret_expired_${Date.now()}`, user_id: retentionUserId, channel_id: testChannel.id, content_id: dummyContentId, content_type: 'film', grant_id: 'g_3', status: 'expired', updated_at: pastDate35Days, expires_at: pastDate35Days },
+          { session_id: `ret_revoked_${Date.now()}`, user_id: retentionUserId, channel_id: testChannel.id, content_id: dummyContentId, content_type: 'film', grant_id: 'g_4', status: 'revoked', updated_at: pastDate35Days, expires_at: pastDate35Days },
+          // 2 stale active/paused sessions (>30 days old) -> MUST NEVER be purged by retention (protected)
+          { session_id: `ret_active_${Date.now()}`, user_id: retentionUserId, channel_id: testChannel.id, content_id: dummyContentId, content_type: 'film', grant_id: 'g_5', status: 'active', updated_at: pastDate35Days, expires_at: pastDate35Days },
+          { session_id: `ret_paused_${Date.now()}`, user_id: retentionUserId, channel_id: testChannel.id, content_id: dummyContentId, content_type: 'film', grant_id: 'g_6', status: 'paused', updated_at: pastDate35Days, expires_at: pastDate35Days },
+          // 1 recent terminal session (5 days old) -> MUST NOT be purged (retention window active)
+          { session_id: `ret_recent_completed_${Date.now()}`, user_id: retentionUserId, channel_id: testChannel.id, content_id: dummyContentId, content_type: 'film', grant_id: 'g_7', status: 'completed', updated_at: recentDate5Days, expires_at: recentDate5Days },
+        ];
+
+        const { error: insertErr } = await adminClient.from('ott_playback_sessions').insert(sessionsToInsert);
+        assert(!insertErr, '17a. Expanded status constraint accepts all terminal statuses (completed, terminated, expired, revoked)', insertErr?.message);
+
+        // 17b. Call purge_stale_playback_sessions(30)
+        const { data: purgeResult, error: purgeErr } = await adminClient.rpc('purge_stale_playback_sessions', {
+          p_days_to_keep: 30,
+        });
+        assert(!purgeErr && typeof purgeResult === 'number', '17b. purge_stale_playback_sessions(30) executed successfully', purgeErr?.message);
+
+        // 17c. Verify stale terminal sessions were purged
+        const { data: remainingStaleTerminal } = await adminClient
+          .from('ott_playback_sessions')
+          .select('session_id, status')
+          .in('session_id', [
+            sessionsToInsert[0].session_id,
+            sessionsToInsert[1].session_id,
+            sessionsToInsert[2].session_id,
+            sessionsToInsert[3].session_id,
+          ]);
+        assert(remainingStaleTerminal?.length === 0, '17c. All 4 stale terminal statuses (>30d) were cleanly purged');
+
+        // 17d. Verify active, paused, and recent terminal sessions were NOT purged
+        const { data: remainingProtected } = await adminClient
+          .from('ott_playback_sessions')
+          .select('session_id, status')
+          .in('session_id', [
+            sessionsToInsert[4].session_id,
+            sessionsToInsert[5].session_id,
+            sessionsToInsert[6].session_id,
+          ]);
+        assert(remainingProtected?.length === 3, '17d. Non-terminal (active, paused) and fresh (<30d) sessions are strictly preserved');
+
+        // Cleanup
+        await adminClient.from('ott_playback_sessions').delete().eq('channel_id', testChannel.id);
+        await adminClient.from('ott_channels').delete().eq('id', testChannel.id);
+      }
+    }
+  }
+
   console.log('\n================================================================');
   console.log(` MILESTONE 2.9.2A TEST SUMMARY: ${testsPassed} PASSED, ${testsFailed} FAILED`);
   console.log('================================================================\n');

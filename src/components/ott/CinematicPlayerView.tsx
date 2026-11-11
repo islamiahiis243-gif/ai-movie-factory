@@ -236,7 +236,12 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
         const hbData = await hbRes.json();
         if (!hbRes.ok || !hbData.success) {
           // Session was revoked on server or entitlement expired
-          if (videoRef.current) videoRef.current.pause();
+          if (videoRef.current) {
+            videoRef.current.pause();
+            videoRef.current.src = '';
+            videoRef.current.removeAttribute('src');
+            videoRef.current.load();
+          }
           setIsPlaying(false);
           const errCode = hbData.error || 'SESSION_TERMINATED';
           const errMsg = hbData.message || (errCode === 'ENTITLEMENT_EXPIRED' ? 'Akses ditutup: Hak tonton telah berakhir.' : 'Sesi pemutaran Anda telah berakhir atau dialihkan.');
@@ -258,6 +263,36 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
   // ---------------------------------------------------------------------------
   // 3. Session Lifecycle: SIGNED URL RENEWAL (Every 10 minutes)
   // ---------------------------------------------------------------------------
+  // Seamless Video Source Transition Helper
+  const switchVideoSource = useCallback((newSignedUrl: string) => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+
+    // If browser is already pointing to this URL, do nothing
+    if (video.src === newSignedUrl) return;
+
+    const prevTime = video.currentTime;
+    const wasPlaying = !video.paused;
+
+    // Indicate brief re-buffering to viewer
+    setIsBuffering(true);
+
+    const onMetadataLoaded = () => {
+      video.removeEventListener('loadedmetadata', onMetadataLoaded);
+      // Restore previous playback position accurately
+      video.currentTime = prevTime;
+      setCurrentTime(prevTime);
+
+      if (wasPlaying) {
+        video.play().catch(() => {});
+      }
+      setIsBuffering(false);
+    };
+
+    video.addEventListener('loadedmetadata', onMetadataLoaded);
+    video.src = newSignedUrl;
+  }, []);
+
   const renewSignedUrl = useCallback(async () => {
     if (!sessionId || isRenewingUrl) return;
     setIsRenewingUrl(true);
@@ -279,26 +314,35 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
 
       if (!renewRes.ok || !renewData.success || !renewData.playbackUrl) {
         // Entitlement was revoked or subscription expired mid-stream!
-        if (videoRef.current) videoRef.current.pause();
+        if (videoRef.current) {
+          videoRef.current.pause();
+          videoRef.current.src = '';
+          videoRef.current.removeAttribute('src');
+          videoRef.current.load();
+        }
         setIsPlaying(false);
         setErrorState({
           code: renewData.error || 'ENTITLEMENT_REVOKED',
           message: renewData.message || 'Akses ditutup: Hak tonton telah berakhir atau dicabut.',
+          errorMessage: renewData.message || 'Akses ditutup: Hak tonton telah berakhir atau dicabut.',
           isFatal: true,
         });
         setIsRenewingUrl(false);
         return;
       }
 
-      // Seamless URL Renewal: Update state and expiry without resetting currentTime
+      // Seamless URL Renewal: Update state and expiry
       setCurrentDeliveryUrl(renewData.playbackUrl);
       setUrlExpiresAt(renewData.signedUrlExpiresAt);
+
+      // Perform seamless source transition on HTML5 video element
+      switchVideoSource(renewData.playbackUrl);
     } catch {
       // Retried on next cycle
     } finally {
       setIsRenewingUrl(false);
     }
-  }, [grantToken, isRenewingUrl, sessionId]);
+  }, [grantToken, isRenewingUrl, sessionId, switchVideoSource]);
 
   useEffect(() => {
     if (!sessionId) return;
