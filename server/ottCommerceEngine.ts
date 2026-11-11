@@ -445,9 +445,11 @@ export class OttCommerceEngine {
       );
     }
 
-    // 4. Currency Check if present (strictly IDR for AMF OTT Storefront)
-    if (payload.currency && payload.currency.toUpperCase() !== 'IDR') {
-      throw new Error(`UNSUPPORTED_CURRENCY: Webhook currency "${payload.currency}" is not supported (expected IDR)`);
+    // 4. Strict Currency Validation (strictly required and must be IDR)
+    if (!payload.currency || payload.currency.toUpperCase() !== 'IDR') {
+      throw new Error(
+        `UNSUPPORTED_CURRENCY: Webhook currency is missing or invalid ("${payload.currency || 'empty'}"). AMF OTT transactions strictly require "IDR".`
+      );
     }
 
     // 5. State Transition Guard: Do not allow finalized non-settleable orders to be transitioned to settlement/capture
@@ -474,6 +476,20 @@ export class OttCommerceEngine {
       throw new Error(`ILLEGAL_STATE_TRANSITION: Order ${orderNumber} is already finalized as "${dbOrder.status}"`);
     }
 
+    // Full Refund Idempotency Guard: Duplicate full refund callback returns idempotent success
+    if (dbOrder.status === 'refund' && targetStatus === 'refund') {
+      return {
+        success: true,
+        status: 'refund',
+        orderNumber,
+        alreadyFulfilled: true,
+        grossAmount: Number(dbOrder.gross_amount),
+        netCreatorAmount: 0,
+        passId: dbOrder.pass_id,
+        subscriptionId: dbOrder.subscription_id,
+      };
+    }
+
     // Refund State Guard: Order must be settled/capture before it can be refunded
     if (targetStatus === 'refund' || targetStatus === 'partial_refund') {
       if (!['settlement', 'capture', 'partial_refund'].includes(dbOrder.status)) {
@@ -489,8 +505,10 @@ export class OttCommerceEngine {
     }
 
     const gatewayFee = Math.round(webhookGross * 0.007);
-    const refundAmount = Number(payload.refund_amount) || 0;
-    const refundKey = payload.refund_key || payload.refund_id || payload.transaction_id || null;
+    const refundAmount = payload.refund_amount !== undefined && payload.refund_amount !== null
+      ? Number(payload.refund_amount)
+      : null;
+    const refundKey = payload.refund_key || payload.refund_id || payload.id || null;
 
     // Call PostgreSQL atomic RPC fulfill_ott_payment_order (service_role only)
     const { data: rpcResult, error: rpcErr } = await db.rpc('fulfill_ott_payment_order', {
