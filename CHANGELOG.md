@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization (Hardened & Certified v3.17.5) - 2026-11-11 23:00 +07:00
+
+### Added, Hardened & Reconciled (Final Quality Review Closure — Blockers 1–5 Resolution)
+- **Safe Numeric Cast & Regex Guard (`upgrade_v3_17_5` - BLOCKER 5):**
+  - Menerapkan regex validation `~ '^[0-9]+(\.[0-9]+)?$'` pada PL/pgSQL sebelum mengonversi string JSON gateway menjadi `NUMERIC`, mencegah Postgres crash / exception akibat format malformed string atau tipe non-numerik.
+  - Memeriksa `jsonb_typeof(payload->'refunds') = 'array'` secara aman sebelum memproses elemen array `refunds`.
+- **Identitas Event Gateway Terverifikasi & Eliminasi Fallback Order ID (`upgrade_v3_17_5` - BLOCKER 1 & 3):**
+  - Memprioritaskan identitas event resmi gateway (`refund_id`, `refund_key`, `refund_chargeback_id`, `id`).
+  - Menghapus total fallback rapuh `'full-refund-' || order_number`.
+  - Mengimplementasikan fallback hash kanonikal deterministik berdasar tuple: `order_number:gateway_tx_id:refund_chunk:status:event_ts`. Duplicate callback menghasilkan hash identik (idempoten), sedangkan event refund berbeda menghasilkan hash berbeda (tidak saling menelan).
+- **Zero-Drift Guarantee & Ledger Cumulative Consistency (BLOCKER 2 & 4):**
+  - Prosedur refund selalu melakukan pencatatan ke tabel `public.ott_payment_order_refunds` terlebih dahulu, lalu menghitung total kumulatif secara langsung via `COALESCE(SUM(refund_amount), 0.00)`.
+  - Menjamin zero drift (perbedaan nol) antara `ott_payment_orders.refunded_amount` dan akumulasi riil ledger per event.
+  - Menghormati nominal eksplisit `refund_amount` pada status `refund` penuh jika dikirim gateway, dengan validasi keras terhadap sisa saldo (`REFUND_EXCEEDS_REMAINING_BALANCE`).
+- **Pemisahan Pengujian Rapi (Unit Test vs Guarded Integration Test):**
+  - `scripts/test_ott_commerce_unit.ts`: Rangkaian unit test (47 assertions PASS 100%) memvalidasi currency IDR, konfigurasi fail-closed, signature constant-time, safe numeric cast regex, determinisme event identity, in-memory ledger contract, dan formula fee keuangan.
+  - `scripts/test_ott_commerce_integration.ts`: Guarded integration test dengan safety barrier 100% yang mendeteksi database produksi (`jixfakvbhugpypjtyshq`) dan menolak mutasi secara tegas (*STATUS: NOT RUN - Isolated DB not configured*).
+- **Security Advisor Linter Remediasi:**
+  - Mencabut izin eksekusi `PUBLIC`, `anon`, dan `authenticated` pada trigger internal `check_ott_access_pass_channel_integrity()` dan `check_ott_master_approval_before_publishing()`.
+
 ## [Gelombang II - Milestone 2.9.3] - OTT B2C Commerce & Storefront Monetization (Hardened & Certified) - 2026-11-11 22:30 +07:00
 
 ### Added, Hardened & Reconciled (Financial Integrity & Stable Ledger Resolution)

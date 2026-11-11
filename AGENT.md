@@ -30,15 +30,20 @@
   - Retensi terminal mencakup 4 status (`completed`, `terminated`, `expired`, `revoked`) dengan batas 30 hari.
   - Pemutar HTML5 Progressive MP4 terbukti di browser Google Chrome nyata via CDP (jeda buffering renewal $150-300\text{ ms}$, posisi putar dipertahankan, penolakan token kedaluwarsa HTTP 400).
 - **Milestone 2.9.2C (Dynamic Visible Watermark):** Disetujui secara resmi oleh ChatGPT & Pengguna (Commit `f428291` & `4a9a35a`). Kanvas overlay DPR-aware dan pemisahan lifecycle jam UTC live.
-- **Milestone 2.9.3 (B2C Payment / OTT Commerce & Storefront Monetization):** SELESAI & DIPERKUAT (RESOLVED ALL REVIEW FINDINGS).
+- **Milestone 2.9.3 (B2C Payment / OTT Commerce & Storefront Monetization):** SELESAI & DIPERKUAT (RESOLVED ALL REVIEW FINDINGS v3.17.5).
   - Tabel `public.ott_payment_orders` terisolasi mutlak dari saldo kredit SaaS kreator.
   - Validasi harga dan konten sisi server mencegah manipulasi tiket klien, menolak konten draft, dan menolak master yang belum disetujui Gate 5.
   - Verifikasi tanda tangan webhook Midtrans SHA-512 dengan perbandingan constant-time `crypto.timingSafeEqual`.
   - Stored procedure `fulfill_ott_payment_order` atomik dengan PostgreSQL advisory lock, least-privilege strictly `service_role`.
   - Otentikasi dan isolasi endpoint simulasi: dinonaktifkan di production dan hanya melayani test fixture.
   - Larangan mutlak token palsu di production: kegagalan Midtrans API melempar error keras `MIDTRANS_GATEWAY_ERROR`.
-  - Verifikasi integritas webhook terhadap order database (validasi keberadaan order, kecocokan gross_amount, currency, dan penjaga status final).
-  - Identitas pengujian terisolasi penuh (`qa-isolated-runner@aimoviefactory.internal`).
-  - Pencatatan finansial akurat untuk partial refund (`refunded_amount`) dan pelaporan pendapatan kreator (`total_refunded_idr`).
-  - Rangkaian pengujian terarah Milestone 2.9.3: 59 dari 59 asersi lolos 100% (`scripts/test_ott_commerce_engine.ts`).
-- **Next Scope:** Menunggu konfirmasi penutupan Milestone 2.9.3 dari ChatGPT & Pengguna sebelum melanjutkan ke Milestone berikutnya.
+  - Verifikasi integritas webhook terhadap order database (validasi keberadaan order, kecocokan gross_amount, currency strictly IDR, dan penjaga status final).
+  - Dedicated ledger `ott_payment_order_refunds` dengan constraint `UNIQUE(order_id, refund_key)` untuk menjamin idempotensi event.
+  - Safe numeric cast dengan regex pattern `~ '^[0-9]+(\.[0-9]+)?$'` mencegah Postgres JSON cast exception pada payload malformed.
+  - Identitas refund event gateway resmi (`refund_id`, `refund_chargeback_id`) dengan fallback kanonikal deterministik berdasar tuple event (`rf_evt_...`), menghapus fallback statis `full-refund-`.
+  - Zero-drift guarantee: akumulasi refund pada order selalu dihitung langsung dari `SUM(refund_amount)` tabel ledger, menjamin tidak ada perbedaan nilai.
+  - Pemisahan pengujian bersih:
+    * `scripts/test_ott_commerce_unit.ts`: 47 dari 47 asersi lolos 100% (in-memory isolated).
+    * `scripts/test_ott_commerce_integration.ts`: Guarded integration test berpagar isolasi 100% (menolak mutasi database produksi).
+  - Remediasi Security Advisor linter: pencabutan hak eksekusi publik pada trigger internal.
+- **Next Scope:** Menunggu konfirmasi penutupan resmi Milestone 2.9.3 dari ChatGPT & Pengguna sebelum melanjutkan ke Milestone berikutnya (Milestone 2.9.2D: HLS Adaptive Streaming & Transcoding Pipeline).

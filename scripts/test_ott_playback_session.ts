@@ -37,7 +37,7 @@ import {
   heartbeatPlaybackSession,
   terminatePlaybackSession,
 } from '../server/ottPlaybackSessionManager.ts';
-import playbackSessionHandler from '../api/ott/playback-session.ts';
+import playbackSessionHandler from '../server/ott/playbackSessionHandler.ts';
 
 let testsPassed = 0;
 let testsFailed = 0;

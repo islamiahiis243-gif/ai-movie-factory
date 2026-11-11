@@ -15,7 +15,7 @@
 
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
-import resolveAccessHandler from '../api/ott/resolve-access';
+import resolveAccessHandler from '../server/ott/resolveAccessHandler.ts';
 
 let testsPassed = 0;
 let testsFailed = 0;

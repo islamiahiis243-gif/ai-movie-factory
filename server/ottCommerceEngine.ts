@@ -476,23 +476,9 @@ export class OttCommerceEngine {
       throw new Error(`ILLEGAL_STATE_TRANSITION: Order ${orderNumber} is already finalized as "${dbOrder.status}"`);
     }
 
-    // Full Refund Idempotency Guard: Duplicate full refund callback returns idempotent success
-    if (dbOrder.status === 'refund' && targetStatus === 'refund') {
-      return {
-        success: true,
-        status: 'refund',
-        orderNumber,
-        alreadyFulfilled: true,
-        grossAmount: Number(dbOrder.gross_amount),
-        netCreatorAmount: 0,
-        passId: dbOrder.pass_id,
-        subscriptionId: dbOrder.subscription_id,
-      };
-    }
-
     // Refund State Guard: Order must be settled/capture before it can be refunded
     if (targetStatus === 'refund' || targetStatus === 'partial_refund') {
-      if (!['settlement', 'capture', 'partial_refund'].includes(dbOrder.status)) {
+      if (!['settlement', 'capture', 'partial_refund', 'refund'].includes(dbOrder.status)) {
         throw new Error(
           `ILLEGAL_STATE_TRANSITION: Cannot process refund on order "${orderNumber}" with status "${dbOrder.status}" (must be settled or partial_refund)`
         );
@@ -505,10 +491,26 @@ export class OttCommerceEngine {
     }
 
     const gatewayFee = Math.round(webhookGross * 0.007);
-    const refundAmount = payload.refund_amount !== undefined && payload.refund_amount !== null
-      ? Number(payload.refund_amount)
-      : null;
-    const refundKey = payload.refund_key || payload.refund_id || payload.id || null;
+    
+    // Safe numeric validation for refund_amount before database invocation
+    let refundAmount: number | null = null;
+    if (payload.refund_amount !== undefined && payload.refund_amount !== null) {
+      const strVal = String(payload.refund_amount).trim();
+      if (/^[0-9]+(\.[0-9]+)?$/.test(strVal)) {
+        const parsed = Number(strVal);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          refundAmount = parsed;
+        }
+      }
+    }
+
+    // Stable refund event identity from gateway
+    const refundKey =
+      (typeof payload.refund_id === 'string' && payload.refund_id.trim()) ||
+      (typeof payload.refund_key === 'string' && payload.refund_key.trim()) ||
+      (typeof payload.refund_chargeback_id === 'string' && payload.refund_chargeback_id.trim()) ||
+      (typeof payload.id === 'string' && payload.id.trim()) ||
+      null;
 
     // Call PostgreSQL atomic RPC fulfill_ott_payment_order (service_role only)
     const { data: rpcResult, error: rpcErr } = await db.rpc('fulfill_ott_payment_order', {
@@ -523,6 +525,10 @@ export class OttCommerceEngine {
 
     if (rpcErr) {
       throw new Error(`Database fulfillment RPC failed: ${rpcErr.message}`);
+    }
+
+    if (rpcResult && rpcResult.success === false) {
+      throw new Error(`Database fulfillment rejected (${rpcResult.error}): ${rpcResult.message || 'Operation failed'}`);
     }
 
     return {
