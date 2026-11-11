@@ -39,9 +39,9 @@ export default function handler(req: any, res: any) {
       commitRef: process.env.VERCEL_GIT_COMMIT_REF || 'main',
     },
     ssotCompliance: {
-      schemaVersion: 'V3.19 Phase 6 Content Access Control & Entitlement Engine',
+      schemaVersion: 'V3.20 Phase 6 Playback Session & Delivery Controller',
       protectedTablesCount: 24,
-      storageBuckets: ['character-avatars', 'project-assets'],
+      storageBuckets: ['character-avatars', 'project-assets', 'ott-masters'],
       serverSideSecretsProtected: true,
     },
     configuredServices: {

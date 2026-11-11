@@ -77,6 +77,12 @@ async function runLiveIntegrationTests() {
     .limit(1);
   assert(!filmErr, 'public.ott_films exists and is accessible by service_role');
 
+  const { error: sessErr } = await adminClient
+    .from('ott_playback_sessions')
+    .select('id')
+    .limit(1);
+  assert(!sessErr, 'public.ott_playback_sessions exists and is accessible by service_role');
+
   // ---------------------------------------------------------------------------
   // [DB TEST 2] Anon Role Direct Write Rejection (Privilege Enforcement)
   // ---------------------------------------------------------------------------
@@ -112,6 +118,25 @@ async function runLiveIntegrationTests() {
   assert(
     Boolean(anonSubInsertErr),
     'Anon role cannot INSERT into ott_viewer_subscriptions (Blocked by PostgreSQL permission / RLS)'
+  );
+
+  const fakeSess = {
+    session_id: 'pss_hacked_999',
+    user_id: '00000000-0000-0000-0000-000000000001',
+    channel_id: '00000000-0000-0000-0000-000000000001',
+    content_id: '00000000-0000-0000-0000-000000000001',
+    content_type: 'film',
+    grant_id: 'gid_fake',
+    expires_at: new Date(Date.now() + 3600000).toISOString(),
+  };
+
+  const { error: anonSessInsertErr } = await anonClient
+    .from('ott_playback_sessions')
+    .insert(fakeSess);
+
+  assert(
+    Boolean(anonSessInsertErr),
+    'Anon role cannot INSERT into ott_playback_sessions (Blocked by PostgreSQL permission / RLS)'
   );
 
   // ---------------------------------------------------------------------------

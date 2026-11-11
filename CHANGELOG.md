@@ -3,6 +3,34 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Gelombang II - Milestone 2.9.2A] - OTT Playback Session & Delivery Controller - 2026-11-11 10:25 +07:00
+
+### Added, Hardened & Reconciled
+- **Serverless Playback Session Controller (`api/ott/playback-session.ts` & `server/ottPlaybackSessionManager.ts`):**
+  - Mengimplementasikan endpoint serverless control plane `/api/ott/playback-session` dengan proteksi autentikasi JWT wajib.
+  - Memastikan identitas penonton diverifikasi 100% dari sesi Supabase Auth JWT server-side, menolak input `viewerId`/`userId` dari body klien.
+  - Menjalankan verifikasi dua-lapis (Two-Tier Entitlement Guard): verifikasi kriptografis token HMAC (`verifyEntitlementGrantToken`) dan verifikasi live database terhadap status aktif tiket/langganan (`validateGrantAgainstLiveEntitlement`).
+  - Mengisolasi pemutaran: Menolak konten yang belum disetujui Gate 5 (`GATE_5_UNAPPROVED`), konten draft/unapproved, atau tiket yang telah dicabut (`PASS_REVOKED`).
+- **Penyimpanan Privat & Bukti Empiris HTTP Range Requests (`ott-masters`):**
+  - Membuat dan memvalidasi bucket penyimpanan privat `ott-masters` (`public: false`) di Supabase Storage produksi.
+  - Terbukti secara empiris: Akses publik langsung tanpa token tanda tangan ditolak tegas (HTTP 400/403).
+  - Terbukti secara empiris: Signed delivery URL Supabase Storage mendukung penuh HTTP Range Requests dengan pengembalian status riil **HTTP 206 Partial Content** (`Content-Range: bytes 0-1023/10240`).
+  - Menolak URL domain eksternal dan serangan path traversal (`..`) pada `server/ottMediaDelivery.ts`.
+- **Manajemen Sesi & Kontrol Konkurensi Atomik (`supabase/upgrade_v3_16_ott_playback_sessions.sql`):**
+  - Membuat tabel `public.ott_playback_sessions` berindeks komposit `(user_id, status)`, `(grant_id)`, dan `(last_heartbeat_at)`.
+  - Menerapkan stored procedure `acquire_ott_playback_session()` dengan row-level locking (`FOR UPDATE`) untuk mencegah *race condition* ketika dua perangkat memutar bersamaan, memberlakukan batas konkurensi (FIFO takeover policy).
+  - Menyediakan RPC `heartbeat_ott_playback_session()` dan `terminate_ott_playback_session()` untuk lifecycle sesi (acquire -> heartbeat -> renew -> terminate).
+- **Semantik Renewal & Kebijakan Masa Berlaku Signed URL:**
+  - Menetapkan signed URL sebagai bearer credential sementara (TTL 15 menit).
+  - Renewal berkala memperpanjang masa sewa signed URL selama entitlement tetap aktif; jika hak akses dicabut di database saat pemutaran, renewal ditolak seketika (`ENTITLEMENT_REVOKED`).
+- **Forensic Watermark Pseudonim & Zero Raw Storage URL Leakage:**
+  - Konteks watermark menggunakan identifier pseudonim (`wm_<hash>`) yang terikat pada `viewerId` dan `sessionId` tanpa membocorkan email penonton.
+  - Seluruh respons API steril dari URL permanen berkas master di bucket storage.
+- **Rangkaian Uji Komprehensif (414 Assertions PASS):**
+  - Rangkaian pengujian otomatis Milestone 2.9.2A (`scripts/test_ott_playback_session.ts`): **38 assertions (100% PASS)**.
+  - Live Database Integration Supabase: meningkat menjadi **16 assertions (100% PASS)**.
+  - Total assertions sistem AMF: **414 assertions (100% PASS)**.
+
 ## [Gelombang II - Milestone 2.9.1] - OTT Content Access Control & Entitlement Engine (Final Security Clearance) - 2026-11-11 02:15 +07:00
 
 ### Added, Hardened & Reconciled
