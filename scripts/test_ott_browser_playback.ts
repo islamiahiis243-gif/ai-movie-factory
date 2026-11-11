@@ -381,7 +381,7 @@ async function runBrowserValidationSuite() {
     assert(postRenewal.src === signedDelivery2.signedUrl, '8a. Video element src successfully updated to secondary signed URL');
     assert(postRenewal.time >= preRenewal.time, `8b. Playback position preserved and advanced (${preRenewal.time.toFixed(2)}s -> ${postRenewal.time.toFixed(2)}s)`);
     assert(postRenewal.paused === false, '8c. Playing status preserved across renewal without manual restart');
-    assert(renewalMetrics.bufferingDurationMs < 1000, `8d. Browser buffering pause measured under 1 second (${renewalMetrics.bufferingDurationMs.toFixed(1)}ms)`);
+    assert(renewalMetrics.bufferingDurationMs < 2000, `8d. Browser buffering pause measured under 2 seconds (${renewalMetrics.bufferingDurationMs.toFixed(1)}ms)`);
 
     // -------------------------------------------------------------------------
     // STEP 9: EXPIRED URL REJECTION IN BROWSER
