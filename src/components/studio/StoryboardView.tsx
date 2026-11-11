@@ -270,6 +270,32 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
     onShowToast('Seluruh shot storyboard adegan ini disetujui (Gate 3 Lulus)!', 'success');
   };
 
+  const handleSendToMediaStudio = (shot: StoryboardShot) => {
+    if (!selectedProjectId || !shot) return;
+    const typeLabel = SHOT_TYPE_CONFIG[shot.shot_type]?.label || shot.shot_type;
+    const pendingPayload = {
+      projectId: selectedProjectId,
+      sceneId: selectedSceneId || undefined,
+      shotNumber: shot.shot_number,
+      shotType: shot.shot_type,
+      visualPrompt: shot.visual_prompt,
+      focalLength: shot.focal_length,
+      lightingMood: shot.lighting_mood,
+      title: `Shot #${shot.shot_number} - Scene ${activeScene?.scene_number || ''} (${typeLabel})`,
+      aspectRatio: '16:9',
+      timestamp: Date.now(),
+    };
+    try {
+      localStorage.setItem('amf_pending_shot_prompt', JSON.stringify(pendingPayload));
+    } catch (e) {
+      console.warn('Failed storing pending shot prompt in localStorage:', e);
+    }
+    onShowToast(`Prompt shot #${shot.shot_number} dikirim ke Media Studio. Membuka generator keyframe...`, 'success');
+    if (onNavigateToMediaStudio) {
+      onNavigateToMediaStudio(selectedProjectId);
+    }
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6 animate-fadeIn">
       {/* Top Banner */}
@@ -557,16 +583,31 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
                         <Camera className="w-3 h-3 text-amber-400" />
                         <span>{CAMERA_MOVEMENT_LABELS[shot.camera_movement]}</span>
                       </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCopyPrompt(shot.visual_prompt, shot.id);
-                        }}
-                        className="text-slate-500 hover:text-amber-400 p-1"
-                        title="Salin Prompt Shot"
-                      >
-                        {copiedPromptId === shot.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {onNavigateToMediaStudio && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSendToMediaStudio(shot);
+                            }}
+                            className="text-slate-500 hover:text-purple-400 p-1 transition-colors"
+                            title="Kirim ke Media Studio"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopyPrompt(shot.visual_prompt, shot.id);
+                          }}
+                          className="text-slate-500 hover:text-amber-400 p-1"
+                          title="Salin Prompt Shot"
+                        >
+                          {copiedPromptId === shot.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -718,8 +759,21 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
                   {selectedShot.visual_prompt}
                 </p>
 
-                <div className="text-[10px] text-slate-500">
-                  Prompt ini siap disuntikkan ke <strong>Media Studio (gemini-3.1-flash-lite-image)</strong> untuk menghasilkan visual keyframe shot yang konsisten.
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                  <div className="text-[10px] text-slate-500">
+                    Prompt ini siap disuntikkan ke <strong>Media Studio (gemini-3.1-flash-lite-image)</strong> untuk menghasilkan visual keyframe shot yang konsisten.
+                  </div>
+                  {onNavigateToMediaStudio && (
+                    <button
+                      type="button"
+                      onClick={() => handleSendToMediaStudio(selectedShot)}
+                      className="shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-semibold rounded-lg shadow transition-colors cursor-pointer"
+                      title="Kirim prompt shot ini langsung ke Media Studio untuk digenerate sebagai Keyframe"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Kirim ke Media Studio</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

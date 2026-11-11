@@ -204,6 +204,28 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
     }
   }, [activeProject?.id]);
 
+  // Check for staged shot prompt transferred from StoryboardView (SSOT Gate 3 -> Gate 4 Bridge)
+  useEffect(() => {
+    try {
+      const pendingRaw = localStorage.getItem('amf_pending_shot_prompt');
+      if (pendingRaw) {
+        const payload = JSON.parse(pendingRaw);
+        if (!payload.projectId || payload.projectId === activeProject?.id) {
+          setActiveTab('imageGen');
+          setImgSubtype('scene_keyframe');
+          if (payload.title) setImgName(payload.title);
+          if (payload.visualPrompt) setImgPrompt(payload.visualPrompt);
+          if (payload.sceneId) setImgSceneId(payload.sceneId);
+          if (payload.aspectRatio) setImgAspectRatio(payload.aspectRatio);
+          showNotification(`Prompt shot #${payload.shotNumber || ''} berhasil dimuat dari Storyboard. Siap disintesis sebagai Keyframe.`);
+        }
+        localStorage.removeItem('amf_pending_shot_prompt');
+      }
+    } catch (e) {
+      console.warn('Error reading pending shot prompt from localStorage:', e);
+    }
+  }, [activeProject?.id]);
+
   const showNotification = (msg: string) => {
     setStatusMessage(msg);
     setTimeout(() => setStatusMessage(null), 3500);

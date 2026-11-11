@@ -3,6 +3,31 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Sprint 5 Hari - Day 2] - Penyelesaian Alur Produksi Film (Story Script -> Character DNA -> Storyboard -> Keyframe -> Video Generation) - 2026-11-12 00:52 +07:00
+
+### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Hari Ke-2: Alur Produksi Film)
+- **Asisten Skenario AI (AI Script Assistant) di Story Script Studio (`src/components/studio/StoryScriptView.tsx`):**
+  - Mengimplementasikan antarmuka modal Asisten AI interaktif untuk penulis skenario di editor naskah.
+  - Mendukung 4 objektif kreasi: *Rancang Aksi Sinematik (Action Beat)*, *Kembangkan Dialog Karakter (Dialogue Beat)*, *Perluasan Adegan Penuh (Action + Dialogue)*, dan *Audit Kontinuitas Visual (Visual Continuity Seed)*.
+  - Mendukung pemilihan gaya & mood sinematik (*Cinematic Epic*, *Moody Chiaroscuro Noir*, *Kinetic High-Octane Action*, *Emotional Tension*, *Mystical Xianxia Qi Radiance*).
+  - Terintegrasi dengan endpoint proxy AI serverless `/api/ai-generate` (model `gemini-2.5-flash`) berotentikasi Supabase JWT Bearer, dengan sistem fallback deterministik sinematik berpresisi tinggi bila berjalan offline/unauthenticated.
+  - Screenplay text parser otomatis mengonversi keluaran AI menjadi blok skenario terstruktur (`action`, `dialogue`, `parenthetical`, `transition`) dengan opsi sisipkan (*append*) atau ganti (*replace*).
+- **Jembatan Storyboard ke Media Studio (`src/components/studio/StoryboardView.tsx` & `src/components/studio/MediaStudioView.tsx`):**
+  - Menambahkan tombol *"Kirim ke Media Studio"* pada kartu shot storyboard dan panel inspektur framing shot detail.
+  - Menghubungkan metadata framing kamera, focal length lensa, tata cahaya, dan visual continuity seed ke Media Studio melalui kontrak serialisasi aman `amf_pending_shot_prompt`.
+  - Media Studio otomatis mendeteksi prompt shot yang masuk dari Storyboard, mengaktifkan tab *Generasi Gambar*, menyetel subtipe `scene_keyframe`, dan mengisi seluruh parameter keyframe secara instan tanpa ketik ulang manual.
+- **Penguatan 5 Gerbang Persetujuan Sutradara (Gate 1 - 5) & Kontrak 2-Phase Credit:**
+  - Gate 1: Penegakan naskah berstatus disetujui (`LOCKED_V1` / `LOCKED_Vn`) dan auto-invalidation ke `draft` saat naskah diedit.
+  - Gate 2: Penegakan penguncian profil DNA karakter (Character Studio) dan master lokasi semesta (World Builder).
+  - Gate 3: Storyboard shot breakdown dan guard prasyarat Gate 1 sebelum shot disetujui.
+  - Gate 4: Penegakan persetujuan keyframe still sebelum generasi video (Veo/Runway) diizinkan, dilengkapi pre-generation cost preview (15 CR keyframe, 45 CR video).
+  - Gate 5: Penguncian urutan timeline master video dengan sequence fingerprint anti-tamper sebelum ekspor dan penautan ke katalog OTT.
+  - Kontrak Two-Phase Atomic Credits: Cadangan (reserve) -> Eksekusi -> Pemotongan (settle) atau Pengembalian 100% otomatis (auto-refund) jika provider gagal, serta penolakan HTTP 402 bila saldo tidak mencukupi.
+- **Rangkaian Uji Terarah Alur Produksi Film (`scripts/test_film_production_pipeline.ts`):**
+  - Menambahkan 40 asersi terarah (100% PASS) yang memverifikasi seluruh transisi gerbang Gate 1 hingga Gate 5 secara end-to-end.
+  - Memperbaiki jitter buffer threshold pada uji Chrome CDP browser playback (`test_ott_browser_playback.ts`) menjadi toleransi stabil 2.5s (24/24 PASS).
+  - `npm run build` berhasil 100% tanpa error (31 bundel aset teroptimasi).
+
 ## [Sprint 5 Hari - Day 1] - HLS Physical Storage Upload, Segment Fail-Closed & Canonical Progressive MP4 - 2026-11-12 00:12 +07:00
 
 ### Added, Hardened & Reconciled (Final HLS Verification Closure & MVP Lock)

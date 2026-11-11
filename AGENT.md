@@ -28,7 +28,8 @@
 ## 3. Current System Baseline (Single Source of Truth)
 - **Total Assertions Lolos:** 622+ Asersi ($100\%$ PASS, 0 FAIL).
 - **Sprint 5 Hari Target (12–17 Nov 2026):** AMF Commercial MVP Go-Live.
-  - Day 1 (12 Nov): Audit aktual, penguncian cakupan MVP, query runtime fix, segment fail-closed guard, token propagation.
+  - Day 1 (12 Nov): Audit aktual, penguncian cakupan MVP, query runtime fix, segment fail-closed guard, token propagation. (SELESAI & DIVERIFIKASI).
+  - Day 2 (13 Nov): Penyelesaian Alur Produksi Film (Story Script -> Character DNA -> Storyboard -> Keyframe -> Video Generation) dengan proteksi Gate 1–5, AI Script Assistant modal, jembatan Storyboard-to-Media-Studio, dan Two-Phase Atomic Credit Reservation. (SELESAI, 40/40 Asersi Lolos).
   - Streaming Baseline: Progressive MP4 (HTTP 206, Signed URLs, Dynamic Watermark) dinyatakan 100% PRODUCTION READY untuk peluncuran MVP. HLS dikunci sebagai P1 Enhancement dengan proteksi anti-false-ready.
 - **Milestone 2.9 (Katalog OTT):** Disetujui & Terintegrasi.
 - **Milestone 2.9.1 (Entitlement & Access Control):** Disetujui & Hardened (HMAC-SHA256, RLS, live Supabase).
@@ -58,4 +59,4 @@
   - **Status HLS:** Arsitektur HLS (Skema database `v3_18`/`v3_18_1`, generator Master/Variant M3U8 RFC 8216, mitigasi token `xhrSetup`, dan security gates least-privilege `service_role`) telah diimplementasikan sebagai fondasi teknis.
   - **Anti-False-Ready Guard:** Pipeline worker `executeTranscodingPipeline()` menerapkan guard fail-closed keras (`HLS_SEGMENTS_NOT_READY`). Karena klaster FFmpeg belum terpasang di runtime serverless untuk memotong segmen video fisik `.ts`, katalog dicegah secara mutlak dari status `ready` HLS palsu, dan secara transparan tetap melayani penonton melalui Progressive MP4 tanpa risiko stream 404.
   - **Rangkaian Uji Unit Contract Guard (`scripts/test_ott_hls_engine.ts`):** 72 asersi lolos 100% (memvalidasi kontrak spesifikasi, penguncian privilese RPC, propagasi token `xhrSetup`, dan keandalan guard penolakan saat segmen fisik absen).
-- **Next Scope (Sprint Day 2 — 13 Nov):** Penyelesaian Alur Produksi Film (Story Script -> Character DNA Studio -> Storyboard -> Keyframe Preview -> Video Gen Pipeline) dengan proteksi Gate 1–4 dan reservasi kredit dua tahap (Two-Phase Credit Reservation).
+- **Next Scope (Sprint Day 3 — 14 Nov):** Reliability, Background Jobs Orchestration & Distribusi (Tab Close Recovery TC-WF-09, Worker Fencing, Idempotency & Multichannel Publishing).
