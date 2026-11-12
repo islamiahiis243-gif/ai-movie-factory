@@ -3,15 +3,19 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Sprint 5 Hari - Day 5] - UX Polish, Secret Quarantine Audit & Commercial MVP Release Candidate Lock - 2026-11-12 13:25 +07:00
+## [Sprint 5 Hari - Day 5] - UX Polish, Secret Quarantine Audit & Commercial MVP Release Candidate Lock - 2026-11-12 13:35 +07:00
 
 ### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Hari Ke-5: Final Release Candidate)
-- **Audit Paparan Kunci Rahasia Bundle Sisi Klien (Client Secret Quarantine):**
-  - Pemindaian menyeluruh atas seluruh berkas JavaScript di `dist/assets/`: terverifikasi 0 nilai rahasia server (`SUPABASE_SECRET_KEY`, `MIDTRANS_SERVER_KEY`, `OTT_GRANT_SIGNING_SECRET`, `UNIVERSAL_PUBLISHING_WORKER_SECRET`, `CRON_SECRET`, `GITHUB_PAT`) yang bocor atau diekspos ke browser.
-  - Modul penandatanganan grant dan verifikasi live database terisolasi murni di level serverless runtime.
-- **Pengerasan RLS Permanen pada Live Supabase PostgreSQL (`credit_reservations` & `ai_usage_records`):**
+- **Anti-Vacuum Fail-Closed Secret Audit & Isolasi Bundel Klien (`scripts/test_day5_release_candidate_and_security.ts`):**
+  - Menerapkan gerbang *fail-closed anti-vacuum*: mewajibkan pengumpulan minimal 3 secret credentials aktif riil dari `process.env` dan `.env` (`SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ACCESS_TOKEN`, `GITHUB_PAT`, `GEMINI_API_KEY`). Jika berkas bundel `dist/assets` atau secret tidak tersedia, suite pengujian langsung berhenti dengan kegagalan keras (*abort with error*), mencegah kelolosan vakum secara mutlak.
+  - Pemindaian menyeluruh atas seluruh 27 berkas JavaScript produksi (`dist/assets/*.js`): terverifikasi 0 nilai rahasia server yang bocor atau diekspos ke browser penonton.
+  - Modul penandatanganan grant dan verifikasi live database terisolasi murni di level serverless runtime backend.
+- **Pengerasan RLS Permanen & Penegakan Kode Error PostgreSQL `42501` (`credit_reservations` & `ai_usage_records`):**
   - Implementasi migrasi V3.20 (`upgrade_v3_20_rls_hardening_credits_and_ai_usage.sql`) di database produksi live (`jixfakvbhugpypjtyshq`).
-  - Row Level Security diaktifkan penuh (`rowsecurity: true`). Hak akses role `anon` dicabut total (0 privilege). Pengguna terautentikasi dibatasi strictly read-only (`SELECT`) berdasarkan ID pengguna masing-masing.
+  - Row Level Security diaktifkan penuh (`rowsecurity: true`). Hak akses role `anon` dicabut total (0 privilege).
+  - Penegakan pengujian eksplisit kode error PostgreSQL **`42501`** (*permission denied*) pada percobaan `SELECT` maupun `INSERT` oleh role anonim, dengan data yang dikembalikan bernilai `null` (0 baris bocor).
+  - Pengguna terautentikasi dibatasi strictly read-only (`SELECT`) berdasarkan ID pengguna masing-masing.
+  - Koneksi live database diwajibkan secara ketat pada pengujian Release Candidate (menghilangkan silent offline bypass).
 - **Verifikasi Kontrak Kesehatan Sistem & Registry Skema SSOT (`/api/health`):**
   - Status kesehatan sistem terkonfirmasi `200 OK` dengan versi aplikasi terkunci pada `1.16.1`.
   - 24 tabel terlindungi dan 3 bucket penyimpanan produksi (`ott-masters`, `project-assets`, `character-avatars`) terverifikasi aktif.
@@ -20,9 +24,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Pemutar sinematik Progressive MP4 terbukti mentransmisikan header otorisasi JWT Bearer pada akuisisi, heartbeat, dan perpanjangan sewa signed URL.
 - **Zero Dummy Data Invariant & Integritas Basis Data Supabase:**
   - 0 sesi kedaluwarsa atau pesanan dummy di database produksi.
-- **Pengujian Komprehensif Day 5 & Penguncian Release Candidate (36/36 PASS):**
-  - Menambahkan test suite `scripts/test_day5_release_candidate_and_security.ts` dengan 36 asersi lulus 100%.
-  - Total 18 test suites proyek (`npm test`) terverifikasi lulus 100% dengan total 764+ asersi lolos tanpa kegagalan.
+- **Pengujian Komprehensif Day 5 & Penguncian Release Candidate (40/40 PASS):**
+  - Menambahkan test suite `scripts/test_day5_release_candidate_and_security.ts` dengan 40 asersi lulus 100%.
+  - Total 18 test suites proyek (`npm test`) terverifikasi lulus 100% dengan total 768+ asersi lolos tanpa kegagalan.
+- **Rekonsiliasi Identitas Commit Produksi:**
+  - Full SHA commit Day 5 (`a3041ae64054bea7e4b944c2a63562354110c917`) terkonfirmasi identik dan tersinkronisasi 100% antara Git branch `main` dan deployment production Vercel (`READY`).
 
 ## [Sprint 5 Hari - Day 4] - Monetisasi, Pembayaran B2C Midtrans & OTT Streaming Platform - 2026-11-12 13:00 +07:00
 
