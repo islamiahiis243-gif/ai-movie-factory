@@ -174,6 +174,7 @@ async function applyRestoreToTargetDatabase(
 
   const { error: resetError } = await adminClient.rpc('dr_restore_reset_target');
   if (resetError) throw new Error(`Failed to clear isolated restore schema: ${resetError.message}`);
+  try {
 
   let totalWritten = 0;
   let tablesWritten = 0;
@@ -232,6 +233,15 @@ async function applyRestoreToTargetDatabase(
 
   console.log(`  ✔ [POSTGRES VERIFIED] ${tablesWritten}/${PROTECTED_TABLES.length} tables; ${totalWritten} rows`);
   console.log(`  ✔ [AUDIT PERSISTED] dr_restore_test.restore_audit id=${auditId}`);
+  } catch (restoreError) {
+    const { error: cleanupError } = await adminClient.rpc('dr_restore_reset_target');
+    if (cleanupError) {
+      console.error(`❌ Restore failed and isolated target cleanup also failed: ${cleanupError.message}`);
+    } else {
+      console.error('↩️  Isolated restore target cleared after failed restore.');
+    }
+    throw restoreError;
+  }
 }
 
 async function runRestore() {
