@@ -523,81 +523,119 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </div>
       </section>
 
-      {/* Comparison: Traditional vs AI Movie Factory */}
+      {/* Comparison: End-to-End Creator Business Journey */}
       <section id="comparison" className="py-20 px-6 sm:px-8 max-w-7xl mx-auto border-t border-slate-800/80">
-        <div className="text-center max-w-3xl mx-auto mb-16">
+        <div className="text-center max-w-4xl mx-auto mb-14">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold uppercase tracking-wider mb-4">
             <Zap className="w-3.5 h-3.5" />
-            Revolusi Biaya & Waktu
+            Dari Ide Menjadi Bisnis Film
           </div>
           <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight mb-4">
-            Mengapa Sineas Beralih ke AI Movie Factory?
+            Bukan Sekadar Membuat Video.{' '}
+            <span className="bg-gradient-to-r from-cyan-400 via-purple-400 to-amber-400 bg-clip-text text-transparent">
+              Bangun Bisnis Film Anda.
+            </span>
           </h2>
-          <p className="text-slate-400 text-sm sm:text-base">
-            Bandingkan alur produksi konvensional yang menguras modal dengan kekuatan 14 agen AI modern.
+          <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
+            AI Movie Factory menyatukan seluruh perjalanan kreator dalam satu ekosistem:
+            kembangkan ide, produksi film, publikasikan ke berbagai kanal, bangun platform OTT,
+            dan kelola pendapatan serta performa bisnis Anda.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-          {/* Traditional Production */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+          {/* Conventional fragmented workflow */}
           <div className="rounded-2xl p-6 sm:p-8 bg-slate-950/60 border border-rose-950/40">
             <div className="text-rose-400 text-xs font-mono font-bold uppercase tracking-wider mb-2">
-              Cara Konvensional (Lama)
+              Cara Konvensional
             </div>
-            <h3 className="text-xl font-bold text-slate-300 mb-6">
-              Studio & Rumah Produksi Tradisional
+            <h3 className="text-xl font-bold text-slate-200 mb-2">
+              Banyak Proses, Banyak Vendor
             </h3>
+            <p className="text-sm text-slate-500 mb-6">
+              Kreator sering harus menyatukan banyak alat, tim, dan layanan secara terpisah.
+            </p>
             <ul className="space-y-4 text-sm text-slate-400">
               <li className="flex items-start gap-3">
                 <span className="text-rose-500 font-bold shrink-0">✕</span>
-                <span>Biaya ratusan juta hingga miliaran rupiah untuk sewa kamera, lokasi, dan kru.</span>
+                <span>Pengembangan cerita, penulisan naskah, desain karakter, dan storyboard dikerjakan di alat yang berbeda.</span>
               </li>
               <li className="flex items-start gap-3">
                 <span className="text-rose-500 font-bold shrink-0">✕</span>
-                <span>Waktu produksi memakan waktu 3 sampai 8 bulan per episode atau film pendek.</span>
+                <span>Produksi, revisi, penyuntingan, dan pengelolaan aset membutuhkan koordinasi tim serta perpindahan file berulang.</span>
               </li>
               <li className="flex items-start gap-3">
                 <span className="text-rose-500 font-bold shrink-0">✕</span>
-                <span>Reshoot sangat mahal jika ada adegan salah atau pemeran tidak cocok.</span>
+                <span>Distribusi ke kanal digital, pengelolaan pelanggan, dan monetisasi sering berjalan di platform terpisah.</span>
               </li>
               <li className="flex items-start gap-3">
                 <span className="text-rose-500 font-bold shrink-0">✕</span>
-                <span>Terbatas oleh cuaca, izin lokasi syuting, dan jadwal aktor fisik.</span>
+                <span>Biaya, performa konten, transaksi, dan laba perlu direkap dari berbagai dashboard.</span>
               </li>
             </ul>
           </div>
 
-          {/* AI Movie Factory */}
+          {/* AMF end-to-end creator operating system */}
           <div className="rounded-2xl p-6 sm:p-8 bg-gradient-to-b from-amber-500/10 to-purple-500/10 border border-amber-500/40 relative shadow-xl shadow-amber-500/5">
             <div className="absolute top-4 right-4 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wider border border-amber-500/30">
-              Solusi AMF
+              Ekosistem AMF
             </div>
             <div className="text-amber-400 text-xs font-mono font-bold uppercase tracking-wider mb-2">
-              Modern AI Movie Studio
+              AI-Powered Film & Creator Business OS
             </div>
-            <h3 className="text-xl font-bold text-white mb-6">
-              AI Movie Factory (AMF)
+            <h3 className="text-xl font-bold text-white mb-2">
+              Satu Alur dari Ide sampai Pendapatan
             </h3>
+            <p className="text-sm text-slate-300 mb-6">
+              Produksi dan kembangkan bisnis karya Anda dalam satu ekosistem terpadu.
+            </p>
             <ul className="space-y-4 text-sm text-slate-200">
               <li className="flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-                <span>Mulai dari <strong>Rp 0 (150 Kredit Gratis)</strong>, hemat 95% anggaran produksi.</span>
+                <span><strong>01 · Kembangkan Ide</strong><br />Bangun konsep, dunia cerita, naskah, dan karakter dengan bantuan 14 agen AI.</span>
               </li>
               <li className="flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-                <span>Dari ide kasar menjadi storyboard dan shot video selesai dalam <strong>hitungan menit</strong>.</span>
+                <span><strong>02 · Produksi & Sempurnakan</strong><br />Susun storyboard, hasilkan aset visual dan video, lakukan editing, serta kendalikan persetujuan di setiap tahap.</span>
               </li>
               <li className="flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-                <span>1-klik regenerasi prompt untuk mengubah angle kamera, cuaca, atau emosi adegan.</span>
+                <span><strong>03 · Publikasikan & Distribusikan</strong><br />Siapkan paket konten dan hubungkan kanal publikasi yang didukung, termasuk YouTube setelah otorisasi tersedia.</span>
               </li>
               <li className="flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-                <span>Konsistensi aktor terjamin dengan sistem <strong>Character Studio Deep-Lock</strong>.</span>
+                <span><strong>04 · Bangun Kanal OTT Sendiri</strong><br />Kelola katalog film dan akses penonton melalui ekosistem streaming serta pembayaran.</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <span><strong>05 · Pantau Bisnis & Pendapatan</strong><br />Kelola transaksi, biaya produksi, analitik, dan perhitungan laba dengan pemisahan data aktual dan estimasi.</span>
               </li>
             </ul>
           </div>
         </div>
+
+        <div className="max-w-5xl mx-auto mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 px-6 py-5">
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 text-center">
+            {[
+              { step: '01', label: 'IDE & NASKAH' },
+              { step: '02', label: 'PRODUKSI FILM' },
+              { step: '03', label: 'PUBLISHING' },
+              { step: '04', label: 'OTT & AUDIENS' },
+              { step: '05', label: 'ANALITIK & CUAN' },
+            ].map((item) => (
+              <div key={item.step} className="flex flex-col items-center gap-1">
+                <span className="text-xs font-mono font-bold text-amber-400">{item.step}</span>
+                <span className="text-[11px] sm:text-xs font-semibold tracking-wide text-slate-200">{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-center text-xs text-slate-500 mt-5 max-w-3xl mx-auto">
+          Hasil dan pendapatan bergantung pada kualitas karya, strategi distribusi, respons audiens,
+          biaya layanan pihak ketiga, serta transaksi yang benar-benar terjadi. AMF menyediakan alat
+          dan alur kerja — bukan jaminan keuntungan.
+        </p>
       </section>
 
       {/* Pricing Showcase with Indonesian Gateway Badges */}
