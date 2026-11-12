@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Sprint 5 Hari - Day 5] - UX Polish, Secret Quarantine Audit & Commercial MVP Release Candidate Lock - 2026-11-12 13:35 +07:00
+## [Sprint 5 Hari - Day 5] - UX Polish, Secret Quarantine Audit & Commercial MVP Release Candidate Lock - 2026-11-12 13:48 +07:00
 
 ### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Hari Ke-5: Final Release Candidate)
 - **Anti-Vacuum Fail-Closed Secret Audit & Isolasi Bundel Klien (`scripts/test_day5_release_candidate_and_security.ts`):**
@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Penegakan pengujian eksplisit kode error PostgreSQL **`42501`** (*permission denied*) pada percobaan `SELECT` maupun `INSERT` oleh role anonim, dengan data yang dikembalikan bernilai `null` (0 baris bocor).
   - Pengguna terautentikasi dibatasi strictly read-only (`SELECT`) berdasarkan ID pengguna masing-masing.
   - Koneksi live database diwajibkan secara ketat pada pengujian Release Candidate (menghilangkan silent offline bypass).
+- **Pengerasan Fail-Closed Invariant Kebersihan Basis Data (Bagian 2.9 & 2.10):**
+  - Mengeliminasi potensi kelolosan palsu akibat fallback `(count || 0) === 0` saat query mengalami error.
+  - Menerapkan penegakan asersi ketat: query wajib berhasil (`!error`), nilai hitungan wajib berupa angka numerik (`typeof count === 'number'`), dan nilai mutlak harus tepat `0` (`count === 0`).
+  - Memperbaiki kueri pemindaian job pipa uji pada kolom teks `job_title` (`.ilike('job_title', '%test%')`) sehingga terhindar dari ketidakcocokan tipe tipe kolom UUID PostgreSQL.
+  - Jika kueri mengembalikan error atau nilai `null`, suite pengujian langsung melemparkan exception fail-closed dan menggugurkan proses pengujian.
 - **Verifikasi Kontrak Kesehatan Sistem & Registry Skema SSOT (`/api/health`):**
   - Status kesehatan sistem terkonfirmasi `200 OK` dengan versi aplikasi terkunci pada `1.16.1`.
   - 24 tabel terlindungi dan 3 bucket penyimpanan produksi (`ott-masters`, `project-assets`, `character-avatars`) terverifikasi aktif.

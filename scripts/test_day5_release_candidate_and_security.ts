@@ -233,17 +233,31 @@ async function runDay5Suite() {
   const { error: adminUsageErr } = await adminClient.from('ai_usage_records').select('id').limit(0);
   assert(!adminUsageErr, '2.8 Service role maintains administrative access to ai_usage_records');
 
-  // 2.4 Clean database invariant checks (zero test pollution)
-  const { count: sessionCount } = await adminClient
+  // 2.4 Clean database invariant checks (zero test pollution - fail-closed on query errors)
+  const { count: sessionCount, error: sessionCountErr } = await adminClient
     .from('ott_playback_sessions')
     .select('*', { count: 'exact', head: true });
-  assert((sessionCount || 0) === 0, '2.9 Clean database invariant: 0 stale OTT playback sessions in production');
 
-  const { count: dummyJobCount } = await adminClient
+  assert(
+    !sessionCountErr && typeof sessionCount === 'number' && sessionCount === 0,
+    `2.9 Clean database invariant: Query succeeded (!err) and exactly 0 stale OTT playback sessions in production (Got count: ${sessionCount}, error: ${sessionCountErr?.message || 'none'})`
+  );
+  if (sessionCountErr || typeof sessionCount !== 'number') {
+    throw new Error(`FAIL-CLOSED: Failed to verify clean database state for ott_playback_sessions: ${sessionCountErr?.message || 'count is null'}`);
+  }
+
+  const { count: dummyJobCount, error: dummyJobErr } = await adminClient
     .from('pipeline_jobs')
     .select('*', { count: 'exact', head: true })
-    .like('project_id', 'test%');
-  assert((dummyJobCount || 0) === 0, '2.10 Clean database invariant: 0 stray test pipeline jobs in production');
+    .ilike('job_title', '%test%');
+
+  assert(
+    !dummyJobErr && typeof dummyJobCount === 'number' && dummyJobCount === 0,
+    `2.10 Clean database invariant: Query succeeded (!err) and exactly 0 stray test pipeline jobs in production (Got count: ${dummyJobCount}, error: ${dummyJobErr?.message || 'none'})`
+  );
+  if (dummyJobErr || typeof dummyJobCount !== 'number') {
+    throw new Error(`FAIL-CLOSED: Failed to verify clean database state for pipeline_jobs: ${dummyJobErr?.message || 'count is null'}`);
+  }
 
   // ---------------------------------------------------------------------------
   // SECTION 3: SYSTEM HEALTH CONTRACT & PROVENANCE (/api/health)
