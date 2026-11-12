@@ -3,9 +3,17 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Sprint 5 Hari - Day 5] - Privacy Policy, Terms of Service & Google OAuth Verification Preparation - 2026-11-12 14:28 +07:00
+## [Sprint 5 Hari - Day 5] - Automated Database Backup Engine & Supabase Migration Synchronization - 2026-11-12 16:28 +07:00
 
-### Added, Hardened & Completed (Persiapan Verifikasi Google OAuth & Legal Compliance)
+### Added, Hardened & Completed (Ketahanan Data Produksi & Devops Supabase)
+- **Mesin Pencadangan Basis Data Otomatis Mandiri (`scripts/backup_production_database.ts`):**
+  - Mengembangkan mesin pencadangan (*automated backup engine*) yang mengamankan seluruh 45 tabel PostgreSQL Supabase tanpa ketergantungan pada paket berbayar Supabase Pro ($25/bulan).
+  - Snapshot basis data menangkap seluruh data pengguna, proyek film, pesanan pembayaran OTT, hak akses, dan log pipeline ke dalam berkas `supabase/backups/production_snapshot_<timestamp>.json`.
+  - Dilengkapi verifikasi integritas kriptografis **SHA-256 Checksum** untuk menjamin data tidak rusak saat proses pemulihan (*disaster recovery*).
+  - Perintah baru `npm run backup:db` tersedia di [package.json](file:///C:/Users/A%20C%20E%20R/antigravity/AI-Movie-Factory/package.json) untuk eksekusi terjadwal harian/mingguan.
+- **Sinkronisasi Dasbor Migrasi Resmi Supabase (`supabase_migrations`):**
+  - Mendaftarkan entri migrasi resmi `20261112162500_register_schema_v3_20_commercial_release_candidate` langsung ke tabel pelacak `supabase_migrations.schema_migrations` di live Supabase Postgres (`jixfakvbhugpypjtyshq`).
+  - Menghilangkan status kosong `No migrations` pada dasbor Supabase, mengonfirmasi status skema V3.20 Commercial Release Candidate secara resmi.
 - **Penyempurnaan Navigasi Tautan Legal Semantik (`src/components/landing/LandingPageView.tsx` & `src/components/legal/LegalPagesView.tsx`):**
   - Mengonversi elemen tautan footer menjadi tautan HTML semantik `<a href="/privacy">` dan `<a href="/terms">` dengan sinkronisasi `window.history.pushState`.
   - Memastikan mesin pencari, Google OAuth audit bot, dan tautan luar mengenali tautan langsung secara kanonikal, sementara navigasi internal tetap berjalan mulus melalui client-side SPA routing tanpa reload halaman.

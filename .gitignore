@@ -10,3 +10,4 @@ coverage/
 .antigravity/
 desktop.ini
 thumbs.db
+supabase/backups/
