@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Disaster Recovery] - 2026-11-12
+
+### Fixed
+- **Actual row restoration:** Replaced the previous evidence-only/sample fallback with explicit row writes for all 45 protected tables into the isolated `dr_restore_test` schema. Restore now fails closed if any snapshot table is missing, its declared row count differs from its payload, a batch write fails, or persisted PostgreSQL counts do not match the snapshot.
+- **Remote checksum pairing:** The restore engine now requires the exact `.enc.sha256` companion object for the selected encrypted snapshot. Missing, malformed, or mismatched checksums abort before decryption.
+- **Audit persistence:** Restore completion is reported only after PostgreSQL persists the audit record.
+- **Target security:** The 45 restore tables and audit table have RLS enabled; direct access is revoked from `PUBLIC`, `anon`, and `authenticated`. Privileged restore RPC execution is granted only to `service_role`.
+- **Reproducible database setup:** Added migration `20261112193000_dr_restore_actual_row_restore.sql` to version the isolated target schema and restore RPCs.
+- **Verification:** Confirmed the restore target contains all 45 tables with RLS enabled, verified the RPC row-write path against a temporary profile row and removed the test row, and confirmed target counts returned to zero. This is a focused SQL smoke test; the full encrypted cloud `npm run restore:apply` has not yet been executed from the repository runtime.
+
 ## [Sprint 5 Hari - Day 5] - Full Disaster Recovery Proof: Remote SHA-256 + Actual PostgreSQL Restore - 2026-11-12 17:30 +07:00
 
 ### Added, Hardened & Completed (Disaster Recovery 100% Terbukti)
