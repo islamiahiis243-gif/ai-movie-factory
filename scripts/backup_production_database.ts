@@ -240,9 +240,41 @@ async function runBackup() {
   const fileBuffer = fs.readFileSync(backupFilePath);
   const sha256Checksum = crypto.createHash('sha256').update(fileBuffer).digest('hex');
   const checksumFilePath = path.join(backupDir, `production_snapshot_${timestamp}.enc.sha256`);
-  fs.writeFileSync(checksumFilePath, `${sha256Checksum}  production_snapshot_${timestamp}.enc.json\n`, 'utf-8');
+  const checksumContent = `${sha256Checksum}  production_snapshot_${timestamp}.enc.json\n`;
+  fs.writeFileSync(checksumFilePath, checksumContent, 'utf-8');
 
-  // 4. Post-write Decryption & Verification in-flight
+  // 4. Remote Off-Site Cloud Storage Replication (Private Supabase Storage Bucket)
+  console.log('☁️ Replicating encrypted snapshot to private off-site cloud storage (database-backups)...');
+  const remoteFileName = `production_snapshot_${timestamp}.enc.json`;
+  const remoteChecksumName = `production_snapshot_${timestamp}.enc.sha256`;
+
+  const { error: uploadEncErr } = await adminClient.storage
+    .from('database-backups')
+    .upload(remoteFileName, fileBuffer, {
+      contentType: 'application/json',
+      upsert: true,
+    });
+
+  if (uploadEncErr) {
+    console.error(`\n❌ FATAL FAIL-CLOSED ERROR: Failed to replicate encrypted backup to cloud storage:`, uploadEncErr.message);
+    process.exit(1);
+  }
+
+  const { error: uploadShaErr } = await adminClient.storage
+    .from('database-backups')
+    .upload(remoteChecksumName, Buffer.from(checksumContent, 'utf-8'), {
+      contentType: 'text/plain',
+      upsert: true,
+    });
+
+  if (uploadShaErr) {
+    console.error(`\n❌ FATAL FAIL-CLOSED ERROR: Failed to replicate checksum to cloud storage:`, uploadShaErr.message);
+    process.exit(1);
+  }
+
+  console.log(`  ✔ [REMOTE SYNC] Successfully uploaded to cloud storage: database-backups/${remoteFileName}`);
+
+  // 5. Post-write Decryption & Verification in-flight
   console.log('🔍 Executing post-write decryption & schema verification test...');
   const reReadEnvelope = JSON.parse(fs.readFileSync(backupFilePath, 'utf-8')) as EncryptedBackupEnvelope;
   const decryptedManifest = decryptPayload(reReadEnvelope, encryptionSecret);
@@ -260,6 +292,7 @@ async function runBackup() {
   console.log('\n========================================================================');
   console.log('✅ HARDENED BACKUP COMPLETED & VERIFIED SUCCESSFULLY!');
   console.log(`  Encrypted File: ${backupFilePath}`);
+  console.log(`  Cloud Replica: database-backups/${remoteFileName}`);
   console.log(`  File Size: ${(fileBuffer.length / 1024).toFixed(2)} KB`);
   console.log(`  Encryption: AES-256-GCM (PBKDF2-100k, AuthTag Verified)`);
   console.log(`  Tables Protected: ${PROTECTED_TABLES.length}/${PROTECTED_TABLES.length}`);

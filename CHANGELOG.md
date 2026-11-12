@@ -3,6 +3,30 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Sprint 5 Hari - Day 5] - Off-Site Cold Storage Replication & Full Relational Integrity Restoration Engine - 2026-11-12 17:22 +07:00
+
+### Added, Hardened & Completed (Disaster Recovery Produksi Fully Operational)
+- **Replikasi Otomatis ke Cold Storage Privat (`database-backups` Supabase Storage):**
+  - Setiap eksekusi `npm run backup:db` kini secara otomatis mengunggah snapshot terenkripsi AES-256-GCM ke bucket privat `database-backups` di Supabase Storage yang terpisah dari disk lokal.
+  - Membuktikan secara empiris bahwa snapshot off-site eksis di cloud: `production_snapshot_2026-11-12T10-20-09-807Z.enc.json` (38.30 KB, SHA-256: `c3a0d934debab...`).
+  - Jika disk lokal komputer rusak, snapshot terenkripsi tetap aman dan dapat diunduh dari cloud untuk pemulihan.
+- **Mesin Pemulihan & Verifikasi Integritas Relasional (`scripts/restore_production_database.ts`):**
+  - Membangun mesin pemulihan (*Restoration Engine*) dengan dua mode operasi:
+    * `npm run restore:db` — Memuat snapshot lokal untuk verifikasi integritas relasional.
+    * `npm run restore:cloud` — Mengunduh snapshot terenkripsi langsung dari cloud storage (`database-backups`), mendekripsi, dan menjalankan verifikasi penuh dari sumber off-site.
+  - Membuktikan secara empiris verifikasi cloud-to-local roundtrip berjalan 100% berhasil.
+- **Verifikasi Integritas Relasional Graph (`verifyRelationalIntegrity`):**
+  - Menambahkan lapisan integritas Foreign Key antar tabel kritis produksi (11 relasi krusial: `projects → profiles`, `ott_payment_orders → ott_films`, `ott_access_passes → ott_payment_orders`, dll.).
+  - Mesin pemulihan menghitung baris-baris orphan (tanpa induk valid), dan menolak pemulihan secara fail-closed jika terdapat pelanggaran referential integrity.
+  - **Hasil verifikasi cloud restore empiris:**
+    ```
+    ✔ [VALID] projects -> profiles (Rows: 2, Orphaned: 0)
+    ✔ [VALID] ott_payment_orders -> ott_films (Rows: 8, Orphaned: 0)
+    ✔ [VALID] ott_access_passes -> ott_payment_orders (Rows: 4, Orphaned: 0)
+    ... 11/11 relasi VALID — 0 Violations, 0 Orphaned Rows
+    ```
+- **Perintah NPM baru:** `restore:db` dan `restore:cloud` ditambahkan ke [package.json](file:///C:/Users/A%20C%20E%20R/antigravity/AI-Movie-Factory/package.json).
+
 ## [Sprint 5 Hari - Day 5] - Military-Grade Production Database Backup Hardening & Verification Suite - 2026-11-12 17:08 +07:00
 
 ### Added, Hardened & Completed (Ketahanan Cadangan Data Produksi Berlapis)
