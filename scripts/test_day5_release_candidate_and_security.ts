@@ -2,8 +2,8 @@
  * AI MOVIE FACTORY — SPRINT 5 HARI: DAY 5 ACCEPTANCE TEST SUITE
  * Scope: UX Polish, Secret Exposure Audit, Database Security & Release Candidate Lock
  * Targets:
- * - Zero server-side secret exposure across all browser assets (dist/assets/*.js)
- * - Live Supabase PostgreSQL RLS enforcement (credit_reservations, ai_usage_records)
+ * - Anti-vacuum client bundle secret audit (verifying active secrets against dist/assets/*.js)
+ * - Explicit PostgreSQL 42501 permission-denied RLS verification (credit_reservations, ai_usage_records)
  * - Zero dummy / test record pollution in live production tables
  * - System health & versioning provenance (/api/health SSOT compliance)
  * - End-to-end 5-Gate production lifecycle & Commercial MVP Release Candidate sign-off
@@ -80,9 +80,7 @@ async function runDay5Suite() {
     }
     assert(!serverModulesBundled, '1.3 Server-only signing and live entitlement modules excluded from client bundle', bundledDetail);
 
-    // 1.4 Verify raw secret values from .env are strictly NOT embedded into any client asset
-    const envContent = fs.existsSync('.env') ? fs.readFileSync('.env', 'utf-8') : '';
-    const secretValuesToCheck: string[] = [];
+    // 1.4 Anti-Vacuum Secret Audit: Gather active secrets from process.env and .env
     const sensitiveEnvKeys = [
       'SUPABASE_SECRET_KEY',
       'SUPABASE_SERVICE_ROLE_KEY',
@@ -92,19 +90,42 @@ async function runDay5Suite() {
       'CRON_SECRET',
       'SUPABASE_ACCESS_TOKEN',
       'GITHUB_PAT',
+      'GEMINI_API_KEY',
     ];
 
-    for (const line of envContent.split('\n')) {
-      const trimmed = line.trim();
-      for (const sec of sensitiveEnvKeys) {
-        if (trimmed.startsWith(`${sec}=`)) {
-          const val = trimmed.substring(`${sec}=`.length).replace(/^["']|["']$/g, '').trim();
-          if (val && val.length > 8) {
-            secretValuesToCheck.push(val);
+    const secretValuesSet = new Set<string>();
+
+    // Collect from process.env
+    for (const key of sensitiveEnvKeys) {
+      const val = process.env[key]?.trim();
+      if (val && val.length > 8) {
+        secretValuesSet.add(val);
+      }
+    }
+
+    // Collect from .env if present
+    if (fs.existsSync('.env')) {
+      const envContent = fs.readFileSync('.env', 'utf-8');
+      for (const line of envContent.split('\n')) {
+        const trimmed = line.trim();
+        for (const sec of sensitiveEnvKeys) {
+          if (trimmed.startsWith(`${sec}=`)) {
+            const val = trimmed.substring(`${sec}=`.length).replace(/^["']|["']$/g, '').trim();
+            if (val && val.length > 8) {
+              secretValuesSet.add(val);
+            }
           }
         }
       }
     }
+
+    const secretValuesToCheck = Array.from(secretValuesSet);
+
+    // Non-vacuum assertion: ensure we actually tested against real active secrets
+    assert(
+      secretValuesToCheck.length >= 3,
+      `1.4 Anti-Vacuum Guard: Audited at least 3 active secret credentials against client bundles (Found ${secretValuesToCheck.length} active secrets)`
+    );
 
     let foundRawSecretValue = false;
     let rawSecretDetail = '';
@@ -120,13 +141,13 @@ async function runDay5Suite() {
       if (foundRawSecretValue) break;
     }
 
-    assert(!foundRawSecretValue, '1.4 Zero raw secret credential values embedded in client bundles', rawSecretDetail);
+    assert(!foundRawSecretValue, '1.5 Zero raw secret credential values embedded in client bundles', rawSecretDetail);
   }
 
   // ---------------------------------------------------------------------------
-  // SECTION 2: LIVE SUPABASE POSTGRESQL RLS ENFORCEMENT & INTEGRITY
+  // SECTION 2: LIVE SUPABASE POSTGRESQL RLS ENFORCEMENT & EXPLICIT 42501 CHECKS
   // ---------------------------------------------------------------------------
-  console.log('\n[SECTION 2] Live Supabase PostgreSQL RLS Enforcement & Invariants');
+  console.log('\n[SECTION 2] Live Supabase PostgreSQL RLS Enforcement & Explicit Error 42501 Checks');
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://jixfakvbhugpypjtyshq.supabase.co';
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -136,54 +157,70 @@ async function runDay5Suite() {
   const anonClient = anonKey ? createClient(supabaseUrl, anonKey, { auth: { persistSession: false } }) : null;
 
   if (adminClient && anonClient) {
-    // 2.1 Verify RLS on credit_reservations blocks anon read/write
-    const { data: anonReservations } = await anonClient
+    // 2.1 Verify RLS on credit_reservations: explicitly asserts PostgreSQL 42501 permission denied
+    const { data: anonReservations, error: anonResErr } = await anonClient
       .from('credit_reservations')
       .select('*')
       .limit(10);
+
     assert(
-      !anonReservations || anonReservations.length === 0,
-      '2.1 Anon role is completely shielded from credit_reservations (0 rows visible)'
+      anonResErr?.code === '42501' && anonResErr?.message?.includes('permission denied'),
+      `2.1 Anon SELECT on credit_reservations is explicitly rejected with PostgreSQL 42501 (Permission Denied: "${anonResErr?.message}")`
+    );
+    assert(
+      anonReservations === null,
+      '2.2 Anon role receives strictly null data (0 rows leaked from credit_reservations)'
     );
 
     const { error: anonInsertResErr } = await anonClient
       .from('credit_reservations')
-      .insert({ user_id: 'anon-attacker', amount: 9999, status: 'reserved' });
-    assert(Boolean(anonInsertResErr), '2.2 Anon direct insert into credit_reservations is strictly blocked');
+      .insert({ user_id: '00000000-0000-0000-0000-000000000000', amount: 9999, status: 'reserved' });
+    assert(
+      anonInsertResErr?.code === '42501',
+      `2.3 Anon INSERT into credit_reservations is explicitly rejected with PostgreSQL 42501 (Got code: ${anonInsertResErr?.code})`
+    );
 
-    // 2.2 Verify RLS on ai_usage_records blocks anon read/write
-    const { data: anonUsage } = await anonClient
+    // 2.2 Verify RLS on ai_usage_records: explicitly asserts PostgreSQL 42501 permission denied
+    const { data: anonUsage, error: anonUsageErr } = await anonClient
       .from('ai_usage_records')
       .select('*')
       .limit(10);
+
     assert(
-      !anonUsage || anonUsage.length === 0,
-      '2.3 Anon role is completely shielded from ai_usage_records (0 rows visible)'
+      anonUsageErr?.code === '42501' && anonUsageErr?.message?.includes('permission denied'),
+      `2.4 Anon SELECT on ai_usage_records is explicitly rejected with PostgreSQL 42501 (Permission Denied: "${anonUsageErr?.message}")`
+    );
+    assert(
+      anonUsage === null,
+      '2.5 Anon role receives strictly null data (0 rows leaked from ai_usage_records)'
     );
 
     const { error: anonInsertUsageErr } = await anonClient
       .from('ai_usage_records')
-      .insert({ user_id: 'anon-attacker', model: 'gpt-4o', credit_cost: 999 });
-    assert(Boolean(anonInsertUsageErr), '2.4 Anon direct insert into ai_usage_records is strictly blocked');
+      .insert({ user_id: '00000000-0000-0000-0000-000000000000', operation: 'generate', model: 'gemini' });
+    assert(
+      anonInsertUsageErr?.code === '42501',
+      `2.6 Anon INSERT into ai_usage_records is explicitly rejected with PostgreSQL 42501 (Got code: ${anonInsertUsageErr?.code})`
+    );
 
     // 2.3 Verify service_role retains administrative execution capability
     const { error: adminResErr } = await adminClient.from('credit_reservations').select('id').limit(0);
-    assert(!adminResErr, '2.5 Service role maintains administrative access to credit_reservations');
+    assert(!adminResErr, '2.7 Service role maintains administrative access to credit_reservations');
 
     const { error: adminUsageErr } = await adminClient.from('ai_usage_records').select('id').limit(0);
-    assert(!adminUsageErr, '2.6 Service role maintains administrative access to ai_usage_records');
+    assert(!adminUsageErr, '2.8 Service role maintains administrative access to ai_usage_records');
 
     // 2.4 Clean database invariant checks (zero test pollution)
     const { count: sessionCount } = await adminClient
       .from('ott_playback_sessions')
       .select('*', { count: 'exact', head: true });
-    assert((sessionCount || 0) === 0, '2.7 Clean database invariant: 0 stale OTT playback sessions in production');
+    assert((sessionCount || 0) === 0, '2.9 Clean database invariant: 0 stale OTT playback sessions in production');
 
     const { count: dummyJobCount } = await adminClient
       .from('pipeline_jobs')
       .select('*', { count: 'exact', head: true })
       .like('project_id', 'test%');
-    assert((dummyJobCount || 0) === 0, '2.8 Clean database invariant: 0 stray test pipeline jobs in production');
+    assert((dummyJobCount || 0) === 0, '2.10 Clean database invariant: 0 stray test pipeline jobs in production');
   } else {
     console.log('  [Notice] Live database checks skipped in offline mode.');
   }
