@@ -36,6 +36,7 @@ export default async function checkoutHandler(req: any, res: any) {
     paymentMethod = 'qris',
     clientPrice,
     _mockViewer,
+    _mockData,
   } = body || {};
 
   let viewer: { id: string; email?: string } | null = null;
@@ -68,16 +69,20 @@ export default async function checkoutHandler(req: any, res: any) {
     });
   }
 
+  // Normalize orderType if client passed ppv_single_film
+  const normalizedOrderType = orderType === 'ppv_single_film' ? 'ppv_single' : orderType;
+
   try {
     const result = await ottCommerceEngine.createOrder({
       userId: viewer.id,
       channelId,
-      orderType,
+      orderType: normalizedOrderType,
       contentId,
       contentType,
       paymentMethod,
       clientProvidedPrice: clientPrice,
       customerEmail: viewer.email,
+      _mockData,
     });
 
     return res.status(201).json({

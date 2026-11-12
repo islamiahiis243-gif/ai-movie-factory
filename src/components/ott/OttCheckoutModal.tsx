@@ -89,11 +89,14 @@ export const OttCheckoutModal: React.FC<OttCheckoutModalProps> = ({
     setErrorMsg(null);
 
     try {
-      const user = supabase ? (await supabase.auth.getUser()).data?.user : null;
+      const session = supabase ? (await supabase.auth.getSession()).data?.session : null;
 
       const res = await fetch('/api/ott/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({
           channelId,
           orderType,
@@ -101,7 +104,7 @@ export const OttCheckoutModal: React.FC<OttCheckoutModalProps> = ({
           contentType,
           paymentMethod: 'midtrans_snap',
           clientPrice: priceIdr,
-          _mockViewer: user ? undefined : { id: '00000000-0000-0000-0000-000000000001', email: 'viewer@aimoviefactory.local' },
+          _mockViewer: session ? undefined : { id: '00000000-0000-0000-0000-000000000001', email: 'viewer@aimoviefactory.local' },
         }),
       });
 

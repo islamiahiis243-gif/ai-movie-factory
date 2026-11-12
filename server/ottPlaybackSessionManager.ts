@@ -562,7 +562,7 @@ export async function heartbeatPlaybackSession(
   const { sessionId, viewer, currentPositionSeconds, adminSupabase, _mockData } = params;
 
   if (_mockData) {
-    if (_mockData.session?.status === 'revoked') {
+    if (_mockData.session?.status === 'revoked' || _mockData.revoked) {
       return { success: false, code: 'SESSION_REVOKED', reason: 'Sesi telah dicabut oleh perangkat lain.' };
     }
     return { success: true };

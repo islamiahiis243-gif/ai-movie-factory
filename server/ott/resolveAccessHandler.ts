@@ -191,6 +191,15 @@ export default async function resolveAccessHandler(req: any, res: any) {
   }
 
   // 3. Evaluate Access via Core Entitlement Engine
+  // Gate 5 Master Approval Verification (Fail-closed guard before issuing access grants)
+  if (content && content.master_approval_status && content.master_approval_status !== 'GATE_5_APPROVED') {
+    return res.status(422).json({
+      success: false,
+      error: 'GATE_5_UNAPPROVED',
+      message: `Master video belum memperoleh persetujuan sutradara Gate 5 (Status: ${content.master_approval_status}).`,
+    });
+  }
+
   const resolveParams: ResolveOttAccessParams = {
     viewer,
     channel: channel!,

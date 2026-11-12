@@ -3,6 +3,34 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Sprint 5 Hari - Day 4] - Monetisasi, Pembayaran B2C Midtrans & OTT Streaming Platform - 2026-11-12 13:00 +07:00
+
+### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Hari Ke-4: Monetisasi & OTT)
+- **Penyelesaian Handler B2C OTT Checkout & Anti-Price-Tampering (`server/ott/checkoutHandler.ts` & `server/ottCommerceEngine.ts`):**
+  - Mengintegrasikan endpoint checkout `/api/ott/checkout` dengan validasi otentikasi JWT Bearer ketat (`401 UNAUTHORIZED_VIEWER` jika anonim).
+  - Normalisasi order type (`ppv_single_film` -> `ppv_single`).
+  - Penegakan anti-tampering harga ketat di level serverless: pencocokan harga input pengguna terhadap katalog resmi basis data (`400 PRICE_TAMPERING_DETECTED`).
+  - Penegakan integritas katalog: kepemilikan channel tenant, status channel aktif, status publikasi `published`, dan status persetujuan master sutradara `GATE_5_APPROVED`.
+  - Dukungan isolasi simulasi `_mockData` tanpa polusi data dummy ke tabel produksi Supabase `public.ott_payment_orders`.
+- **Verifikasi Tanda Tangan Webhook Midtrans SHA-512 & Constant-Time (`api/payment-webhook.ts` & `server/ottCommerceEngine.ts`):**
+  - Verifikasi kriptografis SHA-512 atas gabungan `order_id + status_code + gross_amount + server_key`.
+  - Menggunakan perbandingan konstan `crypto.timingSafeEqual` untuk mencegah serangan timing attack side-channel.
+  - Penolakan tegas atas modifikasi nilai transaksi kotor (tampered gross amount) atau pemalsuan tanda tangan.
+- **Pengendali Sesi Pemutaran & Pengiriman Progressive MP4 Berizin (`server/ott/playbackSessionHandler.ts` & `server/ottPlaybackSessionManager.ts`):**
+  - Penegakan Two-Tier Entitlement Guard: verifikasi token kriptografis HMAC-SHA256 (`egt_amf_...`) dan evaluasi izin aktif di basis data.
+  - Penegakan Gate 5 Master Approval (`GATE_5_APPROVED`): konten tanpa persetujuan sutradara diblokir dengan kode `GATE_5_UNAPPROVED` (HTTP 422).
+  - Mode streaming kanonikal komersial MVP dikonfirmasi sebagai Progressive MP4 dengan URL bertanda tangan (TTL 15 menit), melindungi berkas video mentah dari kebocoran publik.
+  - Penegakan *Instant Revocation* pada panggilan heartbeat dan renewal: penarikan tiket langsung mengakhiri sesi pemutaran seketika (`SESSION_REVOKED`, HTTP 403).
+  - Watermark forensik pseudonim dinamis (`wm_...`) yang tidak mengekspos email mentah atau PII penonton.
+- **Konektivitas Klien & Otorisasi Pemutar (`CinematicPlayerView.tsx` & `OttCheckoutModal.tsx`):**
+  - Memperbaiki pengiriman header `Authorization: Bearer ${accessToken}` pada panggilan akuisisi sesi, perpanjangan sewa (renew signed URL), heartbeat posisi pemutaran, dan pembuatan pesanan checkout.
+- **Zero Dummy Data Invariant & Integritas Basis Data Supabase:**
+  - 10 tabel OTT terverifikasi eksis dan aman di Supabase PostgreSQL (`ott_channels`, `ott_films`, `ott_series`, `ott_seasons`, `ott_episodes`, `ott_payment_orders`, `ott_access_passes`, `ott_viewer_subscriptions`, `ott_playback_sessions`, `ott_payment_order_refunds`).
+  - Terverifikasi 0 sesi kedaluwarsa atau dummy di tabel produksi `public.ott_playback_sessions`.
+- **Rangkaian Uji Terarah Day 4 & Verifikasi Menyeluruh (38/38 PASS):**
+  - Menambahkan test suite `scripts/test_day4_monetization_and_ott.ts` dengan 38 asersi lulus 100%.
+  - Total 17 test suites di `package.json` (`npm test`) terverifikasi lulus 100%.
+
 ## [Sprint 5 Hari - Day 3] - Reliability, Background Jobs & Multi-Platform Distribution - 2026-11-12 12:21 +07:00
 
 ### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Hari Ke-3: Reliability & Background Jobs)

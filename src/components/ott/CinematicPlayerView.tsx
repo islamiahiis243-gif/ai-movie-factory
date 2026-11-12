@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { OttDynamicWatermark } from './OttDynamicWatermark.tsx';
 import { OttCheckoutModal } from './OttCheckoutModal.tsx';
+import { supabase } from '../../lib/supabase.ts';
 import Hls from 'hls.js';
 
 export interface ChapterMarker {
@@ -145,9 +146,15 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
     setErrorState(null);
 
     try {
+      const session = supabase ? (await supabase.auth.getSession()).data?.session : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
       const response = await fetch('/api/ott/playback-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           action: 'acquire',
           grantToken,
@@ -324,9 +331,15 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
       }
 
       try {
+        const session = supabase ? (await supabase.auth.getSession()).data?.session : null;
+        const hbHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (session?.access_token) {
+          hbHeaders['Authorization'] = `Bearer ${session.access_token}`;
+        }
+
         const hbRes = await fetch('/api/ott/playback-session', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: hbHeaders,
           body: JSON.stringify({
             action: 'heartbeat',
             sessionId,
@@ -400,9 +413,15 @@ export const CinematicPlayerView: React.FC<CinematicPlayerProps> = ({
 
     try {
       const pos = videoRef.current?.currentTime || 0;
+      const session = supabase ? (await supabase.auth.getSession()).data?.session : null;
+      const renewHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) {
+        renewHeaders['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
       const renewRes = await fetch('/api/ott/playback-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: renewHeaders,
         body: JSON.stringify({
           action: 'renew',
           sessionId,

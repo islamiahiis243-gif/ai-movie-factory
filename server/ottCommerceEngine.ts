@@ -31,6 +31,11 @@ export interface CreateOttOrderInput {
   clientProvidedPrice?: number;
   customerEmail?: string;
   customerName?: string;
+  _mockData?: {
+    channel?: any;
+    film?: any;
+    episode?: any;
+  };
 }
 
 export interface WebhookNotificationPayload {
@@ -247,14 +252,20 @@ export class OttCommerceEngine {
     const db = this.getDb();
 
     // 1. Verify Channel Status
-    const { data: channel, error: chErr } = await db
-      .from('ott_channels')
-      .select('id, name, status, subscription_price_idr, is_subscription_enabled')
-      .eq('id', input.channelId)
-      .single();
+    let channel: any = null;
+    if (input._mockData?.channel) {
+      channel = input._mockData.channel;
+    } else {
+      const { data: chData, error: chErr } = await db
+        .from('ott_channels')
+        .select('id, name, status, subscription_price_idr, is_subscription_enabled')
+        .eq('id', input.channelId)
+        .single();
 
-    if (chErr || !channel) {
-      throw new Error('Channel not found in database');
+      if (chErr || !chData) {
+        throw new Error('Channel not found in database');
+      }
+      channel = chData;
     }
 
     if (channel.status !== 'active') {
@@ -271,14 +282,20 @@ export class OttCommerceEngine {
       }
 
       if (input.contentType === 'film') {
-        const { data: film, error: filmErr } = await db
-          .from('ott_films')
-          .select('id, channel_id, title, ppv_price_idr, access_policy, publication_status, master_approval_status')
-          .eq('id', input.contentId)
-          .single();
+        let film: any = null;
+        if (input._mockData?.film) {
+          film = input._mockData.film;
+        } else {
+          const { data: filmData, error: filmErr } = await db
+            .from('ott_films')
+            .select('id, channel_id, title, ppv_price_idr, access_policy, publication_status, master_approval_status')
+            .eq('id', input.contentId)
+            .single();
 
-        if (filmErr || !film) {
-          throw new Error('Film not found in catalog');
+          if (filmErr || !filmData) {
+            throw new Error('Film not found in catalog');
+          }
+          film = filmData;
         }
 
         // Ownership match check
@@ -357,17 +374,57 @@ export class OttCommerceEngine {
     const orderNumber = this.generateOrderNumber();
     const paymentMethod = input.paymentMethod || 'qris';
 
-    // 4. Request Midtrans Snap Transaction
-    const snapResult = await this.createMidtransSnapTransaction({
-      orderNumber,
-      grossAmount: verifiedPrice,
-      title: orderTitle,
-      contentId: input.contentId,
-      customerEmail: input.customerEmail,
-      customerName: input.customerName,
-    });
+    // 4. Request Midtrans Snap Transaction (or generate mock transaction in simulated mode)
+    const snapResult = input._mockData
+      ? {
+          snapToken: `sandbox-snap-${orderNumber}`,
+          redirectUrl: `https://app.sandbox.midtrans.com/snap/v2/vtweb/${orderNumber}`,
+          isGatewayMock: true,
+        }
+      : await this.createMidtransSnapTransaction({
+          orderNumber,
+          grossAmount: verifiedPrice,
+          title: orderTitle,
+          contentId: input.contentId,
+          customerEmail: input.customerEmail,
+          customerName: input.customerName,
+        });
 
-    // 5. Insert order record into database
+    // 5. Insert order record into database (or return mock order in simulated test mode)
+    if (input._mockData) {
+      const mockOrder: OttPaymentOrder = {
+        id: `ord_mock_${orderNumber}`,
+        order_number: orderNumber,
+        user_id: input.userId,
+        channel_id: input.channelId,
+        order_type: input.orderType,
+        content_id: input.contentId || null,
+        content_type: input.contentType || null,
+        title: orderTitle,
+        gross_amount: verifiedPrice,
+        currency: 'IDR',
+        status: 'pending',
+        payment_gateway: 'midtrans',
+        payment_method: paymentMethod,
+        gateway_payload: {
+          snap_token: snapResult.snapToken,
+          redirect_url: snapResult.redirectUrl,
+        },
+        entitlement_fulfilled: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      return {
+        order: mockOrder,
+        paymentDetails: {
+          token: snapResult.snapToken,
+          redirectUrl: snapResult.redirectUrl,
+          isGatewayMock: snapResult.isGatewayMock,
+        },
+      };
+    }
+
     const { data: orderData, error: insertErr } = await db
       .from('ott_payment_orders')
       .insert({
