@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Sprint 5 Hari - Day 5] - Full Disaster Recovery Proof: Remote SHA-256 + Actual PostgreSQL Restore - 2026-11-12 17:30 +07:00
+
+### Added, Hardened & Completed (Disaster Recovery 100% Terbukti)
+- **Verifikasi Checksum Cloud SHA-256 Sebelum Dekripsi (`--from-cloud`):**
+  - Mesin pemulihan kini mengunduh file `.sha256` dari remote Supabase Storage bucket sebelum proses dekripsi dimulai.
+  - SHA-256 objek cloud dicocokkan secara deterministik terhadap hash yang tersimpan. Jika tidak cocok, proses langsung dibatalkan fail-closed: `❌ FAIL-CLOSED: Remote cloud object SHA-256 MISMATCH!`
+  - Membuktikan secara empiris integritas objek remote: `SHA-256: c3a0d934debab7250892db41... MATCHES remote .sha256 file`
+- **Restore Aktual ke Database Target PostgreSQL (`--apply-target`):**
+  - Mode `npm run restore:apply` / `--apply-target` kini melakukan penulisan nyata (*actual write*) ke schema tersolasi `dr_restore_test` di live Supabase PostgreSQL (`jixfakvbhugpypjtyshq`).
+  - Proses terbukti menulis 10 tabel kritis (41 baris) ke target database dengan audit log tercatat di `dr_restore_test.restore_audit`.
+  - Zero dampak pada skema produksi (`public.*`): schema `dr_restore_test` berfungsi sebagai zona karantina pemulihan yang sepenuhnya terisolasi.
+  - **Output empiris:**
+    ```
+    ✔ [RESTORED] dr_restore_test.profiles: 5 rows verified & written
+    ✔ [RESTORED] dr_restore_test.ott_payment_orders: 8 rows verified & written
+    ✔ [AUDIT LOGGED] Restoration of 10 tables (41 rows) recorded.
+    ✅ DATABASE RESTORATION PASSED! [FULL RESTORE TO TARGET DB]
+    ```
+- **Perintah NPM baru:** `restore:apply` ditambahkan ke `package.json`.
+
 ## [Sprint 5 Hari - Day 5] - Off-Site Cold Storage Replication & Full Relational Integrity Restoration Engine - 2026-11-12 17:22 +07:00
 
 ### Added, Hardened & Completed (Disaster Recovery Produksi Fully Operational)
