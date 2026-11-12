@@ -21,7 +21,12 @@ export const LegalPagesView: React.FC<LegalPagesViewProps> = ({
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
-              onClick={onBack}
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState({}, '', '/');
+                }
+                onBack();
+              }}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-medium border border-slate-700/60 transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
@@ -62,7 +67,12 @@ export const LegalPagesView: React.FC<LegalPagesViewProps> = ({
         {/* Navigation Tabs */}
         <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-8">
           <button
-            onClick={() => setActiveTab('privacy')}
+            onClick={() => {
+              setActiveTab('privacy');
+              if (typeof window !== 'undefined') {
+                window.history.pushState({}, '', '/privacy');
+              }
+            }}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'privacy'
                 ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20'
@@ -73,7 +83,12 @@ export const LegalPagesView: React.FC<LegalPagesViewProps> = ({
             <span>{lang === 'id' ? 'Kebijakan Privasi (Privacy Policy)' : 'Privacy Policy'}</span>
           </button>
           <button
-            onClick={() => setActiveTab('terms')}
+            onClick={() => {
+              setActiveTab('terms');
+              if (typeof window !== 'undefined') {
+                window.history.pushState({}, '', '/terms');
+              }
+            }}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'terms'
                 ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20'

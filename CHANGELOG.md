@@ -3,9 +3,13 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Sprint 5 Hari - Day 5] - Privacy Policy, Terms of Service & Google OAuth Verification Preparation - 2026-11-12 14:15 +07:00
+## [Sprint 5 Hari - Day 5] - Privacy Policy, Terms of Service & Google OAuth Verification Preparation - 2026-11-12 14:28 +07:00
 
 ### Added, Hardened & Completed (Persiapan Verifikasi Google OAuth & Legal Compliance)
+- **Penyempurnaan Navigasi Tautan Legal Semantik (`src/components/landing/LandingPageView.tsx` & `src/components/legal/LegalPagesView.tsx`):**
+  - Mengonversi elemen tautan footer menjadi tautan HTML semantik `<a href="/privacy">` dan `<a href="/terms">` dengan sinkronisasi `window.history.pushState`.
+  - Memastikan mesin pencari, Google OAuth audit bot, dan tautan luar mengenali tautan langsung secara kanonikal, sementara navigasi internal tetap berjalan mulus melalui client-side SPA routing tanpa reload halaman.
+  - Memperbarui tombol tab switcher di dalam `LegalPagesView` agar memperbarui URL bilah peramban secara reaktif (`/privacy` ⟷ `/terms`), serta mengembalikan URL ke `/` saat tombol kembali ke beranda diklik.
 - **Halaman Legalitas Publik & Kepatuhan Kebijakan Pengguna Google (`src/components/legal/LegalPagesView.tsx`):**
   - Menerbitkan halaman **Kebijakan Privasi (Privacy Policy)** dan **Ketentuan Layanan (Terms of Service)** bilingual (Inggris & Indonesia) yang dapat diakses secara publik tanpa wajib login di rute `/privacy` dan `/terms`.
   - Memasukkan klausul wajib Google API Services User Data Policy (*Limited Use Disclosure*):

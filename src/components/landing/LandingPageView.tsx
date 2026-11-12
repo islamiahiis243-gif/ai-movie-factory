@@ -808,18 +808,36 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               Fitur Demo
             </a>
             <span className="text-slate-700">|</span>
-            <button
-              onClick={() => onOpenLegal ? onOpenLegal('privacy') : (window.location.href = '/privacy')}
+            <a
+              href="/privacy"
+              onClick={(e) => {
+                if (onOpenLegal) {
+                  e.preventDefault();
+                  if (typeof window !== 'undefined') {
+                    window.history.pushState({}, '', '/privacy');
+                  }
+                  onOpenLegal('privacy');
+                }
+              }}
               className="hover:text-amber-400 transition-colors cursor-pointer"
             >
               Kebijakan Privasi (Privacy)
-            </button>
-            <button
-              onClick={() => onOpenLegal ? onOpenLegal('terms') : (window.location.href = '/terms')}
+            </a>
+            <a
+              href="/terms"
+              onClick={(e) => {
+                if (onOpenLegal) {
+                  e.preventDefault();
+                  if (typeof window !== 'undefined') {
+                    window.history.pushState({}, '', '/terms');
+                  }
+                  onOpenLegal('terms');
+                }
+              }}
               className="hover:text-amber-400 transition-colors cursor-pointer"
             >
               Ketentuan Layanan (Terms)
-            </button>
+            </a>
             <span className="text-slate-700">|</span>
             <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
