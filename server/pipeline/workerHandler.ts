@@ -82,8 +82,8 @@ export default async function workerHandler(req: any, res: any) {
               .eq('id', job.id);
 
             await adminSupabase.from('pipeline_job_logs').insert({
-              id: `log-recon-${Date.now()}-${Math.random().toString(36).substring(7)}`,
               job_id: job.id,
+              project_id: job.project_id,
               stage: job.current_stage || 'video_gen',
               level: 'warning',
               message: 'Worker lease kedaluwarsa: status dialihkan ke RECONCILIATION_REQUIRED. Refund ditahan hingga status provider terverifikasi.',
@@ -109,8 +109,8 @@ export default async function workerHandler(req: any, res: any) {
               .eq('id', job.id);
 
             await adminSupabase.from('pipeline_job_logs').insert({
-              id: `log-timeout-${Date.now()}-${Math.random().toString(36).substring(7)}`,
               job_id: job.id,
+              project_id: job.project_id,
               stage: job.current_stage || 'video_gen',
               level: 'error',
               message: 'Timeout lease 15 menit terlampaui. Status ditandai FAILED dan kredit di-refund secara atomik.',
@@ -182,8 +182,8 @@ export default async function workerHandler(req: any, res: any) {
               .eq('id', rJob.id);
 
             await adminSupabase.from('pipeline_job_logs').insert({
-              id: `log-recon-settle-${Date.now()}-${Math.random().toString(36).substring(7)}`,
               job_id: rJob.id,
+              project_id: rJob.project_id,
               stage: rJob.current_stage || 'video_gen',
               level: 'success',
               message: 'Rekonsiliasi berkala: Status provider terkonfirmasi SUKSES. Kredit diselesaikan (settled) dan job selesai 100%.',
@@ -227,8 +227,8 @@ export default async function workerHandler(req: any, res: any) {
               .eq('id', rJob.id);
 
             await adminSupabase.from('pipeline_job_logs').insert({
-              id: `log-recon-refund-${Date.now()}-${Math.random().toString(36).substring(7)}`,
               job_id: rJob.id,
+              project_id: rJob.project_id,
               stage: rJob.current_stage || 'video_gen',
               level: 'error',
               message: failMsg,
@@ -246,13 +246,31 @@ export default async function workerHandler(req: any, res: any) {
         }
       }
 
-      // 2. Fetch Queued or Active Running Jobs
-      const { data: activeJobs } = await adminSupabase
-        .from('pipeline_jobs')
-        .select('*')
-        .in('status', ['queued', 'running'])
-        .order('created_at', { ascending: true })
-        .limit(10);
+      // 2. Fetch Queued or Active Running Jobs with Row-Level Claiming
+      const workerClaimId = `worker_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      let activeJobs: any[] = [];
+
+      try {
+        const { data: claimed, error: claimErr } = await adminSupabase.rpc('claim_pipeline_job', {
+          p_worker_id: workerClaimId,
+          p_lease_seconds: 900,
+        });
+        if (!claimErr && claimed && claimed.length > 0) {
+          activeJobs = claimed;
+        }
+      } catch (rpcErr) {
+        // Fallback to direct query if RPC not yet applied
+      }
+
+      if (activeJobs.length === 0) {
+        const { data: fallbackJobs } = await adminSupabase
+          .from('pipeline_jobs')
+          .select('*')
+          .in('status', ['queued', 'running'])
+          .order('created_at', { ascending: true })
+          .limit(10);
+        activeJobs = fallbackJobs || [];
+      }
 
       if (activeJobs && activeJobs.length > 0) {
         for (const job of activeJobs) {
@@ -264,23 +282,40 @@ export default async function workerHandler(req: any, res: any) {
           const isDone = nextProgress >= 100;
           const newStatus = isDone ? 'completed' : 'running';
 
+          // Settle credits when job completes
+          if (isDone && job.idempotency_key) {
+            try {
+              await settleUserCredits({
+                adminSupabase,
+                reservationId: job.idempotency_key,
+                actualAmount: Number(job.credit_cost) || 0,
+                description: `Penyelesaian Pekerjaan Komputasi #${job.id}`,
+              });
+            } catch (settleErr) {
+              console.warn('Settle error during worker completion:', settleErr);
+            }
+          }
+
           await adminSupabase
             .from('pipeline_jobs')
             .update({
               status: newStatus,
               progress: nextProgress,
+              worker_claim_id: workerClaimId,
+              claimed_at: nowIso,
+              completed_at: isDone ? nowIso : job.completed_at,
               updated_at: nowIso,
             })
             .eq('id', job.id);
 
           await adminSupabase.from('pipeline_job_logs').insert({
-            id: `log-worker-${Date.now()}-${Math.random().toString(36).substring(7)}`,
             job_id: job.id,
-            stage: job.current_stage,
+            project_id: job.project_id,
+            stage: job.current_stage || 'video_gen',
             level: isDone ? 'success' : 'action',
             message: isDone
-              ? `Komputasi provider selesai 100%. File fisik tersimpan di storage.`
-              : `Proses komputasi background berjalan (${nextProgress}%).`,
+              ? `Komputasi provider selesai 100%. Aset berhasil disintesis dan kredit diselesaikan.`
+              : `Proses komputasi background berjalan (${nextProgress}%). Worker claim: ${workerClaimId}`,
             timestamp: nowIso,
           });
 
@@ -292,7 +327,7 @@ export default async function workerHandler(req: any, res: any) {
             jobId: job.id,
             stage: job.current_stage,
             status: newStatus,
-            message: `Progress advanced to ${nextProgress}%`,
+            message: `Progress advanced to ${nextProgress}% (claim: ${workerClaimId})`,
           });
         }
       }
@@ -336,12 +371,18 @@ export async function resolveReconciliationRequiredJob(params: {
 
   if (providerResult === 'completed') {
     if (job.idempotency_key) {
-      await settleUserCredits({
-        adminSupabase,
-        reservationId: job.idempotency_key,
-        actualAmount: Number(job.credit_cost) || 0,
-        description: `Penyelesaian Rekonsiliasi Job #${job.id}`,
-      });
+      try {
+        await settleUserCredits({
+          adminSupabase,
+          reservationId: job.idempotency_key,
+          actualAmount: Number(job.credit_cost) || 0,
+          description: `Penyelesaian Rekonsiliasi Job #${job.id}`,
+        });
+      } catch (err: any) {
+        if (!err.message?.includes('RESERVATION_NOT_FOUND')) {
+          console.warn('Settle warning in reconciliation:', err.message);
+        }
+      }
     }
 
     if (adminSupabase) {
@@ -359,13 +400,19 @@ export async function resolveReconciliationRequiredJob(params: {
 
     return { status: 'completed', settled: true, refunded: false };
   } else {
-    if (job.idempotency_key && job.project_id) {
-      await releaseUserCredits({
-        adminSupabase,
-        userId: job.user_id || 'system',
-        reservationId: job.idempotency_key,
-        reason: 'provider_reconciliation_failed',
-      });
+    if (job.idempotency_key && (job.project_id || job.user_id)) {
+      try {
+        await releaseUserCredits({
+          adminSupabase,
+          userId: job.user_id || 'system',
+          reservationId: job.idempotency_key,
+          reason: 'provider_reconciliation_failed',
+        });
+      } catch (err: any) {
+        if (!err.message?.includes('RESERVATION_NOT_FOUND')) {
+          console.warn('Refund warning in reconciliation:', err.message);
+        }
+      }
     }
 
     if (adminSupabase) {

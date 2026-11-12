@@ -2430,16 +2430,26 @@ export async function addJobLog(
   jobId: string,
   logData: Omit<PipelineJobLog, 'id' | 'timestamp'>
 ): Promise<{ data: PipelineJobLog; error: string | null }> {
+  const newLogId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined;
   const newLog: PipelineJobLog = {
     ...logData,
-    id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id: newLogId || `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     job_id: jobId,
     timestamp: new Date().toISOString()
   };
 
   if (isSupabaseConfigured && supabase) {
     try {
-      await supabase.from('pipeline_job_logs').insert(newLog);
+      const insertPayload: any = {
+        job_id: jobId,
+        project_id: logData.project_id,
+        stage: logData.stage,
+        level: logData.level || 'info',
+        message: logData.message,
+        metadata: logData.metadata || {},
+      };
+      if (newLogId) insertPayload.id = newLogId;
+      await supabase.from('pipeline_job_logs').insert(insertPayload);
     } catch (err) {
       console.warn('Supabase addJobLog error:', err);
     }

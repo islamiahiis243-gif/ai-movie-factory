@@ -703,9 +703,14 @@ export interface PipelineJob {
   generated_asset_ids: string[];
   credit_cost: number;
   error_message?: string;
+  user_id?: string;
   retry_count?: number;
   max_retries?: number;
   idempotency_key?: string;
+  worker_claim_id?: string;
+  claimed_at?: string;
+  metadata?: Record<string, any>;
+  execution_payload?: Record<string, any>;
   is_approved: boolean;
   approved_by?: string;
   approved_at?: string;

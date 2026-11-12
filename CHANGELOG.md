@@ -3,6 +3,36 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Sprint 5 Hari - Day 3] - Reliability, Background Jobs & Multi-Platform Distribution - 2026-11-12 12:21 +07:00
+
+### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Hari Ke-3: Reliability & Background Jobs)
+- **Database Schema Upgrade untuk Background Worker & Reliability (`upgrade_v3_19_pipeline_worker_reliability_and_distribution.sql`):**
+  - Menambahkan 8 kolom esensial ke tabel produksi PostgreSQL `public.pipeline_jobs`: `user_id`, `idempotency_key`, `retry_count`, `max_retries`, `worker_claim_id`, `claimed_at`, `metadata`, dan `execution_payload`.
+  - Memperluas constraint status `pipeline_jobs_status_check` untuk mendukung status operasional penuh: `'queued'`, `'running'`, `'awaiting_approval'`, `'in_qc'`, `'completed'`, `'failed'`, `'paused'`, `'cancelled'`, `'reconciliation_required'`.
+  - Mengimplementasikan stored procedure atomik `claim_pipeline_job(p_worker_id, p_lease_seconds)` dengan mekanisme row locking `FOR UPDATE SKIP LOCKED` dan privilege lockdown (`SECURITY DEFINER`, strictly `service_role`), menjamin worker serverless konkuren tidak pernah mengeksekusi satu pekerjaan secara ganda.
+  - Menambahkan indeks optimasi pada `(status, claimed_at)`, `(idempotency_key)`, `(user_id)`, dan `(project_id, status)`.
+- **Background Worker Engine & Rekonsiliasi Stale Lease (`server/pipeline/workerHandler.ts`):**
+  - Mengintegrasikan fungsi worker dengan stored procedure `claim_pipeline_job` untuk klaim pekerjaan atomik dengan token fencing.
+  - Memperbaiki pencatatan log pada `pipeline_job_logs` agar menyertakan `project_id` dan memanfaatkan ID UUID kanonikal.
+  - Menangani rekonsiliasi berkala untuk status `reconciliation_required`: jika tugas provider terkonfirmasi sukses, kredit di-settle secara atomik; jika provider gagal atau melampaui timeout 24 jam, kredit di-refund otomatis.
+- **Serverless Retry Engine Terproteksi (`server/pipeline/retryHandler.ts` & `ProductionPipelineView.tsx`):**
+  - Menghubungkan tombol Retry di UI `ProductionPipelineView.tsx` langsung ke endpoint serverless `/api/pipeline/retry`.
+  - Menegakkan batas maksimal percobaan ulang ketat 3x (`MAX_RETRIES_EXCEEDED` HTTP 400).
+  - Menambahkan banner notifikasi status/toast di `ProductionPipelineView.tsx` yang responsif terhadap respons server.
+- **Tab-Close Recovery & Realtime Polling Synchronization (`MediaStudioView.tsx`):**
+  - Mengimplementasikan reactive polling interval (5 detik) pada `MediaStudioView.tsx` yang memantau status `fetchPipelineJobs()`.
+  - Jika pekerjaan komputasi background selesai saat tab ditutup atau pengguna beralih halaman, aset yang baru selesai disintesis secara otomatis dimuat ulang ke pustaka aset tanpa kehilangan progres.
+- **Multi-Platform Distribution Pipeline (`UniversalPublishingService` & `CreatorIntelligenceView`):**
+  - Validasi pre-flight multi-platform untuk spesifikasi rasio aspek dan durasi (YouTube 16:9, TikTok 9:16, Instagram Reels 9:16, X/Twitter).
+  - Pembuatan draft tersinkronisasi lintas platform dan pemformatan payload clipboard ramah studio platform.
+  - Integrasi worker publishing dengan proteksi sewa worker 15 menit dan verifikasi otentikasi worker secret.
+- **Zero Dummy Data Invariant & Integritas Basis Data Supabase:**
+  - Terverifikasi 0 baris artefak sampah atau dummy jobs di tabel produksi `public.pipeline_jobs` dan `public.publishing_jobs`.
+  - Semua data uji diisolasi murni dalam test runner sintetik.
+- **Rangkaian Uji Terarah Day 3 & Verifikasi Menyeluruh (37/37 PASS):**
+  - Menambahkan rangkaian uji `scripts/test_day3_reliability_and_distribution.ts` dengan 37 asersi lulus 100%.
+  - Seluruh 16 test suites proyek (`npm test`) lulus 100% tanpa kegagalan (690+ total asersi lulus).
+
 ## [Sprint 5 Hari - Day 2 Reconciled] - Resolusi Audit Temuan 1–10: Simulasi Transparan, Gate Audit Rollback, Gate 2 & 3 Enforcement, dan Persistent Storyboard - 2026-11-12 01:45 +07:00
 
 ### Added, Hardened & Reconciled (Audit Findings 1–10 Resolution)

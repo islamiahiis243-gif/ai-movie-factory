@@ -104,14 +104,35 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
   useEffect(() => {
     if (!activeProject) return;
     let isMounted = true;
-    fetchPipelineJobs(activeProject.id).then((res) => {
-      if (isMounted && res.data) {
-        const inFlight = res.data.filter((j) => j.status === 'running' || j.status === 'queued');
-        setActivePipelineJobs(inFlight);
+
+    const syncJobs = async () => {
+      try {
+        const res = await fetchPipelineJobs(activeProject.id);
+        if (isMounted && res.data) {
+          const inFlight = res.data.filter((j) => j.status === 'running' || j.status === 'queued');
+          setActivePipelineJobs(inFlight);
+
+          // If active jobs recently completed with new assets, refresh library
+          const recentlyCompleted = res.data.filter(
+            (j) => j.status === 'completed' && j.generated_asset_ids && j.generated_asset_ids.length > 0
+          );
+          if (recentlyCompleted.length > 0) {
+            const aRes = await fetchMediaAssets(activeProject.id);
+            if (isMounted && aRes.data && aRes.data.length > 0) {
+              setAssets(aRes.data);
+            }
+          }
+        }
+      } catch (pollErr) {
+        // Silent recovery on network jitter
       }
-    });
+    };
+
+    syncJobs();
+    const pollTimer = setInterval(syncJobs, 5000);
     return () => {
       isMounted = false;
+      clearInterval(pollTimer);
     };
   }, [activeProject?.id]);
   const [costPreviewConfig, setCostPreviewConfig] = useState<{
@@ -347,6 +368,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
     // 1. Enqueue job into Pipeline Orchestrator (SSOT TC-WF-09 & TC-WF-10)
     const { data: pipelineJob } = await createPipelineJob(activeProject.id, {
       project_id: activeProject.id,
+      user_id: activeProject.user_id,
       scene_id: imgSceneId || undefined,
       job_title: `Keyframe Still: ${imgName || `Gambar #${assets.length + 1}`} (${imgModel})`,
       current_stage: 'image_gen',
@@ -360,6 +382,19 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
       retry_count: 0,
       max_retries: 3,
       is_approved: false,
+      metadata: {
+        generation_params: {
+          aspect_ratio: imgAspectRatio,
+          resolution: imgResolution,
+          seed: imgSeed,
+        },
+      },
+      execution_payload: {
+        prompt: imgPrompt,
+        model: imgModel,
+        asset_type: 'image',
+        subtype: imgSubtype,
+      },
       started_at: now,
     });
 
@@ -574,6 +609,7 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
     // 1. Enqueue job into Pipeline Orchestrator (SSOT TC-WF-09 & TC-WF-10)
     const { data: pipelineJob } = await createPipelineJob(activeProject.id, {
       project_id: activeProject.id,
+      user_id: activeProject.user_id,
       scene_id: sourceAsset?.scene_id,
       job_title: `Render Video: ${vidName || `Klip #${assets.length + 1}`} (${vidModel})`,
       current_stage: 'video_gen',
@@ -587,6 +623,23 @@ export const MediaStudioView: React.FC<MediaStudioViewProps> = ({
       retry_count: 0,
       max_retries: 3,
       is_approved: false,
+      metadata: {
+        generation_params: {
+          aspect_ratio: '16:9',
+          resolution: '1080p',
+          duration_seconds: vidDuration,
+          camera_motion: vidCameraMotion,
+          motion_intensity: vidMotionBucket,
+          reference_image_url: sourceAsset?.file_url,
+        },
+      },
+      execution_payload: {
+        prompt: vidPrompt,
+        model: vidModel,
+        provider: providerId,
+        asset_type: 'video',
+        subtype: vidSubtype,
+      },
       started_at: now,
     });
 

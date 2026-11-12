@@ -53,7 +53,8 @@ import {
   createExportPackage,
   fetchProjectEpisodes,
   fetchScenes,
-  fetchScreenplayBlocks
+  fetchScreenplayBlocks,
+  supabase
 } from '../../lib/supabase';
 import {
   PIPELINE_STAGE_DEFINITIONS,
@@ -99,6 +100,15 @@ export const ProductionPipelineView: React.FC<ProductionPipelineViewProps> = ({
 
   // Subtitle Preview Modal
   const [previewSubtitleContent, setPreviewSubtitleContent] = useState<string | null>(null);
+
+  // Toast Notification State
+  const [toastNotification, setToastNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToastNotification({ message, type });
+    setTimeout(() => {
+      setToastNotification((prev) => (prev?.message === message ? null : prev));
+    }, 5000);
+  };
 
   // Scene Runner State
   const [runnerEpisodeId, setRunnerEpisodeId] = useState<string>('');
@@ -261,8 +271,39 @@ export const ProductionPipelineView: React.FC<ProductionPipelineViewProps> = ({
     const maxRetries = targetJob.max_retries || 3;
 
     if (currentRetries >= maxRetries) {
-      onShowToast(`Batas maksimal percobaan ulang (${maxRetries}x) telah tercapai untuk job ini.`, 'error');
+      showToast(`Batas maksimal percobaan ulang (${maxRetries}x) telah tercapai untuk job ini.`, 'error');
       return;
+    }
+
+    try {
+      const session = (await supabase.auth.getSession()).data?.session;
+      const res = await fetch('/api/pipeline/retry', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': session?.access_token ? `Bearer ${session.access_token}` : '',
+        },
+        body: JSON.stringify({
+          jobId,
+          idempotencyKey: `retry_${jobId}_${Date.now()}`,
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const nextRetry = json.newRetryCount || currentRetries + 1;
+        setJobs(prev => prev.map(j => (j.id === jobId ? { ...j, status: 'running', progress: 25, retry_count: nextRetry, error_message: undefined } : j)));
+        showToast(json.message || `Job #${jobId.slice(0, 8)} dijadwalkan ulang untuk eksekusi (Retry ${nextRetry}/${maxRetries})!`, 'success');
+        return;
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        if (errJson.error === 'MAX_RETRIES_EXCEEDED') {
+          showToast(errJson.message || `Batas maksimal retry (${maxRetries}x) tercapai.`, 'error');
+          return;
+        }
+      }
+    } catch (apiErr) {
+      console.warn('API retry failed, falling back to direct db update:', apiErr);
     }
 
     const nextRetry = currentRetries + 1;
@@ -282,7 +323,7 @@ export const ProductionPipelineView: React.FC<ProductionPipelineViewProps> = ({
     });
 
     setJobs(prev => prev.map(j => (j.id === jobId ? { ...j, status: 'running', progress: 25, retry_count: nextRetry, error_message: undefined } : j)));
-    onShowToast(`Job #${jobId.slice(0, 8)} dijadwalkan ulang untuk eksekusi (Retry ${nextRetry}/${maxRetries})!`, 'success');
+    showToast(`Job #${jobId.slice(0, 8)} dijadwalkan ulang untuk eksekusi (Retry ${nextRetry}/${maxRetries})!`, 'success');
   };
 
   const handleApprove = async (jobId: string) => {
@@ -468,6 +509,35 @@ export const ProductionPipelineView: React.FC<ProductionPipelineViewProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Toast / Notification Banner */}
+      {toastNotification && (
+        <div
+          className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
+            toastNotification.type === 'error'
+              ? 'bg-rose-950/60 border-rose-500/50 text-rose-200'
+              : toastNotification.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+              : 'bg-amber-950/60 border-amber-500/50 text-amber-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                toastNotification.type === 'error'
+                  ? 'bg-rose-400'
+                  : toastNotification.type === 'success'
+                  ? 'bg-emerald-400'
+                  : 'bg-amber-400'
+              } animate-pulse`}
+            />
+            <span>{toastNotification.message}</span>
+          </div>
+          <button onClick={() => setToastNotification(null)} className="text-slate-400 hover:text-white ml-4 text-sm font-bold">
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Top Header & Telemetry Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
