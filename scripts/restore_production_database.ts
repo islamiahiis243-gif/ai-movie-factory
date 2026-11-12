@@ -156,7 +156,7 @@ async function applyRestoreToTargetDatabase(
   manifest: any,
   source: string
 ): Promise<void> {
-  console.log('\\n🗄️  Applying actual row restore to isolated schema dr_restore_test...');
+  console.log('\n🗄️  Applying actual row restore to isolated schema dr_restore_test...');
   console.log('   Production schema public is never modified.');
 
   const expectedCounts: Record<string, number> = {};
@@ -207,7 +207,7 @@ async function applyRestoreToTargetDatabase(
     console.log(`  ✔ [ROWS WRITTEN] dr_restore_test.${table}: ${tableWritten} rows`);
   }
 
-  console.log('\\n🔎 Verifying persisted row counts directly inside PostgreSQL...');
+  console.log('\n🔎 Verifying persisted row counts directly inside PostgreSQL...');
   const { data: verifiedCounts, error: verifyError } = await adminClient.rpc('dr_restore_verify_counts', {
     p_expected: expectedCounts,
   });
