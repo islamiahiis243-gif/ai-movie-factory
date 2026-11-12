@@ -3,9 +3,19 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Sprint 5 Hari - Day 5] - Release Candidate Acceptance & SSOT Gelombang II Verification - 2026-11-12 14:02 +07:00
+## [Sprint 5 Hari - Day 5] - Privacy Policy, Terms of Service & Google OAuth Verification Preparation - 2026-11-12 14:15 +07:00
 
-### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Final Release Candidate Accepted)
+### Added, Hardened & Completed (Persiapan Verifikasi Google OAuth & Legal Compliance)
+- **Halaman Legalitas Publik & Kepatuhan Kebijakan Pengguna Google (`src/components/legal/LegalPagesView.tsx`):**
+  - Menerbitkan halaman **Kebijakan Privasi (Privacy Policy)** dan **Ketentuan Layanan (Terms of Service)** bilingual (Inggris & Indonesia) yang dapat diakses secara publik tanpa wajib login di rute `/privacy` dan `/terms`.
+  - Memasukkan klausul wajib Google API Services User Data Policy (*Limited Use Disclosure*):
+    *"AI Movie Factory's use and transfer of information received from Google APIs to any other app will adhere to the Google API Services User Data Policy, including the Limited Use requirements."*
+  - Menegaskan jaminan privasi data: larangan penjualan data pengguna, ketiadaan penargetan iklan pihak ketiga, larangan pelatihan AI umum menggunakan naskah/aset privat pengguna, serta prosedur penghapusan akun permanen dan pencabutan izin via Google Permissions.
+  - Menghubungkan tautan footer pada `LandingPageView.tsx` menuju modal dan halaman legal.
+- **Panduan Operasional & Draf Verifikasi Google Trust & Safety (`docs/04_deployment_and_ops/08_google_oauth_verification_guide.md`):**
+  - Menyusun panduan lengkap pengisian formulir verifikasi OAuth Consent Screen di Google Cloud Console untuk project `ai-movie-factory` (849277677377).
+  - Menyediakan draf teks justifikasi scope sensitif `https://www.googleapis.com/auth/youtube.upload` yang siap disalin langsung ke Google Form.
+  - Merinci panduan pembuatan video demonstrasi YouTube (Unlisted) dan strategi operasional selama masa peninjauan (Testing Mode 100 pengguna & Paket Ekspor Mandiri).
 - **Penerimaan Resmi Release Candidate (RC Day 5 Accepted):**
   - Seluruh rangkaian audit dan pengujian RC Day 5 telah diterima secara formal (*ACCEPTED*) oleh peninjau independen (ChatGPT) dengan konfirmasi sinkronisasi tiga arah (GitHub, Vercel, dan PostgreSQL Supabase).
 - **Rekonsiliasi Lengkap Master Acceptance Test Matrix (TC-WF-01 s.d. TC-WF-16):**

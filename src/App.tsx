@@ -88,6 +88,9 @@ const MarketplaceView = lazy(() =>
 const LandingPageView = lazy(() =>
   import('./components/landing/LandingPageView').then((m) => ({ default: m.LandingPageView }))
 );
+const LegalPagesView = lazy(() =>
+  import('./components/legal/LegalPagesView').then((m) => ({ default: m.LegalPagesView }))
+);
 const ModulePlaceholderView = lazy(() =>
   import('./components/studio/ModulePlaceholderView').then((m) => ({
     default: m.ModulePlaceholderView,
@@ -97,12 +100,17 @@ const ModulePlaceholderView = lazy(() =>
 function StudioApp() {
   const { user, profile, isConfigured, language, t } = useAuth();
 
-  // Navigation tab state: unauthenticated visitors default to landing page
+  // Navigation tab state: unauthenticated visitors default to landing page (or legal pages if path matches)
   const [activeTab, setActiveTab] = useState<string>(() => {
-    if (typeof window !== 'undefined' && window.location.hash) {
-      const hash = window.location.hash.replace('#', '');
-      if (['landing', 'dashboard', 'projects', 'subscription'].includes(hash)) {
-        return hash;
+    if (typeof window !== 'undefined') {
+      const pathname = window.location.pathname.toLowerCase();
+      if (pathname === '/privacy' || pathname === '/privacy-policy') return 'privacy';
+      if (pathname === '/terms' || pathname === '/terms-of-service') return 'terms';
+      if (window.location.hash) {
+        const hash = window.location.hash.replace('#', '');
+        if (['landing', 'dashboard', 'projects', 'subscription', 'privacy', 'terms'].includes(hash)) {
+          return hash;
+        }
       }
     }
     try {
@@ -293,12 +301,12 @@ function StudioApp() {
 
       {/* Main Studio Body with Sidebar & Content Canvas */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Navigation Sidebar: displayed on studio modules, hidden on full-width landing page */}
-        {activeTab !== 'landing' && (
+        {/* Navigation Sidebar: displayed on studio modules, hidden on full-width landing & legal pages */}
+        {activeTab !== 'landing' && activeTab !== 'privacy' && activeTab !== 'terms' && (
           <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
         )}
 
-        {/* Dynamic Studio Canvas or Full-Width Landing Page */}
+        {/* Dynamic Studio Canvas or Full-Width Landing / Legal Pages */}
         <main className="flex-1 overflow-y-auto bg-[#0B0F17] relative">
           <Suspense
             fallback={
@@ -317,6 +325,14 @@ function StudioApp() {
               onOpenSubscriptionModal={(packageId) => {
                 setActiveTab('subscription');
               }}
+              onOpenLegal={(legalTab) => setActiveTab(legalTab)}
+            />
+          )}
+
+          {(activeTab === 'privacy' || activeTab === 'terms') && (
+            <LegalPagesView
+              initialTab={activeTab === 'terms' ? 'terms' : 'privacy'}
+              onBack={() => setActiveTab('landing')}
             />
           )}
 
@@ -614,7 +630,9 @@ function StudioApp() {
             activeTab !== 'creator_intelligence' &&
             activeTab !== 'ott_catalog' &&
             activeTab !== 'settings' &&
-            activeTab !== 'landing' && (
+            activeTab !== 'landing' &&
+            activeTab !== 'privacy' &&
+            activeTab !== 'terms' && (
               <ModulePlaceholderView
                 moduleId={activeTab}
                 projects={projects}

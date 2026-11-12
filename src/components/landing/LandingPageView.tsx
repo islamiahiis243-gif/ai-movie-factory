@@ -43,12 +43,14 @@ interface LandingPageViewProps {
   onEnterStudio: () => void;
   onOpenAuth: () => void;
   onOpenSubscriptionModal?: (packageId: string) => void;
+  onOpenLegal?: (tab: 'privacy' | 'terms') => void;
 }
 
 export const LandingPageView: React.FC<LandingPageViewProps> = ({
   onEnterStudio,
   onOpenAuth,
   onOpenSubscriptionModal,
+  onOpenLegal,
 }) => {
   const { user, profile, currency, language } = useAuth();
   const [selectedDemoTab, setSelectedDemoTab] = useState<'cyberpunk' | 'nusantara' | 'anime' | 'thriller'>('cyberpunk');
@@ -798,14 +800,27 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <div className="text-xs text-slate-500">
             © {new Date().getFullYear()} AI Movie Factory. Seluruh Hak Cipta Dilindungi Undang-Undang. All Rights Reserved.
           </div>
-          <div className="flex items-center gap-6 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-slate-400">
             <button onClick={user ? onEnterStudio : onOpenAuth} className="hover:text-white cursor-pointer">
               {user ? 'Studio Cockpit' : 'Masuk Studio'}
             </button>
             <a href="#interactive-demo" className="hover:text-white">
               Fitur Demo
             </a>
-            <span className="text-slate-600">|</span>
+            <span className="text-slate-700">|</span>
+            <button
+              onClick={() => onOpenLegal ? onOpenLegal('privacy') : (window.location.href = '/privacy')}
+              className="hover:text-amber-400 transition-colors cursor-pointer"
+            >
+              Kebijakan Privasi (Privacy)
+            </button>
+            <button
+              onClick={() => onOpenLegal ? onOpenLegal('terms') : (window.location.href = '/terms')}
+              className="hover:text-amber-400 transition-colors cursor-pointer"
+            >
+              Ketentuan Layanan (Terms)
+            </button>
+            <span className="text-slate-700">|</span>
             <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
               Sistem Operasional (Live)
