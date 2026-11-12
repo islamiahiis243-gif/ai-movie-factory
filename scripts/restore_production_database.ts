@@ -115,11 +115,13 @@ async function downloadAndVerifyFromCloud(): Promise<{ envelope: EncryptedBackup
   }
 
   const latestEnc = fileList.find(f => f.name.endsWith('.enc.json'));
-  const latestSha = fileList.find(f => f.name.endsWith('.enc.sha256'));
-
   if (!latestEnc) throw new Error('No .enc.json backups found in remote storage bucket');
+  const checksumName = latestEnc.name.replace(/\.enc\.json$/, '.enc.sha256');
+  const latestSha = fileList.find(f => f.name === checksumName);
+  if (!latestSha) {
+    throw new Error(`FAIL-CLOSED: Required checksum object is missing for snapshot ${latestEnc.name}`);
+  }
 
-  // Step 1: Download encrypted snapshot
   console.log(`  Downloading remote snapshot: ${latestEnc.name}...`);
   const { data: encBlob, error: encErr } = await adminClient.storage
     .from('database-backups')
@@ -127,32 +129,24 @@ async function downloadAndVerifyFromCloud(): Promise<{ envelope: EncryptedBackup
   if (encErr || !encBlob) throw new Error(`Failed to download remote snapshot: ${encErr?.message}`);
   const rawBytes = Buffer.from(await encBlob.arrayBuffer());
 
-  // Step 2: Verify remote SHA-256 checksum (critical — proves cloud object integrity)
-  if (latestSha) {
-    console.log(`  Downloading remote checksum: ${latestSha.name}...`);
-    const { data: shaBlob, error: shaErr } = await adminClient.storage
-      .from('database-backups')
-      .download(latestSha.name);
+  console.log(`  Downloading matching remote checksum: ${latestSha.name}...`);
+  const { data: shaBlob, error: shaErr } = await adminClient.storage
+    .from('database-backups')
+    .download(latestSha.name);
+  if (shaErr || !shaBlob) throw new Error(`Failed to download remote checksum: ${shaErr?.message}`);
 
-    if (shaErr || !shaBlob) {
-      throw new Error(`Failed to download remote checksum: ${shaErr?.message}`);
-    }
-
-    const shaContent = Buffer.from(await shaBlob.arrayBuffer()).toString('utf-8').trim();
-    const expectedHash = shaContent.split(/\s+/)[0];
-    const actualHash = crypto.createHash('sha256').update(rawBytes).digest('hex');
-
-    if (actualHash !== expectedHash) {
-      throw new Error(
-        `❌ FAIL-CLOSED: Remote cloud object SHA-256 MISMATCH!\n` +
-        `  Expected: ${expectedHash}\n  Got:      ${actualHash}\n` +
-        `  Cloud object is corrupted or tampered. Aborting restoration immediately.`
-      );
-    }
-    console.log(`  ✔ [CLOUD CHECKSUM VERIFIED] SHA-256: ${actualHash.substring(0, 24)}... MATCHES remote .sha256 file`);
-  } else {
-    console.warn('  ⚠️  Remote .sha256 file not found — skipping checksum step (non-fatal for older snapshots).');
+  const shaContent = Buffer.from(await shaBlob.arrayBuffer()).toString('utf-8').trim();
+  const expectedHash = shaContent.split(/\s+/)[0].toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(expectedHash)) {
+    throw new Error('FAIL-CLOSED: Remote SHA-256 checksum file has an invalid format');
   }
+  const actualHash = crypto.createHash('sha256').update(rawBytes).digest('hex');
+  if (actualHash !== expectedHash) {
+    throw new Error(
+      `❌ FAIL-CLOSED: Remote cloud object SHA-256 MISMATCH!\nExpected: ${expectedHash}\nGot: ${actualHash}\nAborting restoration.`
+    );
+  }
+  console.log(`  ✔ [CLOUD CHECKSUM VERIFIED] SHA-256: ${actualHash.substring(0, 24)}... MATCHES ${checksumName}`);
 
   const envelope: EncryptedBackupEnvelope = JSON.parse(rawBytes.toString('utf-8'));
   return { envelope, rawBytes, snapshotName: latestEnc.name };
@@ -162,100 +156,82 @@ async function applyRestoreToTargetDatabase(
   manifest: any,
   source: string
 ): Promise<void> {
-  console.log('\n🗄️  Applying restore to isolated target schema (dr_restore_test)...');
-  console.log('   This schema is a quarantined restore zone — zero impact on production data.');
+  console.log('\\n🗄️  Applying actual row restore to isolated schema dr_restore_test...');
+  console.log('   Production schema public is never modified.');
 
-  const RESTORE_TABLES = ['profiles', 'projects', 'subscriptions', 'credit_transactions',
-    'workspaces', 'workspace_members', 'ott_channels', 'ott_films',
-    'ott_access_passes', 'ott_payment_orders'];
+  const expectedCounts: Record<string, number> = {};
+  for (const table of PROTECTED_TABLES) {
+    const tableData = manifest.tables?.[table];
+    if (!tableData || !Array.isArray(tableData.rows)) {
+      throw new Error(`FAIL-CLOSED: Snapshot is missing table payload for ${table}`);
+    }
+    const declaredCount = Number(tableData.count);
+    if (!Number.isInteger(declaredCount) || declaredCount !== tableData.rows.length) {
+      throw new Error(`FAIL-CLOSED: Snapshot count mismatch for ${table}: declared ${tableData.count}, rows ${tableData.rows.length}`);
+    }
+    expectedCounts[table] = tableData.rows.length;
+  }
+
+  const { error: resetError } = await adminClient.rpc('dr_restore_reset_target');
+  if (resetError) throw new Error(`Failed to clear isolated restore schema: ${resetError.message}`);
 
   let totalWritten = 0;
-  const writeResults: Array<{ table: string; rows: number; status: 'OK' | 'SKIPPED' | 'FAILED' }> = [];
+  let tablesWritten = 0;
+  const CHUNK_SIZE = 250;
 
-  for (const table of RESTORE_TABLES) {
-    const tableData = manifest.tables[table];
-    if (!tableData || tableData.rows.length === 0) {
-      writeResults.push({ table, rows: 0, status: 'SKIPPED' });
-      console.log(`  ~ [SKIP] dr_restore_test.${table}: 0 rows (empty in snapshot)`);
-      continue;
-    }
+  for (const table of PROTECTED_TABLES) {
+    const rows: any[] = manifest.tables[table].rows;
+    let tableWritten = 0;
 
-    // Write rows into the audit restore table as JSONB records for schema-agnostic verification
-    const { error: insertErr } = await adminClient
-      .from('dr_restore_test.restore_audit')
-      .select('id')
-      .limit(1); // connectivity check
-
-    // We use execute_sql via RPC to do a schema-isolated upsert
-    // Insert restore audit record proving each table's data can be written
-    const auditRow = {
-      snapshot_table: table,
-      row_count: tableData.rows.length,
-      first_row_id: tableData.rows[0]?.id || null,
-      restored_from: source,
-      verified_at: new Date().toISOString(),
-    };
-
-    // Write a serialized JSON blob of the first 5 rows as proof-of-restore evidence
-    const { error: writeErr } = await adminClient
-      .rpc('upsert_dr_restore_evidence', {
+    for (let offset = 0; offset < rows.length; offset += CHUNK_SIZE) {
+      const batch = rows.slice(offset, offset + CHUNK_SIZE);
+      const { data, error } = await adminClient.rpc('dr_restore_write_table', {
         p_table_name: table,
-        p_row_count: tableData.rows.length,
-        p_sample_rows: JSON.stringify(tableData.rows.slice(0, 5)),
-        p_source: source,
+        p_rows: batch,
       });
-
-    if (writeErr) {
-      // RPC may not exist yet — fall back to direct insert into audit table
-      const { error: directErr } = await adminClient
-        .schema('dr_restore_test' as any)
-        .from('restore_audit' as any)
-        .upsert({
-          restored_at: new Date().toISOString(),
-          snapshot_timestamp: manifest.timestamp,
-          tables_restored: 1,
-          total_rows_restored: tableData.rows.length,
-          checksum_verified: true,
-          source: `${source} | table: ${table}`,
-          status: 'SUCCESS',
-        });
-
-      if (directErr && !directErr.message.includes('schema')) {
-        writeResults.push({ table, rows: tableData.rows.length, status: 'FAILED' });
-        console.error(`  ❌ [FAIL] Write to dr_restore_test for table ${table}: ${directErr.message}`);
-        continue;
+      if (error) {
+        throw new Error(`Restore write failed for ${table} at row offset ${offset}: ${error.message}`);
       }
+      const inserted = Number(data);
+      if (!Number.isInteger(inserted) || inserted !== batch.length) {
+        throw new Error(`FAIL-CLOSED: RPC row count mismatch for ${table}: expected ${batch.length}, inserted ${String(data)}`);
+      }
+      tableWritten += inserted;
     }
 
-    totalWritten += tableData.rows.length;
-    writeResults.push({ table, rows: tableData.rows.length, status: 'OK' });
-    console.log(`  ✔ [RESTORED] dr_restore_test.${table}: ${tableData.rows.length} rows verified & written`);
+    if (tableWritten !== rows.length) {
+      throw new Error(`FAIL-CLOSED: Table ${table} restore mismatch: expected ${rows.length}, wrote ${tableWritten}`);
+    }
+    totalWritten += tableWritten;
+    tablesWritten++;
+    console.log(`  ✔ [ROWS WRITTEN] dr_restore_test.${table}: ${tableWritten} rows`);
   }
 
-  // Write master audit record
-  const failedTables = writeResults.filter(r => r.status === 'FAILED');
-  if (failedTables.length > 0) {
-    throw new Error(`Restore apply failed for ${failedTables.length} table(s): ${failedTables.map(t => t.table).join(', ')}`);
+  console.log('\\n🔎 Verifying persisted row counts directly inside PostgreSQL...');
+  const { data: verifiedCounts, error: verifyError } = await adminClient.rpc('dr_restore_verify_counts', {
+    p_expected: expectedCounts,
+  });
+  if (verifyError) throw new Error(`Post-restore PostgreSQL count verification failed: ${verifyError.message}`);
+  for (const table of PROTECTED_TABLES) {
+    const actual = Number((verifiedCounts as Record<string, unknown>)?.[table]);
+    if (actual !== expectedCounts[table]) {
+      throw new Error(`FAIL-CLOSED: Persisted count mismatch for ${table}: expected ${expectedCounts[table]}, got ${actual}`);
+    }
   }
 
-  console.log(`\n  ✔ [AUDIT] Writing master restore audit log to dr_restore_test.restore_audit...`);
-  const { error: auditErr } = await adminClient
-    .from('dr_restore_test.restore_audit' as any)
-    .insert({
-      snapshot_timestamp: manifest.timestamp,
-      tables_restored: writeResults.filter(r => r.status === 'OK').length,
-      total_rows_restored: totalWritten,
-      checksum_verified: true,
-      source,
-      status: 'SUCCESS',
-    });
-
-  if (auditErr && !auditErr.message.includes('schema')) {
-    // Schema-qualified table names have limited SDK support; use raw SQL path
-    console.warn(`  ⚠️  Audit table SDK insert limited (schema-qualified) — restore data verified in memory.`);
+  const { data: auditId, error: auditError } = await adminClient.rpc('dr_restore_write_audit', {
+    p_snapshot_timestamp: String(manifest.timestamp),
+    p_tables_restored: tablesWritten,
+    p_total_rows_restored: totalWritten,
+    p_checksum_verified: true,
+    p_source: source,
+  });
+  if (auditError || auditId === null || auditId === undefined) {
+    throw new Error(`Restore completed but audit record could not be persisted: ${auditError?.message || 'missing audit id'}`);
   }
 
-  console.log(`  ✔ [AUDIT LOGGED] Restoration of ${writeResults.filter(r => r.status === 'OK').length} tables (${totalWritten} rows) recorded.`);
+  console.log(`  ✔ [POSTGRES VERIFIED] ${tablesWritten}/${PROTECTED_TABLES.length} tables; ${totalWritten} rows`);
+  console.log(`  ✔ [AUDIT PERSISTED] dr_restore_test.restore_audit id=${auditId}`);
 }
 
 async function runRestore() {
