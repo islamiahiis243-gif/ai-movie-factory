@@ -1,7 +1,8 @@
 /**
- * AI MOVIE FACTORY — AUTOMATED PRODUCTION DATABASE BACKUP ENGINE
+ * AI MOVIE FACTORY — HARDENED PRODUCTION DATABASE BACKUP ENGINE
  * Target: Live Supabase PostgreSQL (jixfakvbhugpypjtyshq)
- * Purpose: Independent, zero-cost production data protection and recovery snapshot.
+ * Security: AES-256-GCM Authenticated Encryption with PBKDF2 Key Derivation
+ * Reliability: Fail-Closed Strict Policy, Chunked Pagination, Full Post-Write Verification
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -10,13 +11,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
+import { fileURLToPath } from 'url';
+
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://jixfakvbhugpypjtyshq.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const encryptionSecret = process.env.BACKUP_ENCRYPTION_KEY || serviceRoleKey;
 
 if (!serviceRoleKey) {
-  console.error('❌ Error: SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY must be provided.');
+  console.error('❌ FATAL: SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY is required.');
+  process.exit(1);
+}
+
+if (!encryptionSecret) {
+  console.error('❌ FATAL: Encryption secret cannot be derived. Provide BACKUP_ENCRYPTION_KEY or SUPABASE_SECRET_KEY.');
   process.exit(1);
 }
 
@@ -24,7 +35,7 @@ const adminClient = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false },
 });
 
-const PROTECTED_TABLES = [
+export const PROTECTED_TABLES = [
   'profiles',
   'projects',
   'project_settings',
@@ -72,11 +83,62 @@ const PROTECTED_TABLES = [
   'ott_transcoding_jobs',
 ];
 
+export interface EncryptedBackupEnvelope {
+  version: '2.0-hardened';
+  algorithm: 'aes-256-gcm';
+  keyDerivation: 'pbkdf2-sha256-100000';
+  timestamp: string;
+  project: string;
+  tablesCount: number;
+  totalRows: number;
+  saltHex: string;
+  ivHex: string;
+  authTagHex: string;
+  ciphertextBase64: string;
+}
+
+export function encryptPayload(plaintext: string, secret: string): {
+  saltHex: string;
+  ivHex: string;
+  authTagHex: string;
+  ciphertextBase64: string;
+} {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12); // Standard 96-bit IV for AES-GCM
+  const key = crypto.pbkdf2Sync(secret, salt, 100_000, 32, 'sha256');
+
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return {
+    saltHex: salt.toString('hex'),
+    ivHex: iv.toString('hex'),
+    authTagHex: authTag.toString('hex'),
+    ciphertextBase64: encrypted.toString('base64'),
+  };
+}
+
+export function decryptPayload(envelope: EncryptedBackupEnvelope, secret: string): any {
+  const salt = Buffer.from(envelope.saltHex, 'hex');
+  const iv = Buffer.from(envelope.ivHex, 'hex');
+  const authTag = Buffer.from(envelope.authTagHex, 'hex');
+  const ciphertext = Buffer.from(envelope.ciphertextBase64, 'base64');
+
+  const key = crypto.pbkdf2Sync(secret, salt, 100_000, 32, 'sha256');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return JSON.parse(decrypted.toString('utf-8'));
+}
+
 async function runBackup() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   console.log('========================================================================');
-  console.log('  AI MOVIE FACTORY — PRODUCTION DATABASE BACKUP ENGINE');
+  console.log('  AI MOVIE FACTORY — HARDENED PRODUCTION DATABASE BACKUP ENGINE');
   console.log(`  Target: ${supabaseUrl}`);
+  console.log(`  Mode: Fail-Closed Strict | AES-256-GCM Authenticated Encryption`);
   console.log(`  Timestamp: ${timestamp}`);
   console.log('========================================================================\n');
 
@@ -85,7 +147,7 @@ async function runBackup() {
     fs.mkdirSync(backupDir, { recursive: true });
   }
 
-  const backupManifest: {
+  const manifest: {
     project: string;
     timestamp: string;
     tablesCount: number;
@@ -98,51 +160,120 @@ async function runBackup() {
   };
 
   let totalRowsCaptured = 0;
+  const CHUNK_SIZE = 1000;
 
   for (const table of PROTECTED_TABLES) {
-    try {
+    let tableRows: any[] = [];
+    let page = 0;
+    let expectedExactCount: number | null = null;
+
+    while (true) {
+      const from = page * CHUNK_SIZE;
+      const to = from + CHUNK_SIZE - 1;
+
       const { data, error, count } = await adminClient
         .from(table)
-        .select('*', { count: 'exact' });
+        .select('*', { count: page === 0 ? 'exact' : undefined })
+        .range(from, to);
 
       if (error) {
-        console.warn(`  ⚠️ Warning: Unable to query table "${table}": ${error.message}`);
-        backupManifest.tables[table] = { count: 0, rows: [] };
-      } else {
-        const rowCount = data?.length || 0;
-        totalRowsCaptured += rowCount;
-        backupManifest.tables[table] = {
-          count: rowCount,
-          rows: data || [],
-        };
-        console.log(`  ✔ Backed up "${table}": ${rowCount} rows (PostgreSQL Exact Count: ${count ?? rowCount})`);
+        console.error(`\n❌ FATAL FAIL-CLOSED ERROR on table "${table}" [range: ${from}-${to}]:`);
+        console.error(`   Message: ${error.message} (Code: ${error.code})`);
+        console.error(`   ABORTING BACKUP IMMEDIATELY. Incomplete snapshots are strictly prohibited.`);
+        process.exit(1);
       }
-    } catch (err: any) {
-      console.warn(`  ⚠️ Error reading "${table}": ${err?.message}`);
-      backupManifest.tables[table] = { count: 0, rows: [] };
+
+      if (page === 0 && count !== null && count !== undefined) {
+        expectedExactCount = count;
+      }
+
+      if (data && data.length > 0) {
+        tableRows.push(...data);
+      }
+
+      if (!data || data.length < CHUNK_SIZE) {
+        break; // Exhausted all rows
+      }
+      page++;
+    }
+
+    // Fail-Closed Count Integrity Check
+    if (expectedExactCount !== null && tableRows.length !== expectedExactCount) {
+      console.error(`\n❌ FATAL FAIL-CLOSED INTEGRITY MISMATCH on table "${table}":`);
+      console.error(`   Expected rows: ${expectedExactCount}, Retrieved rows: ${tableRows.length}`);
+      console.error(`   ABORTING BACKUP IMMEDIATELY.`);
+      process.exit(1);
+    }
+
+    totalRowsCaptured += tableRows.length;
+    manifest.tables[table] = {
+      count: tableRows.length,
+      rows: tableRows,
+    };
+
+    console.log(`  ✔ [PAGINATED] "${table}": ${tableRows.length} rows captured (Pages: ${page + 1})`);
+  }
+
+  // 1. Serialize manifest
+  const rawJson = JSON.stringify(manifest);
+
+  // 2. Encrypt with AES-256-GCM
+  console.log('\n🔒 Encrypting database snapshot with AES-256-GCM...');
+  const encryptedPayload = encryptPayload(rawJson, encryptionSecret);
+
+  const envelope: EncryptedBackupEnvelope = {
+    version: '2.0-hardened',
+    algorithm: 'aes-256-gcm',
+    keyDerivation: 'pbkdf2-sha256-100000',
+    timestamp,
+    project: manifest.project,
+    tablesCount: PROTECTED_TABLES.length,
+    totalRows: totalRowsCaptured,
+    ...encryptedPayload,
+  };
+
+  const envelopeJson = JSON.stringify(envelope, null, 2);
+  const backupFilePath = path.join(backupDir, `production_snapshot_${timestamp}.enc.json`);
+  fs.writeFileSync(backupFilePath, envelopeJson, 'utf-8');
+
+  // 3. Post-write Checksum computation
+  const fileBuffer = fs.readFileSync(backupFilePath);
+  const sha256Checksum = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+  const checksumFilePath = path.join(backupDir, `production_snapshot_${timestamp}.enc.sha256`);
+  fs.writeFileSync(checksumFilePath, `${sha256Checksum}  production_snapshot_${timestamp}.enc.json\n`, 'utf-8');
+
+  // 4. Post-write Decryption & Verification in-flight
+  console.log('🔍 Executing post-write decryption & schema verification test...');
+  const reReadEnvelope = JSON.parse(fs.readFileSync(backupFilePath, 'utf-8')) as EncryptedBackupEnvelope;
+  const decryptedManifest = decryptPayload(reReadEnvelope, encryptionSecret);
+
+  if (decryptedManifest.tablesCount !== PROTECTED_TABLES.length) {
+    throw new Error(`Verification failed: Decrypted table count mismatch (${decryptedManifest.tablesCount} != ${PROTECTED_TABLES.length})`);
+  }
+
+  for (const table of PROTECTED_TABLES) {
+    if (!decryptedManifest.tables[table]) {
+      throw new Error(`Verification failed: Table "${table}" missing in decrypted manifest.`);
     }
   }
 
-  const backupFilePath = path.join(backupDir, `production_snapshot_${timestamp}.json`);
-  const jsonContent = JSON.stringify(backupManifest, null, 2);
-  fs.writeFileSync(backupFilePath, jsonContent, 'utf-8');
-
-  // Compute SHA-256 Checksum for verification
-  const checksum = crypto.createHash('sha256').update(jsonContent).digest('hex');
-  const checksumFilePath = path.join(backupDir, `production_snapshot_${timestamp}.sha256`);
-  fs.writeFileSync(checksumFilePath, `${checksum}  production_snapshot_${timestamp}.json\n`, 'utf-8');
-
   console.log('\n========================================================================');
-  console.log('✅ BACKUP COMPLETED SUCCESSFULLY!');
-  console.log(`  File: ${backupFilePath}`);
-  console.log(`  Size: ${(Buffer.byteLength(jsonContent) / 1024).toFixed(2)} KB`);
-  console.log(`  Total Tables Backed Up: ${PROTECTED_TABLES.length}`);
+  console.log('✅ HARDENED BACKUP COMPLETED & VERIFIED SUCCESSFULLY!');
+  console.log(`  Encrypted File: ${backupFilePath}`);
+  console.log(`  File Size: ${(fileBuffer.length / 1024).toFixed(2)} KB`);
+  console.log(`  Encryption: AES-256-GCM (PBKDF2-100k, AuthTag Verified)`);
+  console.log(`  Tables Protected: ${PROTECTED_TABLES.length}/${PROTECTED_TABLES.length}`);
   console.log(`  Total Rows Captured: ${totalRowsCaptured}`);
-  console.log(`  SHA-256 Checksum: ${checksum}`);
+  console.log(`  SHA-256 Checksum: ${sha256Checksum}`);
+  console.log(`  Fail-Closed Status: ACTIVE (0 warnings, 0 skips)`);
   console.log('========================================================================\n');
 }
 
-runBackup().catch((err) => {
-  console.error('Fatal backup error:', err);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename || '')) {
+  runBackup().catch((err) => {
+    console.error('Fatal backup error:', err);
+    process.exit(1);
+  });
+}
+
+export { runBackup };

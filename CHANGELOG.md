@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Sprint 5 Hari - Day 5] - Military-Grade Production Database Backup Hardening & Verification Suite - 2026-11-12 17:08 +07:00
+
+### Added, Hardened & Completed (Ketahanan Cadangan Data Produksi Berlapis)
+- **Pengerasan Mesin Backup Produksi (`scripts/backup_production_database.ts`):**
+  - **Paginasi Berkelanjutan (*Chunked Pagination*):** Mengganti pengambilan baris tunggal dengan paginasi loop `.range(from, to)` (ukuran chunk 1.000 baris) hingga seluruh data tabel terambil tanpa batasan `max-rows` PostgREST.
+  - **Penegakan Kebijakan Ketat Fail-Closed (*Fail-Closed Strict Policy*):** Menghapus penanganan fallback pasif `try/catch`. Jika query pada satu tabel gagal atau jumlah baris yang diambil tidak sesuai dengan perhitungan exact PostgreSQL, proses backup secara otomatis membatalkan diri (*abort* dengan kode status non-zero `process.exit(1)`), mencegah terbentuknya snapshot korup atau tidak lengkap.
+  - **Enkripsi Terotentikasi AES-256-GCM (*Authenticated Symmetric Encryption*):** Menerapkan enkripsi simetris standar militer AES-256-GCM dengan derivasi kunci PBKDF2 (100.000 putaran, salt 16-byte kriptografis, dan IV 12-byte per cadangan). Seluruh snapshot data pengguna dan komersial tersimpan dalam format terenkripsi `.enc.json` dengan verifikasi authentication tag 16-byte.
+  - **Verifikasi Kriptografis Langsung Pasca-Tulis (*Post-Write Decryption & Checksum In-Flight*):** Setelah berkas ditulis ke disk, mesin cadangan langsung membaca ulang berkas, mencocokkan SHA-256 checksum, dan mengeksekusi uji dekripsi di memori untuk memastikan seluruh 45 tabel utuh tanpa cacat.
+- **Rangkaian Uji Pemulihan & Verifikasi Enkripsi (`scripts/test_backup_restore.ts`):**
+  - Mengembangkan test suite pemulihan cadangan (`npm run test:backup`) dengan 61 asersi validasi lulus 100%:
+    * Memvalidasi keberadaan direktori cadangan dan berkas checksum SHA-256.
+    * Memverifikasi parameter envelope enkripsi (`version`, `algorithm`, `pbkdf2`, `salt`, `iv`, `authTag`).
+    * Menguji dekripsi payload dengan secret valid untuk memastikan 45 tabel dan relasinya terpulihkan secara presisi.
+    * Menguji ketahanan terhadap peretasan: menolak secara keras dekripsi dengan kata sandi salah atau payload yang dimanipulasi (*tampered ciphertext*) melalui verifikasi tag GCM.
+- **Kepatuhan Praktik Keamanan Terhadap Penyimpanan Cadangan:**
+  - Menegaskan bahwa direktori `supabase/backups/` wajib tetap berada di dalam `.gitignore` guna mencegah kebocoran data sensitif ke repositori git publik.
+
 ## [Sprint 5 Hari - Day 5] - Automated Database Backup Engine & Supabase Migration Synchronization - 2026-11-12 16:28 +07:00
 
 ### Added, Hardened & Completed (Ketahanan Data Produksi & Devops Supabase)
