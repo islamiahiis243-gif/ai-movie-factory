@@ -26,8 +26,9 @@
 ---
 
 ## 3. Current System Baseline (Single Source of Truth)
-- **Total Assertions Lolos:** 768+ Asersi ($100\%$ PASS, 0 FAIL) melintasi 18 test suites.
-- **Sprint 5 Hari Target (12–17 Nov 2026):** AMF Commercial MVP Go-Live — RELEASE CANDIDATE LOCKED.
+- **Total Assertions Lolos:** 780+ Asersi ($100\%$ PASS, 0 FAIL) melintasi 19 test suites.
+- **Master Requirements Acceptance Matrix:** Seluruh 16 skenario pengujian utama (TC-WF-01 hingga TC-WF-16) telah LULUS 100% (*Evidence-Based Verified*) mencakup alur produksi 18 tahap, 5 Gate Persetujuan Sutradara, ketahanan worker, dan monetisasi OTT.
+- **Sprint 5 Hari Target (12–17 Nov 2026):** AMF Commercial MVP Go-Live — RELEASE CANDIDATE ACCEPTED & LOCKED.
   - Day 1 (12 Nov): Audit aktual, penguncian cakupan MVP, query runtime fix, segment fail-closed guard, token propagation. (SELESAI & DIVERIFIKASI).
   - Day 2 (13 Nov): Penyelesaian Alur Produksi Film (Story Script -> Character DNA -> Storyboard -> Keyframe -> Video Generation) dengan proteksi Gate 1–5, AI Script Assistant modal, jembatan Storyboard-to-Media-Studio, dan Two-Phase Atomic Credit Reservation. Telah direkonsiliasi tuntas mencakup 10 Temuan Audit Independen (37/37 Asersi Pipeline Lolos 100%).
   - Day 3 (14 Nov): Reliability, Background Jobs, dan Multi-Platform Distribution. Implementasi database schema upgrade v3.19 di live Supabase Postgres (`claim_pipeline_job` row-locked RPC, 8 reliability columns, 9 job status constraints), serverless retry engine terproteksi 3x limit, stale lease fencing 15m, tab-close recovery, reactive job polling, dan multi-platform publisher adapters (37/37 Asersi Lolos 100%).

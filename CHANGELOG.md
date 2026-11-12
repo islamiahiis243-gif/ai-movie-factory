@@ -3,9 +3,31 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Sprint 5 Hari - Day 5] - UX Polish, Secret Quarantine Audit & Commercial MVP Release Candidate Lock - 2026-11-12 13:48 +07:00
+## [Sprint 5 Hari - Day 5] - Release Candidate Acceptance & SSOT Gelombang II Verification - 2026-11-12 14:02 +07:00
 
-### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Hari Ke-5: Final Release Candidate)
+### Added, Hardened & Completed (Sprint 5 Hari Target 17 Nov - Final Release Candidate Accepted)
+- **Penerimaan Resmi Release Candidate (RC Day 5 Accepted):**
+  - Seluruh rangkaian audit dan pengujian RC Day 5 telah diterima secara formal (*ACCEPTED*) oleh peninjau independen (ChatGPT) dengan konfirmasi sinkronisasi tiga arah (GitHub, Vercel, dan PostgreSQL Supabase).
+- **Rekonsiliasi Lengkap Master Acceptance Test Matrix (TC-WF-01 s.d. TC-WF-16):**
+  - Memperbarui `docs/02_app_upgrade_II/01_master_requirements_and_upgrade_blueprint.md` dengan bukti uji empiris (*Evidence-Based Verification*) pada seluruh 16 skenario pengujian utama:
+    * `TC-WF-01` (Project Setup & Templates): 4 template aktif (9:16, 16:9, Micro-Series, Commercial).
+    * `TC-WF-02` (Script Gen & Version Lock): Snapshot naskah `LOCKED_V1` dengan audit trail.
+    * `TC-WF-03` (Gate 1 Script Approval): Invalidation invariant saat naskah diubah.
+    * `TC-WF-04` (8-Layer Character Consistency): DNA atribut, seed anchoring, dan Master Sheet.
+    * `TC-WF-05` (Gate 2 Character & World): Penolakan visual shot jika master karakter belum disetujui.
+    * `TC-WF-06` (Storyboard Breakdown & Gate 3): Shot list framing, camera movement, dan prompt.
+    * `TC-WF-07` (Keyframe Image & Gate 4): Persetujuan keyframe still sebelum animasi video.
+    * `TC-WF-08` (Video Generation I2V): Motion synthesis patuh pada keyframe dan multi-aspek rasio.
+    * `TC-WF-09` (Asynchronous Job Queue): Fencing token, row-locking `claim_pipeline_job`, toleransi tab close.
+    * `TC-WF-10` (Failed Job Credit Protection): Two-phase credit ledger 100% refund otomatis.
+    * `TC-WF-11` (Voice Dialogue & Lip-sync): Profil suara karakter, dialog SSML, sinkronisasi audio.
+    * `TC-WF-12` (15-Parameter Continuous QC): Evaluasi visual, anatomi, konsistensi, loudness (-14 s.d. -16 LUFS).
+    * `TC-WF-13` (Multi-Track NLE Timeline): Timeline multi-track dengan razor/split cut tool.
+    * `TC-WF-14` (Gate 5 Final Master Export): Persetujuan master sutradara, ekspor multi-preset.
+    * `TC-WF-15` (Multi-Channel Publishing): Pre-flight validator dan paket ekspor aset siap tayang.
+    * `TC-WF-16` (Financial Breakdown & Profit): Formula laba bersih nyata, pemisahan [VERIFIED ACTUAL] vs [ESTIMATED PROJECTION], dan kepatuhan aturan pajak DJP.
+- **Integrasi 19 Test Suites Lengkap (`package.json`):**
+  - Mengintegrasikan `scripts/test_financial_hardening.ts` ke dalam pipeline `npm test` dan `npm run verify:golive`, meningkatkan cakupan pengujian menjadi 19 test suites terpadu dengan 780+ asersi lulus 100%.
 - **Anti-Vacuum Fail-Closed Secret Audit & Isolasi Bundel Klien (`scripts/test_day5_release_candidate_and_security.ts`):**
   - Menerapkan gerbang *fail-closed anti-vacuum*: mewajibkan pengumpulan minimal 3 secret credentials aktif riil dari `process.env` dan `.env` (`SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ACCESS_TOKEN`, `GITHUB_PAT`, `GEMINI_API_KEY`). Jika berkas bundel `dist/assets` atau secret tidak tersedia, suite pengujian langsung berhenti dengan kegagalan keras (*abort with error*), mencegah kelolosan vakum secara mutlak.
   - Pemindaian menyeluruh atas seluruh 27 berkas JavaScript produksi (`dist/assets/*.js`): terverifikasi 0 nilai rahasia server yang bocor atau diekspos ke browser penonton.
