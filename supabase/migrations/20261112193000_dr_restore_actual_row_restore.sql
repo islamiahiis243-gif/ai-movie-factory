@@ -324,3 +324,5 @@ END;
 $fn$;
 REVOKE ALL ON FUNCTION public.dr_restore_write_audit(text,integer,integer,boolean,text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.dr_restore_write_audit(text,integer,integer,boolean,text) TO service_role;
+
+NOTIFY pgrst, 'reload schema';
